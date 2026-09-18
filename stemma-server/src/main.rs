@@ -1,16 +1,5 @@
 //! The `stemma-server` command: the program that runs an instance.
 
-mod check;
-mod cli;
-mod config;
-mod db;
-mod install;
-mod serve;
-mod service;
-mod setup;
-mod status;
-mod system;
-
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -18,10 +7,11 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 
-use crate::check::Report;
-use crate::cli::{Cli, Command};
-use crate::config::{ConfigFile, Environment, Overrides, Settings};
-use crate::install::{Journal, Options, RemovalOptions};
+use stemma_server::check::Report;
+use stemma_server::cli::{Cli, Command};
+use stemma_server::config::{ConfigFile, Environment, Overrides, Settings};
+use stemma_server::install::{Journal, Options, RemovalOptions};
+use stemma_server::{check, config, db, install, serve, service, setup, status, system};
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
