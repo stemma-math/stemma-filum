@@ -143,7 +143,7 @@ impl Report {
     /// still in the order it was found.
     pub fn ordered(&self) -> Vec<&Finding> {
         let mut ordered: Vec<&Finding> = self.findings.iter().collect();
-        ordered.sort_by(|one, other| other.severity.cmp(&one.severity));
+        ordered.sort_by_key(|finding| std::cmp::Reverse(finding.severity));
         ordered
     }
 }

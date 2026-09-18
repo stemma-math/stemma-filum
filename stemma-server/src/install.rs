@@ -95,6 +95,7 @@ impl Journal {
     }
 
     /// Whether anything about the machine actually changed.
+    #[cfg(test)]
     pub fn changed_anything(&self) -> bool {
         self.steps
             .iter()

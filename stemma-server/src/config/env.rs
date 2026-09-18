@@ -52,11 +52,6 @@ impl Environment {
             .map(String::as_str)
             .filter(|value| !value.trim().is_empty())
     }
-
-    /// The names of every variable that is set, for reporting.
-    pub fn names(&self) -> impl Iterator<Item = &str> {
-        self.values.keys().map(String::as_str)
-    }
 }
 
 #[cfg(test)]
@@ -71,10 +66,7 @@ mod tests {
         ]);
 
         assert_eq!(environment.get("LISTEN"), Some("127.0.0.1:9000"));
-        assert_eq!(
-            environment.names().collect::<Vec<_>>(),
-            ["STEMMA_SERVER_LISTEN"]
-        );
+        assert_eq!(environment.get("HOME"), None);
     }
 
     #[test]

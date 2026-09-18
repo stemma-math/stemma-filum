@@ -74,6 +74,24 @@ pub enum Command {
         dry_run: bool,
     },
 
+    /// Runs the server in the foreground.
+    Serve {
+        /// Settings given on the command line.
+        #[command(flatten)]
+        settings: SettingsArgs,
+
+        /// The system user the service runs as.
+        #[arg(long, value_name = "NAME", default_value = crate::config::DEFAULT_SYSTEM_USER)]
+        user: String,
+    },
+
+    /// Reports what this instance is and what is in it.
+    Status {
+        /// Settings given on the command line.
+        #[command(flatten)]
+        settings: SettingsArgs,
+    },
+
     /// Brings the database up to the schema this build needs.
     Migrate {
         /// Settings given on the command line.

@@ -13,7 +13,6 @@ use url::Url;
 /// the server refuses to run without it.
 #[derive(Debug, Clone)]
 pub struct PublicUrl {
-    parsed: Url,
     /// The address as it is written into links, without a trailing slash.
     text: String,
 }
@@ -51,22 +50,12 @@ impl PublicUrl {
         // compare equal.
         let text = parsed.as_str().trim_end_matches('/').to_owned();
 
-        Ok(Self { parsed, text })
+        Ok(Self { text })
     }
 
     /// The address as text, without a trailing slash.
     pub fn as_str(&self) -> &str {
         &self.text
-    }
-
-    /// The host the instance answers on.
-    pub fn host(&self) -> Option<&str> {
-        self.parsed.host_str()
-    }
-
-    /// An absolute link to `path`, which is taken relative to the instance.
-    pub fn link(&self, path: &str) -> String {
-        format!("{}/{}", self.text, path.trim_start_matches('/'))
     }
 }
 
@@ -115,23 +104,7 @@ mod tests {
     #[test]
     fn an_instance_under_a_path_keeps_it() {
         let url = PublicUrl::parse("https://example.org/stemma/").unwrap();
-        assert_eq!(
-            url.link("/invite/abc"),
-            "https://example.org/stemma/invite/abc"
-        );
-    }
-
-    #[test]
-    fn links_never_double_the_separator() {
-        let url = PublicUrl::parse("https://stemma.example.org").unwrap();
-        assert_eq!(
-            url.link("invite/abc"),
-            "https://stemma.example.org/invite/abc"
-        );
-        assert_eq!(
-            url.link("/invite/abc"),
-            "https://stemma.example.org/invite/abc"
-        );
+        assert_eq!(url.as_str(), "https://example.org/stemma");
     }
 
     #[test]

@@ -69,6 +69,7 @@ impl Database {
     }
 
     /// An empty database in memory, for tests.
+    #[cfg(test)]
     pub fn in_memory() -> Result<Self> {
         let connection =
             Connection::open_in_memory().context("cannot open a database in memory")?;

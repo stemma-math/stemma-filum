@@ -5,7 +5,9 @@ mod cli;
 mod config;
 mod db;
 mod install;
+mod serve;
 mod service;
+mod status;
 mod system;
 
 use std::io::{IsTerminal, Write};
@@ -85,6 +87,20 @@ fn run(cli: Cli) -> Result<ExitCode> {
             if !options.purge {
                 announce_what_remains(&options);
             }
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Serve { settings, user } => {
+            let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
+            serve::serve(settings, &user)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Status { settings } => {
+            let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
+            println!("{}", status::Status::gather(&settings));
 
             Ok(ExitCode::SUCCESS)
         }
