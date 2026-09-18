@@ -17,6 +17,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::config::{ConfigError, Listen, MailSeed, Settings};
+use crate::db;
 use crate::system;
 
 /// How long to wait for an SMTP host to answer before giving up on it.
@@ -197,6 +198,7 @@ pub fn inspect(settings: &Settings, service_user: &str) -> Report {
     inspect_config_file(&mut report, &settings.source);
     inspect_state_directory(&mut report, settings, service_user);
     inspect_keys(&mut report, settings);
+    inspect_database(&mut report, settings);
     inspect_listen(&mut report, &settings.listen);
     inspect_mail(&mut report, settings.policy_seed.mail.as_ref());
 
@@ -278,6 +280,37 @@ fn inspect_keys(report: &mut Report, settings: &Settings) {
             "cannot read the session signing key {}: {error}",
             session_key.display()
         ))),
+    }
+}
+
+/// The database, which has to be at the version this binary knows.
+fn inspect_database(report: &mut Report, settings: &Settings) {
+    let path = settings.paths.database();
+    let expected = db::expected_version();
+
+    if !path.exists() {
+        report.push(
+            Finding::fatal(format!("there is no database at {}", path.display()))
+                .remedy("run `stemma-server migrate` to create it".to_owned()),
+        );
+        return;
+    }
+
+    match db::version_of(&path) {
+        Err(error) => report.push(Finding::fatal(format!("{error:#}"))),
+        Ok(version) if version == expected => {}
+        Ok(version) if version < expected => report.push(
+            Finding::fatal(format!(
+                "the database is at schema version {version}, and this build needs {expected}"
+            ))
+            .remedy("run `stemma-server migrate`".to_owned()),
+        ),
+        Ok(version) => report.push(
+            Finding::fatal(format!(
+                "the database is at schema version {version}, which is newer than the {expected}                  this build knows"
+            ))
+            .remedy("this machine is running an older release than the database expects".to_owned()),
+        ),
     }
 }
 

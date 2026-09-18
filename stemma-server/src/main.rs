@@ -3,6 +3,7 @@
 mod check;
 mod cli;
 mod config;
+mod db;
 mod install;
 mod service;
 mod system;
@@ -88,6 +89,28 @@ fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
 
+        Command::Migrate { settings } => {
+            let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
+            let applied = migrate(&settings)?;
+
+            if applied.is_empty() {
+                println!(
+                    "The database is already at schema version {}.",
+                    db::expected_version()
+                );
+            } else {
+                for name in &applied {
+                    println!("applied  {name}");
+                }
+                println!(
+                    "The database is now at schema version {}.",
+                    db::expected_version()
+                );
+            }
+
+            Ok(ExitCode::SUCCESS)
+        }
+
         Command::Check {
             settings,
             user,
@@ -103,6 +126,23 @@ fn run(cli: Cli) -> Result<ExitCode> {
             })
         }
     }
+}
+
+/// Brings the database up to date, keeping a copy of what it was.
+fn migrate(settings: &Settings) -> Result<Vec<&'static str>> {
+    let path = settings.paths.database();
+    let existed = path.exists();
+    let mut database = db::Database::open_or_create(&path)?;
+
+    // A copy is only worth taking when something is about to change it, and
+    // only when there was something there to copy.
+    if existed && database.version()? > 0 && !database.is_current()? {
+        let backup = settings.paths.database_backup(&db::stamp());
+        database.back_up_to(&backup)?;
+        println!("Copied the database to {} first.", backup.display());
+    }
+
+    database.migrate()
 }
 
 /// Reads the configuration and inspects the instance it describes.

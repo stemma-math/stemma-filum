@@ -74,6 +74,13 @@ pub enum Command {
         dry_run: bool,
     },
 
+    /// Brings the database up to the schema this build needs.
+    Migrate {
+        /// Settings given on the command line.
+        #[command(flatten)]
+        settings: SettingsArgs,
+    },
+
     /// Reports whether the instance could start right now, and why not.
     Check {
         /// Settings given on the command line.
