@@ -1,5 +1,7 @@
 //! The `stemma-server` command: the program that runs an instance.
 
+mod config;
+
 use std::process::ExitCode;
 
 use stemma_core::PROTOCOL_VERSION;
