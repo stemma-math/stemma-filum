@@ -26,10 +26,16 @@ struct Migration {
 }
 
 /// Every step, in the order they are applied. Append only.
-const MIGRATIONS: &[Migration] = &[Migration {
-    name: "identity",
-    sql: include_str!("../migrations/0001-identity.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        name: "identity",
+        sql: include_str!("../migrations/0001-identity.sql"),
+    },
+    Migration {
+        name: "groups-and-sessions",
+        sql: include_str!("../migrations/0002-groups-and-sessions.sql"),
+    },
+];
 
 /// The schema version this binary was built for.
 pub fn expected_version() -> u32 {
@@ -169,6 +175,11 @@ impl Database {
     /// The connection, for the queries the rest of the server runs.
     pub fn connection(&self) -> &Connection {
         &self.connection
+    }
+
+    /// The connection, for the writes that need a transaction of their own.
+    pub fn connection_mut(&mut self) -> &mut Connection {
+        &mut self.connection
     }
 }
 

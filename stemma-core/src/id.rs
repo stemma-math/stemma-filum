@@ -334,6 +334,10 @@ id_kinds! {
     Node: "nod" => NodeId as UniqueId,
     /// A single-use link into a group.
     Invitation: "inv" => InvitationId as UniqueId,
+    /// Somebody asking for a group to be created.
+    GroupRequest: "req" => GroupRequestId as UniqueId,
+    /// A browser's hold on an account.
+    Session: "ses" => SessionId as UniqueId,
     /// A machine registered against the server to run jobs.
     Machine: "mch" => MachineId as UniqueId,
     /// A unit of work handed to a machine.
