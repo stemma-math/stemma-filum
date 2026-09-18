@@ -1,0 +1,19 @@
+[package]
+name = "stemma-server"
+description = "The Stemma server: API, web interface, git remotes and job queue."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "stemma-server"
+path = "src/main.rs"
+
+[dependencies]
+stemma-core.workspace = true
+
+[lints]
+workspace = true

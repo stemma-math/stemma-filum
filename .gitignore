@@ -1,3 +1,6 @@
 # Local files (and related).
 *.local.*
 AGENTS.override.md
+
+# Build outputs.
+/target
