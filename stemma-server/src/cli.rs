@@ -42,6 +42,10 @@ pub enum Command {
         #[arg(long, value_name = "NAME", default_value = crate::config::DEFAULT_SYSTEM_USER)]
         user: String,
 
+        /// Ask the configuration questions once the files are in place.
+        #[arg(long)]
+        interactive: bool,
+
         /// Do everything except write and enable the systemd unit.
         #[arg(long)]
         no_service: bool,
@@ -72,6 +76,13 @@ pub enum Command {
         /// Report what would happen and change nothing.
         #[arg(long)]
         dry_run: bool,
+    },
+
+    /// Asks the questions the configuration file cannot answer by itself.
+    Setup {
+        /// The directory holding all durable state.
+        #[arg(long, value_name = "PATH")]
+        data_dir: Option<PathBuf>,
     },
 
     /// Runs the server in the foreground.
@@ -225,6 +236,7 @@ mod tests {
         let Command::Install {
             data_dir,
             user,
+            interactive,
             no_service,
             dry_run,
         } = parse(&["stemma-server", "install"]).command
@@ -234,6 +246,7 @@ mod tests {
 
         assert!(data_dir.is_none());
         assert_eq!(user, crate::config::DEFAULT_SYSTEM_USER);
+        assert!(!interactive);
         assert!(!no_service);
         assert!(!dry_run);
     }

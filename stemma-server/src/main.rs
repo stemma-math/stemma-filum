@@ -7,6 +7,7 @@ mod db;
 mod install;
 mod serve;
 mod service;
+mod setup;
 mod status;
 mod system;
 
@@ -41,6 +42,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Install {
             data_dir,
             user,
+            interactive,
             no_service,
             dry_run,
         } => {
@@ -55,6 +57,12 @@ fn run(cli: Cli) -> Result<ExitCode> {
 
             let journal = install::install(&options)?;
             report_journal(&journal);
+
+            if interactive && !options.dry_run {
+                println!();
+                setup::run(&options.config_path, &options.data_dir)?;
+            }
+
             announce_next_steps(&options);
 
             Ok(ExitCode::SUCCESS)
@@ -87,6 +95,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             if !options.purge {
                 announce_what_remains(&options);
             }
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Setup { data_dir } => {
+            let data_dir = state_directory(&config_path, &environment, data_dir)?;
+            setup::run(&config_path, &data_dir)?;
 
             Ok(ExitCode::SUCCESS)
         }
