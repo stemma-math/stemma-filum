@@ -5,7 +5,7 @@ members = ["stemma", "stemma-core", "stemma-server"]
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/mariovagomarzal/stemma"
 authors = ["Enric Cosme Llópez", "Mario Vago Marzal"]
@@ -13,6 +13,8 @@ authors = ["Enric Cosme Llópez", "Mario Vago Marzal"]
 [workspace.dependencies]
 stemma-core = { path = "stemma-core", version = "0.0.0" }
 
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 toml = "0.9"
