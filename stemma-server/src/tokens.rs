@@ -37,6 +37,19 @@ pub fn readable_code(length: usize) -> Result<String> {
         .collect())
 }
 
+/// Whether two secrets are the same, in a way that does not leak how much
+/// of a wrong one was right.
+pub fn same_secret(one: &str, other: &str) -> bool {
+    if one.len() != other.len() {
+        return false;
+    }
+
+    one.bytes()
+        .zip(other.bytes())
+        .fold(0_u8, |difference, (a, b)| difference | (a ^ b))
+        == 0
+}
+
 /// The key that turns a secret into the hash stored beside it.
 #[derive(Clone)]
 pub struct Key(Vec<u8>);
@@ -47,19 +60,18 @@ impl Key {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("cannot read the session key at {}", path.display()))?;
 
-        Ok(Self(text.trim().as_bytes().to_vec()))
+        Ok(Self::from_material(text.trim().as_bytes()))
+    }
+
+    /// A key from material somebody else holds.
+    pub fn from_material(material: &[u8]) -> Self {
+        Self(material.to_vec())
     }
 
     /// A key for tests.
     #[cfg(test)]
     pub fn for_test() -> Self {
-        Self::for_test_with(b"a key that only this test has")
-    }
-
-    /// A particular key for tests, where two of them must differ.
-    #[cfg(test)]
-    pub fn for_test_with(material: &[u8]) -> Self {
-        Self(material.to_vec())
+        Self::from_material(b"a key that only this test has")
     }
 
     /// What is stored for `secret`.
@@ -100,6 +112,14 @@ mod tests {
     }
 
     #[test]
+    fn two_secrets_are_compared_whole() {
+        assert!(same_secret("abc", "abc"));
+        assert!(!same_secret("abc", "abd"));
+        assert!(!same_secret("abc", "abcd"));
+        assert!(same_secret("", ""));
+    }
+
+    #[test]
     fn a_fingerprint_is_the_same_every_time_and_different_per_secret() {
         let key = Key::for_test();
 
@@ -110,7 +130,7 @@ mod tests {
     #[test]
     fn a_fingerprint_cannot_be_made_without_the_key() {
         let key = Key::for_test();
-        let other = Key::for_test_with(b"a different key");
+        let other = Key::from_material(b"a different key");
 
         assert_ne!(key.fingerprint("one"), other.fingerprint("one"));
     }

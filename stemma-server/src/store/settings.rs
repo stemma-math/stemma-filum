@@ -16,6 +16,15 @@ use stemma_core::id::UserId;
 
 use crate::config::PolicySeed;
 
+/// What this instance calls itself.
+pub const INSTANCE_NAME: &str = "instance.name";
+
+/// Who runs it.
+pub const INSTANCE_OPERATOR: &str = "instance.operator";
+
+/// How to reach whoever runs it.
+pub const INSTANCE_CONTACT: &str = "instance.contact";
+
 /// Whether anyone may create an account.
 pub const REGISTRATION_OPEN: &str = "registration.open";
 
@@ -37,6 +46,12 @@ pub const MAIL_PASSWORD_ENV: &str = "mail.password_env";
 /// What the instance's policy is right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Policy {
+    /// What this instance calls itself, where anybody has said.
+    pub instance_name: Option<String>,
+    /// Who runs it.
+    pub operator: Option<String>,
+    /// How to reach them.
+    pub contact: Option<String>,
     /// Whether anyone may create an account.
     pub registration_open: bool,
     /// Whether account holders may ask for a group.
@@ -62,6 +77,9 @@ impl Policy {
 /// Reads the whole policy.
 pub fn policy(connection: &Connection) -> Result<Policy> {
     Ok(Policy {
+        instance_name: get(connection, INSTANCE_NAME)?,
+        operator: get(connection, INSTANCE_OPERATOR)?,
+        contact: get(connection, INSTANCE_CONTACT)?,
         registration_open: flag(connection, REGISTRATION_OPEN, true)?,
         group_requests_open: flag(connection, GROUP_REQUESTS_OPEN, true)?,
         invitation_ttl_days: number(

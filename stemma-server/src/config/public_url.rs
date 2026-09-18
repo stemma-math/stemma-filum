@@ -13,6 +13,8 @@ use url::Url;
 /// the server refuses to run without it.
 #[derive(Debug, Clone)]
 pub struct PublicUrl {
+    /// The address as parsed, for the questions only a parser can answer.
+    parsed: Url,
     /// The address as it is written into links, without a trailing slash.
     text: String,
 }
@@ -50,12 +52,28 @@ impl PublicUrl {
         // compare equal.
         let text = parsed.as_str().trim_end_matches('/').to_owned();
 
-        Ok(Self { text })
+        Ok(Self { parsed, text })
     }
 
     /// The address as text, without a trailing slash.
     pub fn as_str(&self) -> &str {
         &self.text
+    }
+
+    /// The host the instance answers on, which is what it is called when
+    /// nobody has given it a name.
+    pub fn host(&self) -> &str {
+        self.parsed.host_str().unwrap_or(&self.text)
+    }
+
+    /// Whether links to this instance are encrypted in transit.
+    pub fn is_secure(&self) -> bool {
+        self.parsed.scheme() == "https"
+    }
+
+    /// An absolute link to `path`, which is taken relative to the instance.
+    pub fn link(&self, path: &str) -> String {
+        format!("{}/{}", self.text, path.trim_start_matches('/'))
     }
 }
 
@@ -104,7 +122,37 @@ mod tests {
     #[test]
     fn an_instance_under_a_path_keeps_it() {
         let url = PublicUrl::parse("https://example.org/stemma/").unwrap();
+
         assert_eq!(url.as_str(), "https://example.org/stemma");
+        assert_eq!(
+            url.link("/invite/abc"),
+            "https://example.org/stemma/invite/abc"
+        );
+    }
+
+    #[test]
+    fn links_never_double_the_separator() {
+        let url = PublicUrl::parse("https://stemma.example.org").unwrap();
+
+        assert_eq!(
+            url.link("invite/abc"),
+            "https://stemma.example.org/invite/abc"
+        );
+        assert_eq!(
+            url.link("/invite/abc"),
+            "https://stemma.example.org/invite/abc"
+        );
+    }
+
+    #[test]
+    fn an_instance_knows_its_host_and_whether_it_is_encrypted() {
+        let secure = PublicUrl::parse("https://stemma.example.org").unwrap();
+        let plain = PublicUrl::parse("http://localhost:8080").unwrap();
+
+        assert_eq!(secure.host(), "stemma.example.org");
+        assert!(secure.is_secure());
+        assert_eq!(plain.host(), "localhost");
+        assert!(!plain.is_secure());
     }
 
     #[test]

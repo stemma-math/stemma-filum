@@ -10,8 +10,6 @@
 //! Before binding anything it runs the same check an operator runs by hand,
 //! and refuses to start on a fatal finding.
 
-use std::sync::{Arc, Mutex};
-
 use anyhow::{Context, Result, bail};
 use axum::Router;
 use axum::extract::State;
@@ -24,15 +22,8 @@ use stemma_core::{PROTOCOL_HEADER, PROTOCOL_VERSION};
 use crate::check;
 use crate::config::{Listen, Settings};
 use crate::db::{self, Database};
-
-/// What every handler can reach.
-#[derive(Clone)]
-struct Instance {
-    /// The infrastructure settings this process came up with.
-    settings: Arc<Settings>,
-    /// The database, which is not itself shareable between threads.
-    database: Arc<Mutex<Database>>,
-}
+use crate::tokens::Key;
+use crate::web::{self, Instance};
 
 /// Runs the server until it is asked to stop.
 pub fn serve(settings: Settings, service_user: &str) -> Result<()> {
@@ -60,10 +51,8 @@ pub fn serve(settings: Settings, service_user: &str) -> Result<()> {
         );
     }
 
-    let instance = Instance {
-        settings: Arc::new(settings),
-        database: Arc::new(Mutex::new(database)),
-    };
+    let key = Key::read(&settings.paths.session_key())?;
+    let instance = Instance::new(settings, database, key);
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -160,13 +149,12 @@ async fn interrupted() {
 
 /// What the server answers.
 fn router(instance: Instance) -> Router {
-    Router::new()
+    web::router()
         .route("/health", get(health))
         .route("/api/version", get(version))
         .layer(axum::middleware::from_fn(announce_protocol))
         .with_state(instance)
 }
-
 /// Every answer says which protocol it speaks, so a client never has to ask
 /// separately before it can tell whether it is talking to something it
 /// understands.

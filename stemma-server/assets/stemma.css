@@ -1,0 +1,507 @@
+/* The instance's own stylesheet.
+ *
+ * Flat ink on flat paper: no radius, no shadow, no gradient. Separation is
+ * by hairline and by the three paper levels. Colour is earned — only a
+ * human commitment, a machine proof and a refutation are allowed any — so
+ * everything else here is ink, weight and texture.
+ *
+ * Three faces, three jobs: serif for mathematics and for prose a person
+ * signed, grotesk for the interface's own words, mono for the verbatim.
+ */
+
+:root {
+    --paper: #edeee8;
+    --paper-raise: #f6f7f3;
+    --paper-sunk: #e2e4dc;
+    --ink: #16191a;
+    --ink-2: #474d4c;
+    --ink-3: #636967;
+    --rule: #c5c8c0;
+    --rule-soft: #d7dad2;
+    --ditto: #463a85;
+    --verified: #1d5347;
+    --refuted: #93221b;
+
+    --serif: "Libertinus Serif", "Linux Libertine O", Georgia, serif;
+    --grotesk: "Archivo", "Archivo Narrow", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --narrow: "Archivo Narrow", "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono: "Iosevka", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+    --step-1: 12px;
+    --step-2: 13px;
+    --step-3: 15px;
+    --step-4: 17px;
+    --step-5: 21px;
+    --step-6: 27px;
+    --step-7: 34px;
+
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+}
+
+/* The dark theme is selected, not inverted: the same green-biased neutral
+ * run cold, with the earned colours re-stepped against the dark ground. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --paper: #141715;
+        --paper-raise: #1c201d;
+        --paper-sunk: #0f1210;
+        --ink: #e4e6e0;
+        --ink-2: #aeb3ac;
+        --ink-3: #858b85;
+        --rule: #343833;
+        --rule-soft: #242824;
+        --ditto: #a395ee;
+        --verified: #5fae96;
+        --refuted: #e0705f;
+    }
+}
+
+:root[data-theme="dark"] {
+    --paper: #141715;
+    --paper-raise: #1c201d;
+    --paper-sunk: #0f1210;
+    --ink: #e4e6e0;
+    --ink-2: #aeb3ac;
+    --ink-3: #858b85;
+    --rule: #343833;
+    --rule-soft: #242824;
+    --ditto: #a395ee;
+    --verified: #5fae96;
+    --refuted: #e0705f;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    border-radius: 0;
+}
+
+body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--grotesk);
+    font-size: var(--step-3);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+    font-family: var(--grotesk);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0;
+}
+
+h1 {
+    font-size: var(--step-6);
+    line-height: 1.2;
+}
+
+h2 {
+    font-size: var(--step-5);
+    line-height: 1.25;
+}
+
+h3 {
+    font-size: var(--step-4);
+    line-height: 1.3;
+}
+
+p {
+    margin: 0;
+    max-width: 62ch;
+}
+
+a {
+    color: var(--ditto);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+}
+
+a:hover {
+    text-decoration-thickness: 2px;
+}
+
+/* Focus is never removed and never a glow. */
+:focus-visible {
+    outline: 2px solid var(--ditto);
+    outline-offset: 2px;
+}
+
+code,
+.mono,
+.identifier {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+}
+
+.serif {
+    font-family: var(--serif);
+    font-size: var(--step-4);
+    line-height: 1.62;
+}
+
+/* An eyebrow labels a block. It is never a heading and never a link. */
+.label {
+    font-family: var(--narrow);
+    font-size: var(--step-1);
+    line-height: 1.2;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0;
+}
+
+.quiet {
+    color: var(--ink-3);
+}
+
+.numeric {
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── The page ──────────────────────────────────────────────────────────── */
+
+.masthead {
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-raise);
+}
+
+.masthead__inner,
+.sheet,
+.foot__inner {
+    max-width: 68rem;
+    margin: 0 auto;
+    padding: 0 var(--space-5);
+}
+
+.masthead__inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-5);
+    padding-top: var(--space-3);
+    padding-bottom: var(--space-3);
+}
+
+.wordmark {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-family: var(--grotesk);
+    font-size: var(--step-4);
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--ink);
+    text-decoration: none;
+}
+
+.wordmark svg {
+    display: block;
+}
+
+/* Navigation is words. The active destination takes a rule on the edge it
+ * belongs to, never a filled shape. */
+.nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    margin-left: auto;
+    font-size: var(--step-2);
+}
+
+.nav a {
+    color: var(--ink-2);
+    text-decoration: none;
+    padding-bottom: var(--space-1);
+    border-bottom: 2px solid transparent;
+}
+
+.nav a:hover {
+    color: var(--ink);
+}
+
+.nav a[aria-current="page"] {
+    color: var(--ink);
+    border-bottom-color: var(--ditto);
+}
+
+.sheet {
+    padding-top: var(--space-7);
+    padding-bottom: var(--space-8);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+}
+
+.sheet--narrow {
+    max-width: 34rem;
+}
+
+.foot {
+    border-top: 1px solid var(--rule);
+    color: var(--ink-3);
+}
+
+.foot__inner {
+    padding-top: var(--space-4);
+    padding-bottom: var(--space-4);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4);
+    font-family: var(--mono);
+    font-size: var(--step-1);
+}
+
+/* ── Blocks ────────────────────────────────────────────────────────────── */
+
+.block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.block + .block {
+    border-top: 1px solid var(--rule);
+    padding-top: var(--space-5);
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.stack--tight {
+    gap: var(--space-2);
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-3);
+}
+
+.row--spread {
+    justify-content: space-between;
+}
+
+/* A list of things, hairline-separated. Not cards. */
+.register {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.register li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--rule-soft);
+}
+
+.register li:last-child {
+    border-bottom: 1px solid var(--rule-soft);
+}
+
+.register__name {
+    font-weight: 500;
+}
+
+.register__aside {
+    margin-left: auto;
+    color: var(--ink-3);
+    font-size: var(--step-2);
+}
+
+/* ── Forms ─────────────────────────────────────────────────────────────── */
+
+form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.field__hint {
+    font-size: var(--step-2);
+    color: var(--ink-3);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+    font-family: inherit;
+    font-size: var(--step-3);
+    color: var(--ink);
+    background: var(--paper-sunk);
+    border: 1px solid var(--rule);
+    padding: var(--space-2) var(--space-3);
+    width: 100%;
+}
+
+input[name="code"],
+input[name="slug"] {
+    font-family: var(--mono);
+}
+
+textarea {
+    min-height: 6rem;
+    resize: vertical;
+}
+
+.button {
+    font-family: var(--grotesk);
+    font-size: var(--step-3);
+    font-weight: 500;
+    color: var(--ink);
+    background: var(--paper-raise);
+    border: 1px solid var(--ink);
+    padding: var(--space-2) var(--space-4);
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    align-self: flex-start;
+}
+
+.button:hover {
+    background: var(--paper-sunk);
+}
+
+.button--quiet {
+    border-color: var(--rule);
+    color: var(--ink-2);
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.actions form {
+    display: inline;
+}
+
+/* A problem with what was typed. No colour: red means a negation was
+ * proved, and nothing here is a mathematical result. */
+.problem {
+    background: var(--paper-sunk);
+    border-left: 2px solid var(--ink);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--step-3);
+}
+
+.done {
+    background: var(--paper-sunk);
+    border-left: 2px solid var(--rule);
+    padding: var(--space-3) var(--space-4);
+}
+
+/* Something given out once, which has to be copied before it is gone. */
+.secret {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    background: var(--paper-sunk);
+    border: 1px solid var(--rule);
+    padding: var(--space-3);
+    overflow-wrap: anywhere;
+}
+
+.empty {
+    color: var(--ink-3);
+    max-width: 62ch;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: var(--step-2);
+}
+
+th {
+    font-family: var(--narrow);
+    font-size: var(--step-1);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: left;
+    font-weight: 400;
+    padding: 0 var(--space-4) var(--space-2) 0;
+    border-bottom: 1px solid var(--rule);
+}
+
+td {
+    padding: var(--space-2) var(--space-4) var(--space-2) 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: baseline;
+}
+
+td.numeric,
+th.numeric {
+    font-variant-numeric: tabular-nums;
+}
+
+.scroll {
+    overflow-x: auto;
+}
+
+/* ── The front door ────────────────────────────────────────────────────── */
+
+.doorway {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    padding-top: var(--space-8);
+}
+
+/* The instance's name is the largest type on the page because it is a fact,
+ * not a slogan. Nothing in the product is larger than 34px. */
+.doorway__name {
+    font-size: var(--step-7);
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.doorway__operator {
+    color: var(--ink-2);
+}
+
+@media (max-width: 40rem) {
+    .masthead__inner {
+        gap: var(--space-3);
+    }
+
+    .nav {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .doorway__name {
+        font-size: var(--step-6);
+    }
+}

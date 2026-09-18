@@ -18,3 +18,4 @@ pub mod status;
 pub mod store;
 pub mod system;
 pub mod tokens;
+pub mod web;

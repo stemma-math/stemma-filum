@@ -251,7 +251,7 @@ mod tests {
         let ana = account(connection, "ana");
 
         let (_, cookie) = start(connection, &Key::for_test(), &ana.id).unwrap();
-        let other = Key::for_test_with(b"another machine's key");
+        let other = Key::from_material(b"another machine's key");
 
         assert!(lookup(connection, &other, &cookie).unwrap().is_none());
     }

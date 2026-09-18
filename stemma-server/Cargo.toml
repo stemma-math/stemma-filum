@@ -22,7 +22,6 @@ stemma-core.workspace = true
 anyhow.workspace = true
 argon2.workspace = true
 axum.workspace = true
-axum-extra.workspace = true
 clap.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
@@ -41,3 +40,6 @@ url.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tower.workspace = true
