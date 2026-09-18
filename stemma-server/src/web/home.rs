@@ -12,7 +12,7 @@ use maud::{Markup, html};
 use super::layout::{Chrome, page};
 use super::visitor::{SignedIn, Visitor};
 use super::{Instance, WebError};
-use crate::store::groups::{self, Membership};
+use crate::store::groups::{self, Membership, Request};
 
 /// The page somebody sees when they are signed in.
 pub async fn home(
@@ -27,19 +27,33 @@ pub async fn home(
     let name = super::front::instance_name(&instance, &policy);
 
     let user = signed.user.id.clone();
-    let memberships = instance
-        .read(move |connection| groups::for_user(connection, &user))
+    let (memberships, requests) = instance
+        .read(move |connection| {
+            Ok((
+                groups::for_user(connection, &user)?,
+                groups::requests_by(connection, &user)?,
+            ))
+        })
         .await?;
 
     let chrome = Chrome::anonymous("Home", name)
         .at("/")
         .signed_in(signed.user.clone(), signed.maintainer);
 
-    Ok(page(&chrome, body(&signed, &memberships)).into_response())
+    Ok(page(
+        &chrome,
+        body(&signed, &memberships, &requests, policy.group_requests_open),
+    )
+    .into_response())
 }
 
 /// What the home page holds.
-fn body(signed: &SignedIn, memberships: &[Membership]) -> Markup {
+fn body(
+    signed: &SignedIn,
+    memberships: &[Membership],
+    requests: &[Request],
+    may_ask: bool,
+) -> Markup {
     html! {
         div class="stack" {
             h1 { (signed.user.display_name) }
@@ -67,6 +81,21 @@ fn body(signed: &SignedIn, memberships: &[Membership]) -> Markup {
                             span class="quiet identifier" { (membership.group.id.to_string()) }
                             span class="register__aside" { (membership.role) }
                         }
+                    }
+                }
+            }
+
+            @if may_ask {
+                p { a href="/groups/new" { "Ask for a group" } }
+            }
+        }
+
+        @if !requests.is_empty() {
+            div class="block" {
+                p class="label" { "What you have asked for" }
+                ul class="register" {
+                    @for request in requests {
+                        (crate::web::groups::own_request(request))
                     }
                 }
             }

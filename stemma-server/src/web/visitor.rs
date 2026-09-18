@@ -124,6 +124,46 @@ impl OptionalFromRequestParts<Instance> for SignedIn {
     }
 }
 
+/// Somebody who operates this instance, and has just proved who they are.
+///
+/// Holding a session is not the same as having typed the password
+/// recently, and the second is what the admin area asks for: a laptop left
+/// open is a session, not a person.
+#[derive(Debug, Clone)]
+pub struct Maintainer(pub SignedIn);
+
+impl FromRequestParts<Instance> for Maintainer {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        instance: &Instance,
+    ) -> Result<Self, Self::Rejection> {
+        let signed =
+            <SignedIn as FromRequestParts<Instance>>::from_request_parts(parts, instance).await?;
+
+        if !signed.maintainer {
+            return Err(WebError::Forbidden(
+                "The admin area is for the people who operate this instance.".to_owned(),
+            )
+            .into_response());
+        }
+
+        let session = signed.session.id;
+        let fresh = instance
+            .read(move |connection| sessions::is_fresh(connection, &session))
+            .await
+            .map_err(IntoResponse::into_response)?;
+
+        if !fresh {
+            let destination = format!("/admin/authenticate?next={}", encode(parts.uri.path()));
+            return Err(Redirect::to(&destination).into_response());
+        }
+
+        Ok(Self(signed))
+    }
+}
+
 /// Escapes a path so it survives being a query parameter.
 fn encode(path: &str) -> String {
     path.bytes()

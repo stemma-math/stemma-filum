@@ -4,10 +4,12 @@
 //! with JavaScript switched off: hairlines, paper levels and hatches are
 //! all CSS, and there is nothing else to lose.
 
+pub mod admin;
 pub mod assets;
 pub mod auth;
 pub mod cookies;
 pub mod front;
+pub mod groups;
 pub mod home;
 pub mod layout;
 pub mod visitor;
@@ -109,6 +111,18 @@ pub fn router() -> Router<Instance> {
         .route("/login", get(auth::login_form).post(auth::log_in))
         .route("/register", get(auth::register_form).post(auth::register))
         .route("/logout", post(auth::log_out))
+        .route(
+            "/groups/new",
+            get(groups::request_form).post(groups::request),
+        )
+        .route("/admin", get(admin::area))
+        .route(
+            "/admin/authenticate",
+            get(admin::authenticate_form).post(admin::authenticate),
+        )
+        .route("/admin/settings", post(admin::save_settings))
+        .route("/admin/requests/{id}/approve", post(admin::approve))
+        .route("/admin/requests/{id}/decline", post(admin::decline))
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
         .fallback(get(not_found))
 }
