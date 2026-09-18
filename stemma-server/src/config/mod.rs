@@ -121,6 +121,28 @@ impl ConfigFile {
     }
 }
 
+impl ConfigFile {
+    /// Reads the file at `path`, or reports that there is none.
+    ///
+    /// Installing an instance happens before there is a file to read, so the
+    /// installer has to be able to ask without it being an error.
+    pub fn read_if_present(path: &Path) -> Result<Option<Self>, ConfigError> {
+        match Self::read(path) {
+            Ok(file) => Ok(Some(file)),
+            Err(ConfigError::Missing { .. }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+/// The file holding secrets that sits beside `config_path`.
+pub fn env_path_for(config_path: &Path) -> PathBuf {
+    config_path
+        .parent()
+        .map(|directory| directory.join("server.env"))
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_ENV_PATH))
+}
+
 /// Values given on the command line, which beat everything else.
 #[derive(Debug, Default, Clone)]
 pub struct Overrides {
@@ -194,6 +216,29 @@ impl Settings {
         Self::resolve(ConfigFile::read(path)?, path, environment, overrides)
     }
 
+    /// The state directory, resolved without needing the rest.
+    ///
+    /// The installer has to know where state goes before there is a
+    /// configuration complete enough to start a server with.
+    pub fn resolve_data_dir(
+        file: &ConfigFile,
+        environment: &Environment,
+        overrides: &Overrides,
+    ) -> Result<PathBuf, ConfigError> {
+        let data_dir = overrides
+            .data_dir
+            .clone()
+            .or_else(|| environment.get("DATA_DIR").map(PathBuf::from))
+            .or_else(|| file.data_dir.clone())
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_DATA_DIR));
+
+        if data_dir.is_absolute() {
+            Ok(data_dir)
+        } else {
+            Err(ConfigError::RelativeDataDir(data_dir))
+        }
+    }
+
     /// Resolves an already parsed file.
     pub fn resolve(
         file: ConfigFile,
@@ -202,6 +247,7 @@ impl Settings {
         overrides: &Overrides,
     ) -> Result<Self, ConfigError> {
         let policy_seed = PolicySeed::resolve(&file, environment)?;
+        let data_dir = Self::resolve_data_dir(&file, environment, overrides)?;
 
         let public_url = overrides
             .public_url
@@ -216,17 +262,6 @@ impl Settings {
             .or_else(|| environment.get("LISTEN").map(str::to_owned))
             .or(file.listen)
             .unwrap_or_else(|| DEFAULT_LISTEN.to_owned());
-
-        let data_dir = overrides
-            .data_dir
-            .clone()
-            .or_else(|| environment.get("DATA_DIR").map(PathBuf::from))
-            .or(file.data_dir)
-            .unwrap_or_else(|| PathBuf::from(DEFAULT_DATA_DIR));
-
-        if !data_dir.is_absolute() {
-            return Err(ConfigError::RelativeDataDir(data_dir));
-        }
 
         Ok(Self {
             public_url: PublicUrl::parse(&public_url)?,
@@ -369,7 +404,12 @@ pub enum ConfigError {
 }
 
 /// The commented file a fresh installation starts from.
-pub fn skeleton() -> String {
+///
+/// It is written with the state directory the installer actually used, so
+/// that the file and the machine never disagree about where things are.
+pub fn skeleton(data_dir: &Path) -> String {
+    let data_dir = data_dir.display();
+
     format!(
         r#"# Stemma server configuration.
 #
@@ -391,7 +431,7 @@ public_url = "https://stemma.example.org"
 listen = "{DEFAULT_LISTEN}"          # or "unix:/run/stemma/server.sock"
 
 # All durable state. This is the directory to back up.
-data_dir = "{DEFAULT_DATA_DIR}"
+data_dir = "{data_dir}"
 
 [registration]
 open = true            # anyone may create an account
@@ -431,7 +471,7 @@ mod tests {
 
     #[test]
     fn the_skeleton_is_valid_configuration() {
-        let settings = resolve(parse(&skeleton())).unwrap();
+        let settings = resolve(parse(&skeleton(Path::new(DEFAULT_DATA_DIR)))).unwrap();
 
         assert_eq!(settings.public_url.as_str(), "https://stemma.example.org");
         assert_eq!(settings.listen.to_string(), DEFAULT_LISTEN);
@@ -442,6 +482,12 @@ mod tests {
             Some(DEFAULT_INVITATION_TTL_DAYS)
         );
         assert_eq!(settings.policy_seed.mail, None);
+    }
+
+    #[test]
+    fn the_skeleton_records_where_state_was_actually_put() {
+        let settings = resolve(parse(&skeleton(Path::new("/srv/stemma")))).unwrap();
+        assert_eq!(settings.paths.data_dir(), Path::new("/srv/stemma"));
     }
 
     #[test]
@@ -577,6 +623,23 @@ mod tests {
             error
                 .to_string()
                 .contains("STEMMA_SERVER_REGISTRATION_OPEN")
+        );
+    }
+
+    #[test]
+    fn the_secrets_file_sits_beside_the_configuration() {
+        assert_eq!(
+            env_path_for(Path::new("/srv/instances/two.toml")),
+            Path::new("/srv/instances/server.env")
+        );
+    }
+
+    #[test]
+    fn a_missing_file_is_not_an_error_before_there_is_one() {
+        assert!(
+            ConfigFile::read_if_present(Path::new("/nonexistent/stemma/server.toml"))
+                .unwrap()
+                .is_none()
         );
     }
 

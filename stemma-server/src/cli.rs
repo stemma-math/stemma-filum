@@ -32,6 +32,48 @@ pub struct Cli {
 /// The commands an operator runs.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Puts an instance on this machine, without starting it.
+    Install {
+        /// The directory holding all durable state.
+        #[arg(long, value_name = "PATH")]
+        data_dir: Option<PathBuf>,
+
+        /// The system user the service runs as.
+        #[arg(long, value_name = "NAME", default_value = crate::config::DEFAULT_SYSTEM_USER)]
+        user: String,
+
+        /// Do everything except write and enable the systemd unit.
+        #[arg(long)]
+        no_service: bool,
+
+        /// Report what would happen and change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Takes the software off this machine, leaving its data behind.
+    Uninstall {
+        /// The directory holding all durable state.
+        #[arg(long, value_name = "PATH")]
+        data_dir: Option<PathBuf>,
+
+        /// The system user the service ran as.
+        #[arg(long, value_name = "NAME", default_value = crate::config::DEFAULT_SYSTEM_USER)]
+        user: String,
+
+        /// Also erase the configuration, the state and the system user.
+        #[arg(long)]
+        purge: bool,
+
+        /// Answer the confirmation a purge asks for.
+        #[arg(long)]
+        yes: bool,
+
+        /// Report what would happen and change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Reports whether the instance could start right now, and why not.
     Check {
         /// Settings given on the command line.
@@ -151,6 +193,35 @@ mod tests {
             overrides.data_dir.as_deref(),
             Some(std::path::Path::new("/srv/stemma"))
         );
+    }
+
+    #[test]
+    fn installing_takes_the_defaults_of_the_layout() {
+        let Command::Install {
+            data_dir,
+            user,
+            no_service,
+            dry_run,
+        } = parse(&["stemma-server", "install"]).command
+        else {
+            panic!("expected the install command");
+        };
+
+        assert!(data_dir.is_none());
+        assert_eq!(user, crate::config::DEFAULT_SYSTEM_USER);
+        assert!(!no_service);
+        assert!(!dry_run);
+    }
+
+    #[test]
+    fn a_purge_can_be_answered_in_advance() {
+        let Command::Uninstall { purge, yes, .. } =
+            parse(&["stemma-server", "uninstall", "--purge", "--yes"]).command
+        else {
+            panic!("expected the uninstall command");
+        };
+
+        assert!(purge && yes);
     }
 
     #[test]

@@ -511,6 +511,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "getrandom",
  "serde",
  "stemma-core",
  "thiserror",

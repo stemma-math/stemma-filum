@@ -15,6 +15,7 @@ stemma-core = { path = "stemma-core", version = "0.0.0" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
+getrandom = "0.3"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 toml = "0.9"
