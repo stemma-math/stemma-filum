@@ -5,16 +5,18 @@
 //! let people create them outright, and that is a policy, not a different
 //! mechanism.
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
-use stemma_core::id::Slug;
+use stemma_core::access::GroupRole;
+use stemma_core::id::{InvitationId, Slug};
 
 use super::layout::{Chrome, page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
-use crate::store::groups::{self, Request};
+use crate::store::groups::{self, Group, Member, Request};
+use crate::store::invitations::{self, Invitation};
 
 /// What the request form sends.
 #[derive(Debug, Deserialize)]
@@ -199,6 +201,318 @@ pub fn own_request(request: &Request) -> Markup {
             }
             @if let Some(note) = &request.note {
                 p class="quiet" { (note) }
+            }
+        }
+    }
+}
+
+/// What the invitation form sends.
+#[derive(Debug, Deserialize)]
+pub struct Invite {
+    /// Who it is meant for, where that is known.
+    #[serde(default)]
+    pub email: String,
+    /// What they will be able to do in the group.
+    pub role: String,
+    /// What says the form came from a page we served.
+    pub form_token: String,
+}
+
+/// What a withdrawal sends.
+#[derive(Debug, Deserialize)]
+pub struct Withdrawal {
+    /// What says the form came from a page we served.
+    pub form_token: String,
+}
+
+/// The group's own space.
+pub async fn space(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(slug): Path<String>,
+) -> Result<Response, WebError> {
+    let Some(group) = lookup(&instance, &slug).await? else {
+        return Err(WebError::NotFound);
+    };
+
+    let (role, members, invitations) = read_space(&instance, &group, &signed).await?;
+
+    // Somebody outside the group is told there is nothing here rather than
+    // that there is something they may not see: a group's membership is
+    // its own business.
+    let Some(role) = role else {
+        return Err(WebError::NotFound);
+    };
+
+    let policy = instance.policy().await?;
+    let chrome = Chrome::anonymous(
+        group.name.clone(),
+        super::front::instance_name(&instance, &policy),
+    )
+    .signed_in(signed.user.clone(), signed.maintainer);
+
+    Ok(page(
+        &chrome,
+        space_body(&signed, &group, role, &members, &invitations, None),
+    )
+    .into_response())
+}
+
+/// Makes an invitation, and shows the link once.
+pub async fn invite(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(slug): Path<String>,
+    axum::Form(form): axum::Form<Invite>,
+) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
+
+    let Some(group) = lookup(&instance, &slug).await? else {
+        return Err(WebError::NotFound);
+    };
+
+    let (role, _, _) = read_space(&instance, &group, &signed).await?;
+    let Some(role) = role else {
+        return Err(WebError::NotFound);
+    };
+
+    if !role.can_invite() {
+        return Err(WebError::Forbidden(
+            "Only an admin or the owner of this group can invite people.".to_owned(),
+        ));
+    }
+
+    let offered: GroupRole = form
+        .role
+        .parse()
+        .map_err(|_| WebError::BadRequest("That is not a role in a group.".to_owned()))?;
+
+    // Nobody may hand out more than they hold: an admin cannot make an
+    // owner.
+    if offered > role {
+        return Err(WebError::Forbidden(
+            "You cannot invite somebody to more than you hold yourself.".to_owned(),
+        ));
+    }
+
+    let policy = instance.policy().await?;
+    let key = instance.key.clone();
+    let id = group.id.clone();
+    let by = signed.user.id.clone();
+    let email = match form.email.trim() {
+        "" => None,
+        given => Some(given.to_owned()),
+    };
+    let days = policy.invitation_ttl_days;
+
+    let (_, secret) = instance
+        .read(move |connection| {
+            invitations::create(connection, &key, &id, offered, email.as_deref(), &by, days)
+        })
+        .await?;
+
+    let link = instance
+        .settings
+        .public_url
+        .link(&format!("invite/{secret}"));
+    let (_, members, live) = read_space(&instance, &group, &signed).await?;
+
+    let chrome = Chrome::anonymous(
+        group.name.clone(),
+        super::front::instance_name(&instance, &policy),
+    )
+    .signed_in(signed.user.clone(), signed.maintainer);
+
+    Ok(page(
+        &chrome,
+        space_body(&signed, &group, role, &members, &live, Some(&link)),
+    )
+    .into_response())
+}
+
+/// Calls an invitation back.
+pub async fn withdraw(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path((slug, id)): Path<(String, String)>,
+    axum::Form(form): axum::Form<Withdrawal>,
+) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
+
+    let Some(group) = lookup(&instance, &slug).await? else {
+        return Err(WebError::NotFound);
+    };
+
+    let (role, _, _) = read_space(&instance, &group, &signed).await?;
+
+    if !role.is_some_and(GroupRole::can_invite) {
+        return Err(WebError::NotFound);
+    }
+
+    let invitation: InvitationId = id
+        .parse()
+        .map_err(|_| WebError::BadRequest("That is not an invitation.".to_owned()))?;
+    let by = signed.user.id.clone();
+    let group_id = group.id.clone();
+
+    instance
+        .read(move |connection| {
+            match invitations::by_id(connection, &invitation)? {
+                Some(found) if found.group == group_id => {
+                    invitations::revoke(connection, &invitation, &by)?;
+                }
+                _ => {}
+            }
+
+            Ok(())
+        })
+        .await?;
+
+    Ok(Redirect::to(&format!("/g/{slug}")).into_response())
+}
+
+/// The group with this short name.
+async fn lookup(instance: &Instance, slug: &str) -> Result<Option<Group>, WebError> {
+    let Ok(slug) = Slug::parse(slug) else {
+        return Ok(None);
+    };
+
+    instance
+        .read(move |connection| groups::by_slug(connection, &slug))
+        .await
+}
+
+/// What the reader may do here, who else is here, and what links are out.
+async fn read_space(
+    instance: &Instance,
+    group: &Group,
+    signed: &SignedIn,
+) -> Result<(Option<GroupRole>, Vec<Member>, Vec<Invitation>), WebError> {
+    let id = group.id.clone();
+    let user = signed.user.id.clone();
+
+    instance
+        .read(move |connection| {
+            let role = groups::role_of(connection, &id, &user)?;
+            let members = groups::members(connection, &id)?;
+            let live = match role.is_some_and(GroupRole::can_invite) {
+                true => invitations::live_for_group(connection, &id)?,
+                false => Vec::new(),
+            };
+
+            Ok((role, members, live))
+        })
+        .await
+}
+
+/// The group space.
+fn space_body(
+    signed: &SignedIn,
+    group: &Group,
+    role: GroupRole,
+    members: &[Member],
+    invitations: &[Invitation],
+    fresh_link: Option<&str>,
+) -> Markup {
+    html! {
+        div class="stack" {
+            h1 { (group.name) }
+            p class="quiet identifier" { (group.id.to_string()) }
+        }
+
+        div class="block" {
+            p class="label" { "Members · " (members.len()) }
+            ul class="register" {
+                @for member in members {
+                    li {
+                        span class="register__name" { (member.user.display_name) }
+                        span class="quiet identifier" { (member.user.id.to_string()) }
+                        span class="register__aside" { (member.role) }
+                    }
+                }
+            }
+        }
+
+        @if role.can_invite() {
+            (invitations_block(signed, group, role, invitations, fresh_link))
+        }
+    }
+}
+
+/// The invitations out of this group, and the form that makes one.
+fn invitations_block(
+    signed: &SignedIn,
+    group: &Group,
+    role: GroupRole,
+    invitations: &[Invitation],
+    fresh_link: Option<&str>,
+) -> Markup {
+    html! {
+        div class="block" {
+            p class="label" { "Invitations" }
+
+            @if let Some(link) = fresh_link {
+                div class="stack stack--tight" {
+                    p { "Send this link to the person you are inviting. It is shown once." }
+                    p class="secret" { (link) }
+                }
+            }
+
+            @if invitations.is_empty() {
+                p class="empty" { "No invitation is out at the moment." }
+            } @else {
+                ul class="register" {
+                    @for invitation in invitations {
+                        li {
+                            span class="register__name" {
+                                @match &invitation.email {
+                                    Some(email) => (email),
+                                    None => "anybody with the link",
+                                }
+                            }
+                            span class="quiet" { (invitation.role) }
+                            span class="register__aside numeric" {
+                                "until " (invitation.expires_at)
+                            }
+                            form method="post"
+                                 action={ "/g/" (group.slug()) "/invitations/"
+                                          (invitation.id) "/withdraw" } {
+                                (signature(signed))
+                                button class="button button--quiet" type="submit" {
+                                    "Withdraw"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            form method="post" action={ "/g/" (group.slug()) "/invitations" } {
+                (signature(signed))
+
+                div class="field" {
+                    label for="email" { "Their email address, if you know it" }
+                    input type="email" id="email" name="email";
+                    span class="field__hint" {
+                        "Only used to label the invitation, and to send the link where "
+                        "this instance can send mail."
+                    }
+                }
+
+                div class="field" {
+                    label for="role" { "What they will be able to do" }
+                    select id="role" name="role" {
+                        option value="member" { "Member — reads and writes the mathematics" }
+                        @if role.is_at_least(GroupRole::Admin) {
+                            option value="admin" { "Admin — also invites and manages the group" }
+                        }
+                        @if role.is_at_least(GroupRole::Owner) {
+                            option value="owner" { "Owner — also transfers or dissolves it" }
+                        }
+                    }
+                }
+
+                button class="button" type="submit" { "Make an invitation" }
             }
         }
     }

@@ -11,6 +11,7 @@ pub mod cookies;
 pub mod front;
 pub mod groups;
 pub mod home;
+pub mod invite;
 pub mod layout;
 pub mod visitor;
 
@@ -115,6 +116,15 @@ pub fn router() -> Router<Instance> {
             "/groups/new",
             get(groups::request_form).post(groups::request),
         )
+        .route("/g/{slug}", get(groups::space))
+        .route("/g/{slug}/invitations", post(groups::invite))
+        .route(
+            "/g/{slug}/invitations/{id}/withdraw",
+            post(groups::withdraw),
+        )
+        .route("/invite/{secret}", get(invite::offer))
+        .route("/invite/{secret}/join", post(invite::join))
+        .route("/invite/{secret}/register", post(invite::join_and_register))
         .route("/admin", get(admin::area))
         .route(
             "/admin/authenticate",
