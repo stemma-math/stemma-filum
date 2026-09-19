@@ -12,8 +12,31 @@ use serde::{Deserialize, Serialize};
 use crate::actor::{AgentRun, Attribution};
 use crate::fact::{Fact, FactKind};
 use crate::id::{JobId, ProposalId, UserId};
+use crate::job::Outcome;
 use crate::line::{Line, Siglum};
 use crate::source;
+
+/// The one atomic report with which a machine completes a job.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Completion {
+    /// What happened, in the group's typed vocabulary.
+    pub outcome: Outcome,
+    /// The reviewable change, only when one was produced.
+    pub proposal: Option<Offer>,
+}
+
+/// What a machine sends when an agent produced a reviewable change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Offer {
+    /// The complete replacement source.
+    pub source: String,
+    /// Who supplied the agent.
+    pub vendor: String,
+    /// The concrete model the agent reported using.
+    pub model: String,
+    /// Which prompt contract produced it.
+    pub prompt_revision: String,
+}
 
 /// A change awaiting, or having received, a human decision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
