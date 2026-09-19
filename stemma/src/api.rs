@@ -99,6 +99,21 @@ pub struct Node {
     pub agents: Vec<stemma_core::machine::Detected>,
 }
 
+/// Accepted source ready to be written by its author's machine.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AcceptedProposal {
+    /// Complete accepted source.
+    pub source: String,
+    /// Group whose clone holds it.
+    pub group: String,
+    /// Shared or private repository.
+    pub side: String,
+    /// Line directory.
+    pub line: String,
+    /// Exact base commit reviewed.
+    pub commit: String,
+}
+
 /// One job, as the machine that took it is told about it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Handed {
@@ -417,11 +432,34 @@ impl Server {
         &self,
         token: &str,
         job: &str,
-        outcome: &stemma_core::job::Outcome,
+        completion: &stemma_core::proposal::Completion,
     ) -> Result<()> {
-        let _: serde_json::Value = self.ask(token, &format!("/api/jobs/{job}/finish"), outcome)?;
+        let _: serde_json::Value =
+            self.ask(token, &format!("/api/jobs/{job}/finish"), completion)?;
 
         Ok(())
+    }
+
+    /// Fetches a proposal this person accepted and may now write locally.
+    pub fn accepted_proposal(&self, token: &str, proposal: &str) -> Result<AcceptedProposal> {
+        let mut response = self
+            .agent
+            .get(self.url(&format!("/api/proposals/{proposal}")))
+            .header("authorization", format!("Bearer {token}"))
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+        self.check_protocol(response.headers())?;
+        if response.status() != 200 {
+            bail!(
+                "{} would not release that proposal ({})",
+                self.address,
+                response.status()
+            );
+        }
+        response
+            .body_mut()
+            .read_json()
+            .context("the instance answered with something this build does not understand")
     }
 
     /// Puts a job in the queue.

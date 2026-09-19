@@ -18,6 +18,7 @@ pub mod home;
 pub mod jobs;
 pub mod node;
 pub mod pin;
+pub mod proposals;
 pub mod session;
 pub mod sync;
 pub mod work;

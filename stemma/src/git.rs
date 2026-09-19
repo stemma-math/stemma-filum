@@ -156,6 +156,32 @@ pub fn head(repository: &Path) -> Result<String> {
     Ok(run(repository, &["rev-parse", "HEAD"])?.trim().to_owned())
 }
 
+/// Commits one path using the person's ordinary git identity.
+pub fn commit_path(repository: &Path, path: &Path, message: &str) -> Result<()> {
+    let inside = path
+        .strip_prefix(repository)
+        .context("the path is outside the repository")?;
+    run(
+        repository,
+        &[
+            "add",
+            "--",
+            inside.to_str().context("the path is not text")?,
+        ],
+    )?;
+    run(
+        repository,
+        &[
+            "commit",
+            "-m",
+            message,
+            "--",
+            inside.to_str().context("the path is not text")?,
+        ],
+    )?;
+    Ok(())
+}
+
 /// What a file held at one commit.
 ///
 /// Reading the work a job is about goes through git rather than through

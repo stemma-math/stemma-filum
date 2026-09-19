@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use stemma_core::job::{Outcome, Task};
 use stemma_core::line::{BlackBox, Line, Siglum};
+use stemma_core::proposal::Offer;
 use stemma_core::repository::{self, Side};
 
 use crate::agents::{self, Ran};
@@ -30,28 +31,28 @@ pub const PROMPT_REVISION: &str = "1";
 /// Nothing in here fails: every way this can go wrong is one of the
 /// outcomes, because a job that ends in nothing at all leaves the person
 /// who launched it watching a queue.
-pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Outcome {
+pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
     let task: Task = match handed.task.parse() {
         Ok(task) => task,
-        Err(problem) => return Outcome::out_of_reach(problem.to_string()),
+        Err(problem) => return Completed::only(Outcome::out_of_reach(problem.to_string())),
     };
 
     let source = match read_source(home, config, handed) {
         Ok(source) => source,
-        Err(why) => return Outcome::out_of_reach(why),
+        Err(why) => return Completed::only(Outcome::out_of_reach(why)),
     };
 
     let line = match Line::read(&source) {
         Ok(line) => line,
         Err(faults) => {
-            return Outcome::out_of_reach(format!(
+            return Completed::only(Outcome::out_of_reach(format!(
                 "`{}` cannot be read at that commit: {}",
                 handed.line,
                 faults
                     .first()
                     .map(ToString::to_string)
                     .unwrap_or_else(|| "it is not a line".to_owned())
-            ));
+            )));
         }
     };
 
@@ -62,10 +63,69 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Outcome {
         &agents::output_path(home, &handed.job),
     ) {
         Ok(ran) => ran,
-        Err(error) => return Outcome::out_of_reach(format!("{error:#}")),
+        Err(error) => return Completed::only(Outcome::out_of_reach(format!("{error:#}"))),
     };
 
-    became_of(&task, &handed.agent, &ran)
+    let outcome = became_of(&task, &handed.agent, &ran);
+    let proposal = match (&outcome, &ran) {
+        (Outcome::Produced { .. }, Ran::Finished(finished)) => {
+            proposal(&handed.agent, &finished.output)
+        }
+        _ => None,
+    };
+
+    let outcome = match (&outcome, &proposal) {
+        (Outcome::Produced { .. }, None) => Outcome::Broke {
+            code: "malformed_proposal".to_owned(),
+            said: "the agent reported an answer without reviewable source and a concrete model"
+                .to_owned(),
+        },
+        _ => outcome,
+    };
+    Completed { outcome, proposal }
+}
+
+/// Everything this machine returns after doing one job.
+pub struct Completed {
+    /// The typed public outcome.
+    pub outcome: Outcome,
+    /// The source offered for review, when the run produced one.
+    pub proposal: Option<Offer>,
+}
+
+impl Completed {
+    fn only(outcome: Outcome) -> Self {
+        Self {
+            outcome,
+            proposal: None,
+        }
+    }
+}
+
+const PROPOSAL_START: &str = "stemma: proposal";
+const PROPOSAL_END: &str = "stemma: end proposal";
+const MODEL: &str = "stemma: model ";
+
+fn proposal(agent: &str, output: &str) -> Option<Offer> {
+    let start = output.find(PROPOSAL_START)? + PROPOSAL_START.len();
+    let rest = &output[start..];
+    let end = rest.find(PROPOSAL_END)?;
+    let source = rest[..end].trim_matches('\n').to_owned();
+    let model = output
+        .lines()
+        .rev()
+        .find_map(|line| line.trim().strip_prefix(MODEL))?
+        .trim();
+    if source.is_empty() || model.is_empty() {
+        return None;
+    }
+    let vendor = stemma_core::machine::known(agent)?.vendor.to_owned();
+    Some(Offer {
+        source,
+        vendor,
+        model: model.to_owned(),
+        prompt_revision: PROMPT_REVISION.to_owned(),
+    })
 }
 
 /// What a run of an agent came to.
@@ -203,8 +263,10 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str) -> String {
     let _ = writeln!(asked);
     let _ = writeln!(
         asked,
-        "End with one line on its own: `stemma: produced` if you have \
-         something to offer, or `{NOTHING}` if you did not find anything. \
+        "When you have a change to offer, print `stemma: proposal` on its own, \
+         then the complete proposed Typst source, then `stemma: end proposal`. \
+         After it print `stemma: model MODEL-ID` with the concrete model you used, \
+         and finally `stemma: produced`. If you found nothing, end with `{NOTHING}`. \
          Finding nothing is an ordinary answer and a useful one."
     );
 
@@ -365,6 +427,15 @@ mod tests {
             became_of(&task, "claude", &ran),
             Outcome::Produced { .. }
         ));
+    }
+
+    #[test]
+    fn a_proposal_carries_complete_source_and_concrete_attribution() {
+        let output = "notes\nstemma: proposal\n= Better line\n#lemma(id: \"lem:a\")[x]\nstemma: end proposal\nstemma: model claude-opus-5\nstemma: produced\n";
+        let offered = proposal("claude", output).unwrap();
+        assert!(offered.source.starts_with("= Better line"));
+        assert_eq!(offered.vendor, "Anthropic");
+        assert_eq!(offered.model, "claude-opus-5");
     }
 
     #[test]

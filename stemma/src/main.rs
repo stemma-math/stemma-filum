@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Parser;
-use stemma::cli::{Cli, Command, DaemonCommand, JobCommand, NodeCommand};
+use stemma::cli::{Cli, Command, DaemonCommand, JobCommand, NodeCommand, ProposalCommand};
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
 use stemma::session;
@@ -121,6 +121,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             JobCommand::Output { job } => {
                 stemma::jobs::output(&home, &job, &mut out)?;
 
+                Ok(ExitCode::SUCCESS)
+            }
+        },
+
+        Command::Proposal { command } => match command {
+            ProposalCommand::Apply { proposal } => {
+                stemma::proposals::apply(&home, &proposal, &mut out)?;
                 Ok(ExitCode::SUCCESS)
             }
         },

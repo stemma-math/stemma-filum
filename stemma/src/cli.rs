@@ -62,6 +62,13 @@ pub enum Command {
         command: JobCommand,
     },
 
+    /// Applies source already accepted in the review screen.
+    Proposal {
+        /// What to do with it.
+        #[command(subcommand)]
+        command: ProposalCommand,
+    },
+
     /// Says what this machine has, without asking the instance.
     Status,
 
@@ -73,6 +80,16 @@ pub enum Command {
     Credential {
         /// What git wants: `get`, `store` or `erase`.
         action: String,
+    },
+}
+
+/// What can be done with a reviewed proposal.
+#[derive(Debug, Subcommand)]
+pub enum ProposalCommand {
+    /// Writes and commits an accepted proposal on this machine.
+    Apply {
+        /// The accepted proposal to write.
+        proposal: String,
     },
 }
 

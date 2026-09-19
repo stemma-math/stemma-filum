@@ -130,7 +130,8 @@ fn do_one(
     )?;
     out.flush()?;
 
-    let outcome = work::carry_out(home, config, handed);
+    let completed = work::carry_out(home, config, handed);
+    let outcome = &completed.outcome;
 
     writeln!(out, "  {}", outcome.said())?;
 
@@ -147,16 +148,27 @@ fn do_one(
 
     // What the job taught about this machine is worth reporting at
     // once, so the instance stops handing it work it cannot do.
-    remember(agents, &outcome, &handed.agent);
+    remember(agents, outcome, &handed.agent);
 
     server
-        .finish_job(&credentials.token, &handed.job, &outcome)
+        .finish_job(
+            &credentials.token,
+            &handed.job,
+            &stemma_core::proposal::Completion {
+                outcome: completed.outcome.clone(),
+                proposal: completed.proposal.clone(),
+            },
+        )
         .with_context(|| {
             format!(
                 "cannot tell {} how {} ended",
                 credentials.server, handed.job
             )
         })?;
+
+    if completed.proposal.is_some() {
+        writeln!(out, "  a proposal is waiting for review")?;
+    }
 
     Ok(())
 }
