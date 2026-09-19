@@ -15,6 +15,7 @@ pub mod job;
 pub mod line;
 pub mod machine;
 pub mod model;
+pub mod proposal;
 pub mod protocol;
 pub mod repository;
 pub mod source;
