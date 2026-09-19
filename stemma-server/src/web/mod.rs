@@ -13,6 +13,7 @@ pub mod claims;
 pub mod cookies;
 pub mod device;
 pub mod front;
+pub mod graph;
 pub mod groups;
 pub mod home;
 pub mod invite;
@@ -237,6 +238,7 @@ pub fn router() -> Router<Instance> {
         .route("/admin/requests/{id}/approve", post(admin::approve))
         .route("/admin/requests/{id}/decline", post(admin::decline))
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
+        .route(assets::DESCENT_PATH, get(assets::descent))
         .route(assets::FONT_PATH, get(assets::font))
         .fallback(get(not_found))
 }

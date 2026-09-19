@@ -18,8 +18,18 @@ pub const STYLESHEET_PATH: &str = "/assets/stemma.css";
 /// Where the faces are served, one path segment below.
 pub const FONT_PATH: &str = "/assets/fonts/{file}";
 
+/// Where the one script the web has is served.
+pub const DESCENT_PATH: &str = "/assets/descent.js";
+
 /// The stylesheet itself.
 const STYLESHEET: &str = include_str!("../../assets/stemma.css");
+
+/// The drawing, which is the only script the web serves.
+///
+/// Everything else is rendered here; this draws the one thing a server
+/// cannot render as text without lying about it, and the page it is on
+/// keeps the list it would otherwise have shown.
+const DESCENT: &str = include_str!("../../assets/descent.js");
 
 /// The faces the design names, subset to the Latin these pages set.
 ///
@@ -68,6 +78,9 @@ const FONTS: &[(&str, &[u8])] = &[
 /// changed instead of fetching it again.
 static STYLESHEET_TAG: LazyLock<String> = LazyLock::new(|| tag_of(STYLESHEET.as_bytes()));
 
+/// The same, for the drawing.
+static DESCENT_TAG: LazyLock<String> = LazyLock::new(|| tag_of(DESCENT.as_bytes()));
+
 /// The same, for each face.
 static FONT_TAGS: LazyLock<Vec<String>> =
     LazyLock::new(|| FONTS.iter().map(|(_, face)| tag_of(face)).collect());
@@ -91,6 +104,16 @@ pub async fn stylesheet(headers: HeaderMap) -> Response {
         STYLESHEET.as_bytes(),
         "text/css; charset=utf-8",
         &STYLESHEET_TAG,
+    )
+}
+
+/// Serves the drawing.
+pub async fn descent(headers: HeaderMap) -> Response {
+    serve(
+        &headers,
+        DESCENT.as_bytes(),
+        "text/javascript; charset=utf-8",
+        &DESCENT_TAG,
     )
 }
 

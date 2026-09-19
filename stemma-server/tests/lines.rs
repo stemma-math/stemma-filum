@@ -255,3 +255,41 @@ async fn a_line_nobody_has_written_is_not_there() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[tokio::test]
+async fn the_line_carries_its_descent_and_what_it_falls_back_to() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    publish(&mut harness, Side::Shared, "ana", "0123456789abcdef").await;
+
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+
+    assert!(line.says("The descent"));
+    assert!(line.says("descent__canvas"));
+    assert!(line.says("/assets/descent.js"));
+
+    // The placement the drawing works from, and the list it degrades to.
+    assert!(line.says("descent__placement"));
+    assert!(line.says("descent__list"));
+    assert!(line.says("2 statements it rests on"));
+
+    let list = &line.body[line.body.find("descent__list").expect("the list")..];
+    let ends = list.find("</ol>").expect("the end of the list");
+
+    assert!(
+        !list[..ends].contains("lem:kernel"),
+        "the graph never shows what is inside a box"
+    );
+}
+
+#[tokio::test]
+async fn a_page_with_nothing_to_draw_does_not_load_a_drawing() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+
+    let home = harness.get("/").await;
+
+    assert!(!home.says("/assets/descent.js"));
+}

@@ -49,6 +49,37 @@ pub async fn view(
 
     let policy = instance.policy().await?;
     let offers = super::jobs::offers(&instance, &group.id).await?;
+    let bridges = {
+        let id = group.id.clone();
+
+        instance
+            .read(move |connection| {
+                let entries = crate::store::vault::entries(connection, &id)?;
+                let audited = crate::store::vault::bridges(connection, &id)?;
+                let named = |at: &stemma_core::id::VaultEntryId| {
+                    entries
+                        .iter()
+                        .find(|entry| &entry.entry.id == at)
+                        .map(|entry| entry.entry.siglum.clone())
+                };
+
+                Ok(audited
+                    .iter()
+                    // A withdrawn substitution stops being offered; the
+                    // graph stops showing it as a licence for the same
+                    // reason.
+                    .filter(|held| {
+                        held.bridge.correspondence
+                            != stemma_core::model::Correspondence::AuditWithdrawn
+                    })
+                    .filter_map(|held| {
+                        Some((named(&held.bridge.left)?, named(&held.bridge.right)?))
+                    })
+                    .collect::<Vec<_>>())
+            })
+            .await?
+    };
+
     let writing = {
         let id = group.id.clone();
         let name = name.clone();
@@ -61,7 +92,8 @@ pub async fn view(
         digest.shown_as().to_owned(),
         super::front::instance_name(&instance, &policy),
     )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    .signed_in(signed.user.clone(), signed.maintainer)
+    .drawing();
 
     let launchers = Anchored {
         signed: &signed,
@@ -74,15 +106,16 @@ pub async fn view(
 
     Ok(page(
         &chrome,
-        body(
-            &group,
+        body(&Viewing {
+            group: &group,
             side,
-            &digest,
-            &nodes,
-            &launchers,
-            writing.as_ref(),
-            &signed,
-        ),
+            digest: &digest,
+            nodes: &nodes,
+            launchers: &launchers,
+            writing: writing.as_ref(),
+            signed: &signed,
+            bridges: &bridges,
+        }),
     )
     .into_response())
 }
@@ -190,16 +223,38 @@ impl Anchored<'_> {
     }
 }
 
-/// The line itself.
-fn body(
-    group: &Group,
+/// Everything one reading of a line needs.
+struct Viewing<'a> {
+    /// Whose group it is.
+    group: &'a Group,
+    /// Which of its repositories.
     side: Side,
-    digest: &LineDigest,
-    nodes: &Nodes,
-    launchers: &Anchored<'_>,
-    writing: Option<&Claim>,
-    signed: &SignedIn,
-) -> Markup {
+    /// The line, as the last machine to build it left it.
+    digest: &'a LineDigest,
+    /// Everything that build read.
+    nodes: &'a Nodes,
+    /// The launchers anchored to the mathematics.
+    launchers: &'a Anchored<'a>,
+    /// The machine writing it, if one is.
+    writing: Option<&'a Claim>,
+    /// Who is reading.
+    signed: &'a SignedIn,
+    /// The audited substitutions between this line's definitions.
+    bridges: &'a [(stemma_core::line::Siglum, stemma_core::line::Siglum)],
+}
+
+/// The line itself.
+fn body(viewing: &Viewing<'_>) -> Markup {
+    let Viewing {
+        group,
+        side,
+        digest,
+        nodes,
+        launchers,
+        writing,
+        signed,
+        bridges,
+    } = *viewing;
     let boxes = digest.line.boxes();
     let central = digest.line.central();
 
@@ -212,6 +267,8 @@ fn body(
             h1 { (digest.shown_as()) }
             p class="quiet identifier" { "lines/" (digest.name) }
         }
+
+        (super::graph::drawn(digest, bridges))
 
         div class="apparatus" {
             div class="apparatus__gutter" {
