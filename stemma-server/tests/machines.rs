@@ -217,6 +217,30 @@ async fn a_machine_registers_once_and_says_what_it_found() {
 }
 
 #[tokio::test]
+async fn a_group_member_can_list_deliberate_machine_choices() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+
+    let token = harness.credential("ana").await;
+    let machine = offer_a_machine(&mut harness, &token, "ana's laptop").await;
+    let choices = parsed(
+        &harness
+            .get_with_token("/api/groups/algebra/machines", &token)
+            .await,
+    );
+
+    assert_eq!(choices["machines"][0]["machine"], machine);
+    assert_eq!(choices["machines"][0]["label"], "ana's laptop");
+    assert_eq!(choices["machines"][0]["presence"], "awake");
+    assert_eq!(choices["machines"][0]["agents"][0]["agent"], "claude");
+    assert_eq!(
+        choices["machines"][0]["agents"][1]["availability"],
+        "not_installed"
+    );
+}
+
+#[tokio::test]
 async fn a_job_launched_from_a_line_is_taken_by_the_machine_that_was_chosen() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;

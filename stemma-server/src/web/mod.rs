@@ -200,6 +200,7 @@ pub fn router() -> Router<Instance> {
         .route("/api/machines/beat", post(machines::beat))
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
+        .route("/api/groups/{group}/machines", get(jobs::machine_choices))
         .route("/api/jobs/{id}/finish", post(jobs::finish))
         .route("/api/proposals/{id}", get(proposals::accepted))
         .route("/proposals/{id}", get(proposals::review))

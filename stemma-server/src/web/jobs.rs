@@ -84,6 +84,34 @@ pub async fn offers(instance: &Instance, group: &GroupId) -> Result<Vec<Offer>, 
         .await
 }
 
+/// Lists the deliberate machine-and-agent choices for a group client.
+pub async fn machine_choices(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(group): Path<String>,
+) -> Result<Response, WebError> {
+    let slug = Slug::parse(&group).map_err(|_| WebError::NotFound)?;
+    let group = GroupId::new(slug);
+    let reader = credential.user.id;
+    let admitted = instance
+        .read({
+            let group = group.clone();
+            move |c| groups::role_of(c, &group, &reader)
+        })
+        .await?;
+    if admitted.is_none() {
+        return Err(WebError::NotFound);
+    }
+    let offers = offers(&instance, &group).await?;
+    Ok(
+        Json(json!({ "machines": offers.into_iter().map(|offer| json!({
+        "machine": offer.machine.id.to_string(), "label": offer.machine.label,
+        "presence": offer.machine.presence.as_str(), "agents": offer.agents
+    })).collect::<Vec<_>>() }))
+        .into_response(),
+    )
+}
+
 /// Hands the machine asking whatever it may have next.
 pub async fn take(
     State(instance): State<Instance>,
