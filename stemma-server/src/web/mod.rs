@@ -8,6 +8,7 @@ pub mod admin;
 pub mod assets;
 pub mod auth;
 pub mod cookies;
+pub mod device;
 pub mod front;
 pub mod groups;
 pub mod home;
@@ -127,6 +128,9 @@ pub fn router() -> Router<Instance> {
         .route("/invite/{secret}/join", post(invite::join))
         .route("/invite/{secret}/register", post(invite::join_and_register))
         .route("/reset/{secret}", get(reset::form).post(reset::set))
+        .route("/device", get(device::form).post(device::answer))
+        .route("/api/device/start", post(device::start))
+        .route("/api/device/collect", post(device::collect))
         .route("/admin", get(admin::area))
         .route(
             "/admin/authenticate",

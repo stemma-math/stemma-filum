@@ -1,4 +1,8 @@
 //! An instance to make requests against.
+//!
+//! Shared by every test file, so each one uses a part of it.
+
+#![allow(dead_code)]
 
 use std::path::PathBuf;
 
@@ -71,6 +75,17 @@ impl Harness {
             .request("POST", path)
             .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body(Body::from(body))
+            .expect("a request");
+
+        self.send(request).await
+    }
+
+    /// Sends what a program on a machine sends, which is JSON.
+    pub async fn post_json(&mut self, path: &str, body: &str) -> Page {
+        let request = self
+            .request("POST", path)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned()))
             .expect("a request");
 
         self.send(request).await
