@@ -75,6 +75,12 @@ pub struct Declaration {
     pub arguments: BTreeMap<String, Value>,
     /// Where it starts, counting from one.
     pub line: usize,
+    /// Everything it occupies, from its `#` to its last bracket.
+    ///
+    /// A resolver lifts one declaration out of a document and sets
+    /// another in its place, which needs the whole of it and not only
+    /// the part between the brackets.
+    pub span: Range<usize>,
     /// What is between its brackets, if it has any.
     pub body: Option<Range<usize>>,
 }
@@ -291,6 +297,7 @@ impl<'a> Scanner<'a> {
             environment: name.to_owned(),
             arguments,
             line,
+            span: start..self.at,
             body,
         }))
     }
@@ -614,6 +621,17 @@ mod tests {
         .unwrap();
 
         assert_eq!(declarations.len(), 1);
+    }
+
+    #[test]
+    fn a_declaration_says_where_the_whole_of_it_is() {
+        let source = "before\n#lemma(id: \"lem:one\")[A step.]\nafter";
+        let found = read(source).unwrap();
+
+        assert_eq!(
+            &source[found[0].span.clone()],
+            "#lemma(id: \"lem:one\")[A step.]"
+        );
     }
 
     #[test]

@@ -56,10 +56,25 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
         }
     };
 
+    let other = match &task {
+        Task::Reconcile => match handed.against.as_deref() {
+            Some(commit) => match read_at(home, config, handed, commit) {
+                Ok(other) => Some(other),
+                Err(why) => return Completed::only(Outcome::out_of_reach(why)),
+            },
+            None => {
+                return Completed::only(Outcome::out_of_reach(
+                    "this job names no second version to reconcile with".to_owned(),
+                ));
+            }
+        },
+        _ => None,
+    };
+
     let ran = match agents::run(
         config,
         &handed.agent,
-        &prompt(handed, &task, &line, &source),
+        &prompt(handed, &task, &line, &source, other.as_deref()),
         &agents::output_path(home, &handed.job),
     ) {
         Ok(ran) => ran,
@@ -245,24 +260,30 @@ fn nothing_found(task: &Task) -> &'static str {
         Task::Verify { .. } => "no Lean argument was found",
         Task::Promote { .. } => "no justified promotion was found",
         Task::Explore => "nothing to suggest",
+        Task::Reconcile => "no reconciliation was found",
     }
 }
 
 /// The source of the line a job is about, at the commit it names.
 fn read_source(home: &Home, config: &Config, handed: &Handed) -> Result<String, String> {
+    read_at(home, config, handed, &handed.commit)
+}
+
+/// The source of the same line at any commit the job names.
+fn read_at(home: &Home, config: &Config, handed: &Handed, commit: &str) -> Result<String, String> {
     let clone = clone_of(home, config, handed)
         .ok_or_else(|| format!("this machine has no clone of {}", handed.group))?;
 
-    if !crate::git::holds(&clone, &handed.commit) {
+    if !crate::git::holds(&clone, commit) {
         // One fetch, in case the commit landed after the last sync. The
         // tree is left exactly as it was: nothing here resets anything.
         let _ = crate::git::fetch(&clone);
     }
 
-    if !crate::git::holds(&clone, &handed.commit) {
+    if !crate::git::holds(&clone, commit) {
         return Err(format!(
             "this machine does not have commit {} of {}",
-            short(&handed.commit),
+            short(commit),
             handed.group
         ));
     }
@@ -274,7 +295,7 @@ fn read_source(home: &Home, config: &Config, handed: &Handed) -> Result<String, 
         repository::ENTRY
     );
 
-    crate::git::show(&clone, &handed.commit, &inside)
+    crate::git::show(&clone, commit, &inside)
         .map_err(|_| format!("`{}` is not in that commit", handed.line))
 }
 
@@ -298,7 +319,7 @@ fn clone_of(home: &Home, config: &Config, handed: &Handed) -> Option<PathBuf> {
 /// The rules come first because they are the point: what the line rests
 /// on is frozen, the interior of a box is the agent's, and an absence of
 /// a refutation is evidence of nothing.
-fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str) -> String {
+fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option<&str>) -> String {
     let mut asked = String::new();
 
     let _ = writeln!(
@@ -327,7 +348,7 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str) -> String {
     let _ = writeln!(asked, "{}", source.trim());
     let _ = writeln!(asked, "----------------------------------------");
     let _ = writeln!(asked);
-    let _ = writeln!(asked, "{}", asked_of(task, line));
+    let _ = writeln!(asked, "{}", asked_of(task, line, other));
     let _ = writeln!(asked);
     let _ = writeln!(
         asked,
@@ -343,7 +364,7 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str) -> String {
 }
 
 /// The one thing this job asks for.
-fn asked_of(task: &Task, line: &Line) -> String {
+fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
     match task {
         Task::Fill { after } => {
             let between = line
@@ -390,6 +411,19 @@ fn asked_of(task: &Task, line: &Line) -> String {
         Task::Explore => "Say where this line could go next: what is worth stating, \
                           and why it follows from what is already here."
             .to_owned(),
+        Task::Reconcile => format!(
+            "Two of this person's machines wrote this line, and the versions have parted. \
+             Bring them together into one source that keeps everything either version \
+             established and says, for every statement they write differently, the version \
+             that is right. Central statements stay exactly as they are in both. You are \
+             offering a proposal, not settling it: a person decides.\n\
+             \n\
+             The other version:\n\
+             ----------------------------------------\n\
+             {}\n\
+             ----------------------------------------",
+            other.unwrap_or("it is not here").trim()
+        ),
     }
 }
 
@@ -445,6 +479,7 @@ mod tests {
             side: "shared".to_owned(),
             line: "quotient-groups".to_owned(),
             commit: "0123456789abcdef".to_owned(),
+            against: None,
             task: task.to_owned(),
             agent: "claude".to_owned(),
             launched_by: "usr:ana".to_owned(),
@@ -458,7 +493,7 @@ mod tests {
     #[test]
     fn a_box_is_asked_for_by_both_its_ends() {
         let task: Task = "fill@thm:first".parse().unwrap();
-        let asked = asked_of(&task, &line());
+        let asked = asked_of(&task, &line(), None);
 
         assert!(
             asked.contains("between `thm:first` and `thm:second`"),
@@ -466,13 +501,13 @@ mod tests {
         );
 
         let first: Task = "fill".parse().unwrap();
-        assert!(asked_of(&first, &line()).contains("between the start of the line"));
+        assert!(asked_of(&first, &line(), None).contains("between the start of the line"));
     }
 
     #[test]
     fn the_prompt_says_what_an_agent_may_not_touch() {
         let task: Task = "fill@thm:first".parse().unwrap();
-        let asked = prompt(&handed("fill@thm:first"), &task, &line(), SOURCE);
+        let asked = prompt(&handed("fill@thm:first"), &task, &line(), SOURCE, None);
 
         assert!(asked.contains("Do not change its text"));
         assert!(asked.contains("thm:second"));
@@ -482,7 +517,7 @@ mod tests {
     #[test]
     fn an_agent_looking_for_a_counterexample_is_told_what_not_finding_one_means() {
         let task: Task = "refute@thm:first".parse().unwrap();
-        let asked = asked_of(&task, &line());
+        let asked = asked_of(&task, &line(), None);
 
         assert!(asked.contains("settles nothing"));
     }

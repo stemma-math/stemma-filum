@@ -59,6 +59,11 @@ pub enum Task {
     },
     /// Say where the line could go next.
     Explore,
+    /// Bring two versions of this line together.
+    ///
+    /// What comes back is a proposal like any other: an agent may offer
+    /// a reconciliation, and a person signs it or does not.
+    Reconcile,
 }
 
 impl Task {
@@ -71,6 +76,7 @@ impl Task {
             Self::Verify { .. } => "verify this box in Lean",
             Self::Promote { .. } => "promote this statement",
             Self::Explore => "say where the line could go next",
+            Self::Reconcile => "bring the two versions together",
         }
     }
 
@@ -82,7 +88,7 @@ impl Task {
             Self::Formalize { statement } => Some(statement),
             Self::Verify { after } => after.as_ref(),
             Self::Promote { statement } => Some(statement),
-            Self::Explore => None,
+            Self::Explore | Self::Reconcile => None,
         }
     }
 
@@ -106,6 +112,7 @@ impl fmt::Display for Task {
             Self::Verify { after: Some(node) } => write!(f, "verify@{node}"),
             Self::Promote { statement } => write!(f, "promote@{statement}"),
             Self::Explore => f.write_str("explore"),
+            Self::Reconcile => f.write_str("reconcile"),
         }
     }
 }
@@ -153,6 +160,7 @@ impl FromStr for Task {
             }),
             ("promote", None) => Err(BadTask::Unanchored(input.to_owned())),
             ("explore", _) => Ok(Self::Explore),
+            ("reconcile", _) => Ok(Self::Reconcile),
             _ => Err(BadTask::Unknown(verb.to_owned())),
         }
     }
@@ -464,6 +472,16 @@ mod tests {
             .to_string(),
             "formalize@thm:main"
         );
+    }
+
+    #[test]
+    fn bringing_two_versions_together_is_about_the_line_and_not_one_statement() {
+        let task: Task = "reconcile".parse().unwrap();
+
+        assert_eq!(task, Task::Reconcile);
+        assert_eq!(task.to_string(), "reconcile");
+        assert_eq!(task.anchor(), None);
+        assert!(!task.is_aimed_at_a_central_statement());
     }
 
     #[test]

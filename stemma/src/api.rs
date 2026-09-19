@@ -187,6 +187,9 @@ pub struct Handed {
     pub line: String,
     /// The commit to work against.
     pub commit: String,
+    /// The other version, when the job is to bring two of them together.
+    #[serde(default)]
+    pub against: Option<String>,
     /// What is being asked.
     pub task: String,
     /// Which agent to use.
