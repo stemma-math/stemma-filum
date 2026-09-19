@@ -16,6 +16,7 @@ pub mod daemon;
 pub mod git;
 pub mod home;
 pub mod jobs;
+pub mod lean;
 pub mod node;
 pub mod pin;
 pub mod proposals;

@@ -74,6 +74,33 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
         _ => None,
     };
 
+    if matches!(task, Task::Formalize { .. } | Task::Verify { .. }) {
+        let checked = proposal
+            .as_ref()
+            .and_then(|offer| offer.lean_source.as_deref())
+            .ok_or_else(|| "the agent offered no complete Lean module".to_owned())
+            .and_then(|lean_source| {
+                let clone = clone_of(home, config, handed)
+                    .ok_or_else(|| "this machine has no matching clone".to_owned())?;
+                let manifest = crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
+                crate::lean::check_offered(
+                    &clone,
+                    &manifest.pins,
+                    lean_source,
+                    &home
+                        .cache_dir()
+                        .join("lean")
+                        .join(format!("{}.lean", handed.job)),
+                )
+            });
+        if let Err(said) = checked {
+            return Completed::only(Outcome::Broke {
+                code: "lean_rejected".to_owned(),
+                said,
+            });
+        }
+    }
+
     let outcome = match (&outcome, &proposal) {
         (Outcome::Produced { .. }, None) => Outcome::Broke {
             code: "malformed_proposal".to_owned(),
@@ -104,6 +131,8 @@ impl Completed {
 
 const PROPOSAL_START: &str = "stemma: proposal";
 const PROPOSAL_END: &str = "stemma: end proposal";
+const LEAN_START: &str = "stemma: lean";
+const LEAN_END: &str = "stemma: end lean";
 const MODEL: &str = "stemma: model ";
 
 fn proposal(agent: &str, output: &str) -> Option<Offer> {
@@ -122,10 +151,17 @@ fn proposal(agent: &str, output: &str) -> Option<Offer> {
     let vendor = stemma_core::machine::known(agent)?.vendor.to_owned();
     Some(Offer {
         source,
+        lean_source: section(output, LEAN_START, LEAN_END),
         vendor,
         model: model.to_owned(),
         prompt_revision: PROMPT_REVISION.to_owned(),
     })
+}
+
+fn section(output: &str, start: &str, end: &str) -> Option<String> {
+    let rest = &output[output.find(start)? + start.len()..];
+    let text = rest[..rest.find(end)?].trim_matches('\n').to_owned();
+    (!text.is_empty()).then_some(text)
 }
 
 /// What a run of an agent came to.
@@ -176,6 +212,8 @@ fn nothing_found(task: &Task) -> &'static str {
         // Never "the statement holds". An absence of a refutation is
         // evidence of nothing, and the words have to say so.
         Task::Refute { .. } => "no counterexample was found, which settles nothing",
+        Task::Formalize { .. } => "no formalization was found",
+        Task::Verify { .. } => "no Lean argument was found",
         Task::Explore => "nothing to suggest",
     }
 }
@@ -265,7 +303,8 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str) -> String {
         asked,
         "When you have a change to offer, print `stemma: proposal` on its own, \
          then the complete proposed Typst source, then `stemma: end proposal`. \
-         After it print `stemma: model MODEL-ID` with the concrete model you used, \
+         If Lean changes, then print `stemma: lean`, the complete `Main.lean` module, \
+         and `stemma: end lean`. After it print `stemma: model MODEL-ID` with the concrete model you used, \
          and finally `stemma: produced`. If you found nothing, end with `{NOTHING}`. \
          Finding nothing is an ordinary answer and a useful one."
     );
@@ -294,6 +333,25 @@ fn asked_of(task: &Task, line: &Line) -> String {
              that settles nothing and you must not say it does: say only that you \
              did not find one."
         ),
+        Task::Formalize { statement } => format!(
+            "Formalize `{statement}` in Lean. Keep its prose fixed. The Lean module must include \
+             the exact marker `-- stemma: verifies {statement}` immediately above the declaration."
+        ),
+        Task::Verify { after } => {
+            let between = line
+                .boxes()
+                .into_iter()
+                .find(|black_box| &black_box.after == after);
+            match between {
+                Some(black_box) => format!(
+                    "Write a Lean argument verifying every statement in the black box {}. \
+                     Mark each compiled statement with `-- stemma: verifies SIGLUM`.",
+                    bounded(&black_box)
+                ),
+                None => "The black box to verify is no longer there. Say so rather than guessing."
+                    .to_owned(),
+            }
+        }
         Task::Explore => "Say where this line could go next: what is worth stating, \
                           and why it follows from what is already here."
             .to_owned(),

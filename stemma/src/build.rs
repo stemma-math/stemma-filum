@@ -139,12 +139,15 @@ pub fn read(clone: &Path) -> Result<Built> {
             .with_context(|| format!("cannot read {}", source_path.display()))?;
 
         match Line::read(&text) {
-            Ok(line) => nodes.lines.push(LineDigest {
-                name,
-                title: source::title(&text),
-                line,
-                lean: None,
-            }),
+            Ok(line) => {
+                let lean = crate::lean::check(clone, &name, &manifest.pins)?;
+                nodes.lines.push(LineDigest {
+                    name,
+                    title: source::title(&text),
+                    line,
+                    lean,
+                });
+            }
             Err(found) => faults.push(Faulty {
                 name,
                 source: source_path,

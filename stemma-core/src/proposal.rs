@@ -30,6 +30,9 @@ pub struct Completion {
 pub struct Offer {
     /// The complete replacement source.
     pub source: String,
+    /// The complete Lean module beside the source, when formal work changed.
+    #[serde(default)]
+    pub lean_source: Option<String>,
     /// Who supplied the agent.
     pub vendor: String,
     /// The concrete model the agent reported using.

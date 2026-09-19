@@ -104,6 +104,9 @@ pub struct Node {
 pub struct AcceptedProposal {
     /// Complete accepted source.
     pub source: String,
+    /// Complete accepted Lean module, when formal work changed.
+    #[serde(default)]
+    pub lean_source: Option<String>,
     /// Group whose clone holds it.
     pub group: String,
     /// Shared or private repository.

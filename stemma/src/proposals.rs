@@ -45,7 +45,20 @@ pub fn apply(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
         .join(repository::ENTRY);
     std::fs::write(&path, &accepted.source)
         .with_context(|| format!("cannot write {}", path.display()))?;
-    crate::git::commit_path(&clone, &path, &format!("Apply proposal {proposal}"))?;
+    let mut paths = vec![path];
+    if let Some(lean_source) = accepted.lean_source {
+        let lean_path = repository::line_lean_entry(
+            &clone,
+            &accepted
+                .line
+                .parse()
+                .context("the proposal names no line")?,
+        );
+        std::fs::write(&lean_path, lean_source)
+            .with_context(|| format!("cannot write {}", lean_path.display()))?;
+        paths.push(lean_path);
+    }
+    crate::git::commit_paths(&clone, &paths, &format!("Apply proposal {proposal}"))?;
     writeln!(
         out,
         "Applied {proposal} to {}/{}.",

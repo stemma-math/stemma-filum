@@ -158,27 +158,26 @@ pub fn head(repository: &Path) -> Result<String> {
 
 /// Commits one path using the person's ordinary git identity.
 pub fn commit_path(repository: &Path, path: &Path, message: &str) -> Result<()> {
-    let inside = path
-        .strip_prefix(repository)
-        .context("the path is outside the repository")?;
-    run(
-        repository,
-        &[
-            "add",
-            "--",
-            inside.to_str().context("the path is not text")?,
-        ],
-    )?;
-    run(
-        repository,
-        &[
-            "commit",
-            "-m",
-            message,
-            "--",
-            inside.to_str().context("the path is not text")?,
-        ],
-    )?;
+    commit_paths(repository, &[path.to_owned()], message)
+}
+
+/// Commits several paths atomically using the person's ordinary git identity.
+pub fn commit_paths(repository: &Path, paths: &[PathBuf], message: &str) -> Result<()> {
+    let inside = paths
+        .iter()
+        .map(|path| {
+            path.strip_prefix(repository)
+                .context("the path is outside the repository")?
+                .to_str()
+                .context("the path is not text")
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut add = vec!["add", "--"];
+    add.extend(inside.iter().copied());
+    run(repository, &add)?;
+    let mut commit = vec!["commit", "-m", message, "--"];
+    commit.extend(inside.iter().copied());
+    run(repository, &commit)?;
     Ok(())
 }
 
