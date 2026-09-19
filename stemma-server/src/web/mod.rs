@@ -22,6 +22,7 @@ pub mod machines;
 pub mod proposals;
 pub mod reset;
 pub mod transport;
+pub mod vault;
 pub mod visitor;
 
 use std::sync::{Arc, Mutex};
@@ -167,6 +168,12 @@ pub fn router() -> Router<Instance> {
             get(groups::request_form).post(groups::request),
         )
         .route("/g/{slug}", get(groups::space))
+        .route("/g/{slug}/vault", get(vault::page_view))
+        .route("/g/{slug}/vault/entries", post(vault::admit))
+        .route("/g/{slug}/vault/bridges", post(vault::bridge))
+        .route("/g/{slug}/vault/audits", post(vault::audit))
+        .route("/g/{slug}/vault/obligations", post(vault::assign))
+        .route("/audit-obligations/{id}/decide", post(vault::decide))
         .route("/g/{slug}/{side}/{line}", get(lines::view))
         .route("/g/{slug}/{side}/{line}/jobs", post(jobs::launch))
         .route("/g/{slug}/invitations", post(groups::invite))

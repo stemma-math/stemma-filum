@@ -98,6 +98,9 @@ pub enum GuardError {
     /// What it declares it leans on changed.
     #[error("the proposal changes what central statement `{0}` uses")]
     ChangedUses(Siglum),
+    /// Which audited substitutions it relies on changed.
+    #[error("the proposal changes the vault bridges central statement `{0}` uses")]
+    ChangedBridges(Siglum),
 }
 
 /// Checks that an agent left every existing central statement frozen.
@@ -120,6 +123,9 @@ pub fn preserves_central_statements(base: &str, offered: &str) -> Result<(), Gua
         }
         if central.uses != after.uses {
             return Err(GuardError::ChangedUses(central.siglum.clone()));
+        }
+        if central.bridges != after.bridges {
+            return Err(GuardError::ChangedBridges(central.siglum.clone()));
         }
     }
 

@@ -17,6 +17,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+use crate::id::{BridgeId, UserId};
 use crate::model::{BoxState, Centrality};
 use crate::source::{self, Declaration};
 
@@ -271,6 +272,12 @@ pub struct Node {
     pub centrality: Centrality,
     /// What it leans on.
     pub uses: Vec<Siglum>,
+    /// Audited substitution licences this statement relies on.
+    #[serde(default)]
+    pub bridges: Vec<BridgeId>,
+    /// The person responsible for downstream decisions, when declared.
+    #[serde(default)]
+    pub author: Option<UserId>,
     /// Whether the source carries a proof of it.
     pub proved: bool,
     /// Which line of the source declares it, counting from one.
@@ -519,6 +526,33 @@ fn collect(declarations: &[Declaration]) -> (Vec<Node>, Vec<Fault>) {
             }
         }
 
+        let mut bridges = Vec::new();
+        for written in declaration.list("bridges") {
+            match written.parse::<BridgeId>() {
+                Ok(bridge) => bridges.push(bridge),
+                Err(why) => faults.push(Fault::BadBridge {
+                    written,
+                    at: declaration.line,
+                    why: why.to_string(),
+                }),
+            }
+        }
+
+        let author = match declaration.text("author") {
+            Some(written) => match written.parse::<UserId>() {
+                Ok(author) => Some(author),
+                Err(why) => {
+                    faults.push(Fault::BadAuthor {
+                        written: written.to_owned(),
+                        at: declaration.line,
+                        why: why.to_string(),
+                    });
+                    None
+                }
+            },
+            None => None,
+        };
+
         nodes.push(Node {
             siglum,
             name: declaration.text("name").map(str::to_owned),
@@ -527,6 +561,8 @@ fn collect(declarations: &[Declaration]) -> (Vec<Node>, Vec<Fault>) {
                 _ => Centrality::Ordinary,
             },
             uses,
+            bridges,
+            author,
             proved: false,
             at: declaration.line,
         });
@@ -681,6 +717,28 @@ pub enum Fault {
         why: BadSiglum,
     },
 
+    /// A vault bridge identifier that will not do.
+    #[error("line {at}: `{written}` is not a bridge identifier: {why}")]
+    BadBridge {
+        /// What was written.
+        written: String,
+        /// Where it is.
+        at: usize,
+        /// Why it will not do.
+        why: String,
+    },
+
+    /// An author identifier that will not do.
+    #[error("line {at}: `{written}` is not a user identifier: {why}")]
+    BadAuthor {
+        /// What was written.
+        written: String,
+        /// Where it is.
+        at: usize,
+        /// Why it will not do.
+        why: String,
+    },
+
     /// A siglum whose kind is not the environment's.
     #[error("line {at}: `{siglum}` is declared as a {declared}, and its name says otherwise")]
     KindDisagrees {
@@ -754,6 +812,8 @@ impl Fault {
             Self::Malformed(problem) => Some(problem.line),
             Self::Nameless { at, .. }
             | Self::BadSiglum { at, .. }
+            | Self::BadBridge { at, .. }
+            | Self::BadAuthor { at, .. }
             | Self::KindDisagrees { at, .. }
             | Self::Twice { at, .. }
             | Self::Unknown { at, .. }

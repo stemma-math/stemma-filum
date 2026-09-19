@@ -28,12 +28,13 @@ pub async fn home(
     let name = super::front::instance_name(&instance, &policy);
 
     let user = signed.user.id.clone();
-    let (memberships, requests, proposals) = instance
+    let (memberships, requests, proposals, obligations) = instance
         .read(move |connection| {
             Ok((
                 groups::for_user(connection, &user)?,
                 groups::requests_by(connection, &user)?,
                 proposals::awaiting(connection, &user)?,
+                crate::store::vault::obligations(connection, &user)?,
             ))
         })
         .await?;
@@ -52,6 +53,7 @@ pub async fn home(
             &requests,
             &machines,
             &proposals,
+            &obligations,
             policy.group_requests_open,
         ),
     )
@@ -65,6 +67,7 @@ fn body(
     requests: &[Request],
     machines: &[(crate::store::machines::Machine, usize)],
     proposals: &[Proposal],
+    obligations: &[crate::store::vault::Obligation],
     may_ask: bool,
 ) -> Markup {
     html! {
@@ -116,6 +119,26 @@ fn body(
                             }
                             span class="quiet identifier" { (proposal.job.line) " · " (proposal.model) }
                         }
+                    }
+                }
+            }
+        }
+
+        @if !obligations.is_empty() {
+            div class="block" {
+                p class="label" { "Decisions you owe · " (obligations.len()) }
+                @for obligation in obligations {
+                    form method="post" action={ "/audit-obligations/" (obligation.id) "/decide" } {
+                        (super::layout::signature(signed))
+                        p { "The audit of bridge " code { (obligation.bridge) } " was withdrawn; "
+                            code { (obligation.statement) } " depends on it." }
+                        select name="decision" {
+                            option value="stands" { "It stands as it is" }
+                            option value="rewrite" { "I will rewrite it" }
+                            option value="waiting_for_audit" { "I am waiting for another audit" }
+                        }
+                        input name="note" placeholder="Record why" required;
+                        button class="button" { "Record signed decision" }
                     }
                 }
             }

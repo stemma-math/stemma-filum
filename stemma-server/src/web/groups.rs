@@ -495,6 +495,11 @@ fn space_body(
         (lines_block(group, work))
 
         div class="block" {
+            p class="label" { "Mathematical base" }
+            p { a href={ "/g/" (group.slug()) "/vault" } { "Open the group vault" } }
+        }
+
+        div class="block" {
             p class="label" { "Members · " (members.len()) }
             ul class="register" {
                 @for member in members {
