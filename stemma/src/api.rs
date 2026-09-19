@@ -114,6 +114,24 @@ pub struct AcceptedProposal {
     pub commit: String,
 }
 
+/// One machine offered as a deliberate choice for a group.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OfferedMachine {
+    /// Stable machine identifier.
+    pub machine: String,
+    /// Owner-given label.
+    pub label: String,
+    /// Awake or asleep.
+    pub presence: String,
+    /// Every known agent, including unavailable ones with their reason.
+    pub agents: Vec<stemma_core::machine::Detected>,
+}
+
+#[derive(Deserialize)]
+struct MachineChoices {
+    machines: Vec<OfferedMachine>,
+}
+
 /// One job, as the machine that took it is told about it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Handed {
@@ -494,6 +512,25 @@ impl Server {
 
         serde_json::from_value(answer["jobs"].clone())
             .context("the instance answered with something this build does not understand")
+    }
+
+    /// Machines serving a group, for a conscious launcher choice.
+    pub fn machines(&self, token: &str, group: &str) -> Result<Vec<OfferedMachine>> {
+        let mut response = self
+            .agent
+            .get(self.url(&format!("/api/groups/{group}/machines")))
+            .header("authorization", format!("Bearer {token}"))
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+        self.check_protocol(response.headers())?;
+        if response.status() != 200 {
+            bail!("{} answered with {}", self.address, response.status());
+        }
+        Ok(response
+            .body_mut()
+            .read_json::<MachineChoices>()
+            .context("the instance answered with something this build does not understand")?
+            .machines)
     }
 
     /// Sends something as this machine, and reads the answer.
