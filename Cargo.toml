@@ -31,6 +31,7 @@ tower = { version = "0.5", features = ["util"] }
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ureq = { version = "3", default-features = false, features = ["json", "rustls"] }
 ulid = { version = "1", features = ["serde"] }
 url = { version = "2", features = ["serde"] }
 

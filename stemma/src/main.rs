@@ -1,29 +1,66 @@
-//! The `stemma` command: the client researchers install on their own machine.
+//! The `stemma` command: the client researchers install on their own
+//! machine.
 
+use std::io::Write;
 use std::process::ExitCode;
 
-use stemma_core::PROTOCOL_VERSION;
-
-/// The name the command reports itself under.
-const NAME: &str = "stemma";
-
-/// The version of this build.
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+use anyhow::Result;
+use clap::Parser;
+use stemma::cli::{Cli, Command};
+use stemma::credentials::Credentials;
+use stemma::home::{Environment, Home};
+use stemma::session;
 
 fn main() -> ExitCode {
-    match std::env::args().nth(1).as_deref() {
-        None => {
-            println!("{NAME} {VERSION}, speaking protocol {PROTOCOL_VERSION}.");
-            println!("This build has no commands yet.");
-            ExitCode::SUCCESS
+    match run(Cli::parse()) {
+        Ok(code) => code,
+        Err(error) => {
+            eprintln!("stemma: {error:#}");
+            ExitCode::FAILURE
         }
-        Some("--version" | "-V") => {
-            println!("{NAME} {VERSION} (protocol {PROTOCOL_VERSION})");
-            ExitCode::SUCCESS
+    }
+}
+
+/// Carries out one command.
+fn run(cli: Cli) -> Result<ExitCode> {
+    let home = Home::locate(&Environment::from_process());
+    let mut out = std::io::stdout().lock();
+
+    match cli.command {
+        Command::Login { server } => {
+            session::log_in(&home, &server, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
         }
-        Some(argument) => {
-            eprintln!("{NAME}: `{argument}` is not a command. This build has none yet.");
-            ExitCode::from(2)
+
+        Command::Whoami => Ok(match session::whoami(&home, &mut out)? {
+            true => ExitCode::SUCCESS,
+            false => ExitCode::FAILURE,
+        }),
+
+        Command::Logout => {
+            session::log_out(&home, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Where => {
+            let signed_in = Credentials::read(&home.credentials_file())?;
+
+            writeln!(out, "config     {}", home.config_file().display())?;
+            writeln!(out, "state      {}", home.state_dir().display())?;
+            writeln!(out, "cache      {}", home.cache_dir().display())?;
+            writeln!(out, "workspace  {}", home.workspace().display())?;
+            writeln!(
+                out,
+                "instance   {}",
+                match &signed_in {
+                    Some(credentials) => credentials.server.as_str(),
+                    None => "not signed in",
+                }
+            )?;
+
+            Ok(ExitCode::SUCCESS)
         }
     }
 }

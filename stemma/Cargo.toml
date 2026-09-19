@@ -12,8 +12,19 @@ authors.workspace = true
 name = "stemma"
 path = "src/main.rs"
 
+[lib]
+name = "stemma"
+path = "src/lib.rs"
+
 [dependencies]
 stemma-core.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+ureq.workspace = true
 
 [lints]
 workspace = true

@@ -91,6 +91,30 @@ impl Harness {
         self.send(request).await
     }
 
+    /// Asks for something as a machine would, carrying a credential.
+    pub async fn get_with_token(&mut self, path: &str, token: &str) -> Page {
+        let request = Request::builder()
+            .method("GET")
+            .uri(path)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("a request");
+
+        self.send(request).await
+    }
+
+    /// Sends something as a machine would, carrying a credential.
+    pub async fn post_with_token(&mut self, path: &str, token: &str) -> Page {
+        let request = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .expect("a request");
+
+        self.send(request).await
+    }
+
     /// Starts a request with the cookie this harness holds.
     fn request(&self, method: &str, path: &str) -> axum::http::request::Builder {
         let request = Request::builder().method(method).uri(path);

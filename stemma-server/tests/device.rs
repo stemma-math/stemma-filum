@@ -231,3 +231,60 @@ async fn a_code_can_be_typed_however_it_is_read() {
             .says("Let this machine act for you?")
     );
 }
+
+#[tokio::test]
+async fn a_credential_says_who_it_acts_for_until_it_is_given_back() {
+    let mut harness = Harness::new();
+    let started = parsed(
+        &harness
+            .post_json("/api/device/start", r#"{"label":"a laptop"}"#)
+            .await,
+    );
+    let device_code = started["device_code"].as_str().unwrap().to_owned();
+    let user_code = started["user_code"].as_str().unwrap().to_owned();
+
+    register(&mut harness, "ana").await;
+    let asked = harness.get(&format!("/device?code={user_code}")).await;
+    harness
+        .post(
+            "/device",
+            &[
+                ("code", &user_code),
+                ("approve", "yes"),
+                ("form_token", &form_token(&asked)),
+            ],
+        )
+        .await;
+
+    let token = parsed(
+        &harness
+            .post_json(
+                "/api/device/collect",
+                &format!(r#"{{"device_code":"{device_code}"}}"#),
+            )
+            .await,
+    )["access_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let me = harness.get_with_token("/api/me", &token).await;
+    assert_eq!(me.status, StatusCode::OK);
+    assert_eq!(parsed(&me)["user"].as_str(), Some("usr:ana"));
+
+    let given_back = harness.post_with_token("/api/logout", &token).await;
+    assert_eq!(given_back.status, StatusCode::OK);
+
+    let after = harness.get_with_token("/api/me", &token).await;
+    assert_eq!(after.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn a_credential_nobody_issued_is_worth_nothing() {
+    let mut harness = Harness::new();
+
+    for carried in ["", "not a credential", &"0".repeat(64)] {
+        let page = harness.get_with_token("/api/me", carried).await;
+        assert_eq!(page.status, StatusCode::FORBIDDEN, "took `{carried}`");
+    }
+}

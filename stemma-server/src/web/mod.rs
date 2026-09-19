@@ -5,6 +5,7 @@
 //! all CSS, and there is nothing else to lose.
 
 pub mod admin;
+pub mod api;
 pub mod assets;
 pub mod auth;
 pub mod cookies;
@@ -129,6 +130,8 @@ pub fn router() -> Router<Instance> {
         .route("/invite/{secret}/register", post(invite::join_and_register))
         .route("/reset/{secret}", get(reset::form).post(reset::set))
         .route("/device", get(device::form).post(device::answer))
+        .route("/api/me", get(api::me))
+        .route("/api/logout", post(api::sign_out))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))
         .route("/admin", get(admin::area))
