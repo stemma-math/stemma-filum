@@ -223,6 +223,43 @@ impl Server {
         }
     }
 
+    /// Hands the instance something this machine built.
+    pub fn publish(
+        &self,
+        token: &str,
+        group: &str,
+        side: &str,
+        kind: &str,
+        commit: &str,
+        body: &str,
+    ) -> Result<()> {
+        let mut response = self
+            .agent
+            .put(self.url(&format!(
+                "/api/groups/{group}/{side}/artefacts/{kind}/{commit}"
+            )))
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "application/json")
+            .send(body)
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        match response.status().as_u16() {
+            200 | 201 => Ok(()),
+            status => {
+                let said = response
+                    .body_mut()
+                    .read_to_string()
+                    .unwrap_or_else(|_| String::new());
+
+                bail!(
+                    "{} would not keep it ({status}): {}",
+                    self.address,
+                    said.trim()
+                )
+            }
+        }
+    }
+
     /// Gives a credential back.
     pub fn sign_out(&self, token: &str) -> Result<()> {
         self.agent

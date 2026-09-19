@@ -17,7 +17,9 @@ use stemma_core::line::{Fault, Line, Name};
 use stemma_core::repository::{self, Manifest};
 use stemma_core::source;
 
+use crate::api::Server;
 use crate::config::Config;
+use crate::credentials::Credentials;
 use crate::git;
 use crate::home::Home;
 use crate::pin;
@@ -70,6 +72,7 @@ pub fn run(home: &Home, here: &Path, out: &mut impl Write) -> Result<Vec<Built>>
         return Ok(Vec::new());
     }
 
+    let credentials = Credentials::read(&home.credentials_file())?;
     let mut built = Vec::new();
 
     for clone in clones {
@@ -78,6 +81,7 @@ pub fn run(home: &Home, here: &Path, out: &mut impl Write) -> Result<Vec<Built>>
         match read(&clone) {
             Ok(one) => {
                 report(&one, out)?;
+                writeln!(out, "  {}", publish(&one, credentials.as_ref()))?;
                 built.push(one);
             }
             Err(error) => writeln!(out, "{}\n  {error:#}", clone.display())?,
@@ -245,6 +249,80 @@ fn report(built: &Built, out: &mut impl Write) -> Result<()> {
     Ok(())
 }
 
+/// What became of handing an artefact to the instance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Published {
+    /// The instance has it.
+    Kept,
+    /// There is uncommitted work here, so what was read is not what the
+    /// commit holds.
+    Uncommitted,
+    /// The commit is not on the instance yet.
+    NotSentYet,
+    /// This machine is not signed in to anything.
+    Unknown,
+    /// The instance would not take it.
+    Refused(String),
+}
+
+impl std::fmt::Display for Published {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Kept => f.write_str("the instance has this, and can show it"),
+            Self::Uncommitted => f.write_str(
+                "not sent to the instance: there is uncommitted work here, so this is \
+                 not what the commit holds",
+            ),
+            Self::NotSentYet => f.write_str(
+                "not sent to the instance: it does not have this commit yet, so run \
+                 `stemma sync` first",
+            ),
+            Self::Unknown => f.write_str("not sent to the instance: this machine is not signed in"),
+            Self::Refused(why) => write!(f, "not sent to the instance: {why}"),
+        }
+    }
+}
+
+/// Hands what was read to the instance, where that makes sense.
+///
+/// An artefact is named by a commit, so sending one for work that is
+/// only on this machine would tell the instance about something nobody
+/// else can look at.
+pub fn publish(built: &Built, credentials: Option<&Credentials>) -> Published {
+    let Some(credentials) = credentials else {
+        return Published::Unknown;
+    };
+
+    if git::is_dirty(&built.path).unwrap_or(false) {
+        return Published::Uncommitted;
+    }
+
+    match git::distance(&built.path) {
+        Ok(distance) if distance.ahead > 0 => return Published::NotSentYet,
+        Err(error) => return Published::Refused(format!("{error:#}")),
+        Ok(_) => {}
+    }
+
+    let server = match Server::at(&credentials.server) {
+        Ok(server) => server,
+        Err(error) => return Published::Refused(format!("{error:#}")),
+    };
+
+    let outcome = server.publish(
+        &credentials.token,
+        built.nodes.group.slug().as_str(),
+        built.nodes.side.as_str(),
+        stemma_core::artefact::Kind::Nodes.as_str(),
+        &built.nodes.commit,
+        &built.nodes.to_text(),
+    );
+
+    match outcome {
+        Ok(()) => Published::Kept,
+        Err(error) => Published::Refused(format!("{error:#}")),
+    }
+}
+
 /// A count with the right noun.
 fn count(many: usize, noun: &str) -> String {
     match many {
@@ -275,6 +353,20 @@ mod tests {
     fn a_commit_is_shown_short() {
         assert_eq!(short("0123456789abcdef"), "01234567");
         assert_eq!(short("short"), "short");
+    }
+
+    #[test]
+    fn a_machine_with_nothing_to_send_to_says_so_rather_than_failing() {
+        assert_eq!(
+            Published::Unknown.to_string(),
+            "not sent to the instance: this machine is not signed in"
+        );
+        assert!(
+            Published::Uncommitted
+                .to_string()
+                .contains("uncommitted work")
+        );
+        assert!(Published::NotSentYet.to_string().contains("stemma sync"));
     }
 
     #[test]

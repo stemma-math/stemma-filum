@@ -6,6 +6,7 @@
 
 pub mod admin;
 pub mod api;
+pub mod artefacts;
 pub mod assets;
 pub mod auth;
 pub mod cookies;
@@ -119,6 +120,23 @@ impl Instance {
             .map_err(WebError::Internal)
     }
 
+    /// Runs work that touches the disk.
+    ///
+    /// Files are not asynchronous either, so this goes to a thread that
+    /// is allowed to wait for them.
+    pub async fn on_disk<T, F>(&self, work: F) -> Result<T, WebError>
+    where
+        F: FnOnce() -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        tokio::task::spawn_blocking(work)
+            .await
+            .map_err(|error| {
+                WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
+            })?
+            .map_err(WebError::Internal)
+    }
+
     /// Where this instance keeps its repositories.
     pub fn repositories(&self) -> crate::git::Repositories {
         crate::git::Repositories::new(self.settings.paths.git_dir())
@@ -161,6 +179,10 @@ pub fn router() -> Router<Instance> {
         )
         .route("/api/me", get(api::me))
         .route("/api/workspace", get(api::workspace))
+        .route(
+            "/api/groups/{group}/{side}/artefacts/{kind}/{commit}",
+            get(artefacts::send).put(artefacts::receive),
+        )
         .route("/api/logout", post(api::sign_out))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))

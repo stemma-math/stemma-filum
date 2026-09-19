@@ -6,6 +6,7 @@
 //! transaction is the caller's business, because it is the caller who knows
 //! which acts belong together.
 
+pub mod artefacts;
 pub mod devices;
 pub mod groups;
 pub mod invitations;

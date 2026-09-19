@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::GroupId;
+use crate::id::{GroupId, UserId};
 use crate::line::{Line, Name};
 use crate::repository::Side;
 
@@ -47,6 +47,82 @@ impl std::fmt::Display for Kind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
+}
+
+/// Which repository an artefact was built from.
+///
+/// It is one string because it is a path segment, a database column and
+/// part of an address, and three spellings of one thing is how they
+/// drift apart.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Scope {
+    /// The group's own repository.
+    Shared,
+    /// One person's repository inside that group.
+    Personal(UserId),
+}
+
+impl Scope {
+    /// The scope for a side of a group's work.
+    pub fn of(side: Side, user: &UserId) -> Self {
+        match side {
+            Side::Shared => Self::Shared,
+            Side::Private => Self::Personal(user.clone()),
+        }
+    }
+
+    /// Whether this is one person's alone.
+    pub fn is_personal(&self) -> bool {
+        matches!(self, Self::Personal(_))
+    }
+
+    /// Whose it is, when it is one person's.
+    pub fn owner(&self) -> Option<&UserId> {
+        match self {
+            Self::Shared => None,
+            Self::Personal(user) => Some(user),
+        }
+    }
+}
+
+impl std::fmt::Display for Scope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Shared => f.write_str("shared"),
+            Self::Personal(user) => write!(f, "personal/{}", user.slug()),
+        }
+    }
+}
+
+impl std::str::FromStr for Scope {
+    type Err = BadScope;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        if input == "shared" {
+            return Ok(Self::Shared);
+        }
+
+        let name = input
+            .strip_prefix("personal/")
+            .ok_or_else(|| BadScope(input.to_owned()))?;
+        let slug = crate::id::Slug::parse(name).map_err(|_| BadScope(input.to_owned()))?;
+
+        Ok(Self::Personal(UserId::new(slug)))
+    }
+}
+
+/// A string that names no repository.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("`{0}` does not name a repository")]
+pub struct BadScope(pub String);
+
+/// Whether a string could be the commit an artefact was built from.
+///
+/// Checked wherever one arrives, because it becomes a file name.
+pub fn is_commit(candidate: &str) -> bool {
+    candidate.len() >= 7
+        && candidate.len() <= 64
+        && candidate.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// One line, as it was read out of one commit.
@@ -210,6 +286,34 @@ mod tests {
     #[test]
     fn something_that_is_not_an_artefact_is_refused() {
         assert!(matches!(Nodes::parse("{}"), Err(Unreadable::Malformed(_))));
+    }
+
+    #[test]
+    fn a_scope_is_written_and_read_the_same_way() {
+        let ana: UserId = "usr:ana".parse().unwrap();
+
+        for scope in [Scope::Shared, Scope::Personal(ana.clone())] {
+            assert_eq!(
+                scope.to_string().parse::<Scope>().unwrap(),
+                scope,
+                "`{scope}` did not survive"
+            );
+        }
+
+        assert_eq!(Scope::Personal(ana).to_string(), "personal/ana");
+        assert!("personal/".parse::<Scope>().is_err());
+        assert!("personal/../etc".parse::<Scope>().is_err());
+        assert!("anything".parse::<Scope>().is_err());
+    }
+
+    #[test]
+    fn only_something_that_could_be_a_commit_is_taken_for_one() {
+        assert!(is_commit("0123456789abcdef0123456789abcdef01234567"));
+        assert!(is_commit("0123456"));
+        assert!(!is_commit("012345"));
+        assert!(!is_commit("../../etc/passwd"));
+        assert!(!is_commit("0123456g"));
+        assert!(!is_commit(""));
     }
 
     #[test]
