@@ -17,6 +17,8 @@ type Machine = { label: string; presence: string; agents: Agent[]; jobs: Job[] }
 type Agent = { name: string; called: string; availability: string; reason: string | null };
 type Job = { id: string; state: string; task: string; agent: string; said: string; raw_output: boolean };
 type Offer = { machine: string; label: string; presence: string; agents: Agent[] };
+type Claim = { standing: "writing" | "waiting" | "open"; label: string | null; left: number | null; asked: boolean; said: string };
+type Disagreement = { siglum: string; part: string; mark: string; here: string | null; there: string | null; said: string };
 type Vault = { entries: { id: string; siglum: string; name: string; correspondence: string }[]; bridges: { id: string; left: string; right: string; kind: string; correspondence: string; derived: boolean }[] };
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
@@ -24,12 +26,15 @@ let current: OpenLine | null = null;
 let saveTimer = 0;
 let previewTimer = 0;
 let choices: Offer[] = [];
+let writing = false;
+let decisions = new Map<string, "here" | "there">();
+const RENEW = 5 * 60 * 1000;
 
 app.innerHTML = `<header><span class="wordmark">STEMMA</span><select id="lines"><option>Choose a line…</option></select><span id="save">—</span></header>
 <main><aside id="gutter"><p class="label">APPARATUS</p><div id="nodes"></div><pre id="source-diagnostics"></pre></aside>
 <section class="writing"><textarea id="editor" spellcheck="false" disabled></textarea></section>
 <section class="preview"><div id="page"><p class="empty">The composed document will appear here.</p></div></section>
-<aside id="register"><section><p class="label">THIS MACHINE</p><div id="machine">loading…</div></section><section><p class="label">VAULT</p><div id="vault">Choose a line.</div></section><section><p class="label">JOBS</p><div id="jobs">—</div></section><section><p class="label">LAUNCH</p><div id="launcher">Choose a line.</div></section></aside></main>`;
+<aside id="register"><section><p class="label">CLAIM</p><div id="claim">Choose a line.</div></section><section id="parted-block" hidden><p class="label">TWO VERSIONS</p><div id="parted"></div></section><section><p class="label">THIS MACHINE</p><div id="machine">loading…</div></section><section><p class="label">VAULT</p><div id="vault">Choose a line.</div></section><section><p class="label">JOBS</p><div id="jobs">—</div></section><section><p class="label">LAUNCH</p><div id="launcher">Choose a line.</div></section></aside></main>`;
 
 const select = document.querySelector<HTMLSelectElement>("#lines")!;
 const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
@@ -40,6 +45,8 @@ async function boot() {
   entries.forEach((entry) => select.add(new Option(`${entry.group} · ${entry.side} · ${entry.name}`, entry.path)));
   select.onchange = () => open(select.value);
   editor.oninput = changed;
+  // A claim lapses on its own, so the machine writing says so while it is.
+  window.setInterval(() => { if (current && writing) invoke("claim", { path: current.entry.path }).catch(() => {}); }, RENEW);
   await refreshMachine();
 }
 
@@ -50,8 +57,61 @@ async function open(path: string) {
     document.querySelector("#gutter")!.classList.toggle("private", current.entry.side === "private");
     choices = await invoke<Offer[]>("offers", { group: current.entry.group });
     await drawVault(current.entry.group);
+    await takeClaim();
+    await drawParted();
     drawNodes(current); drawLauncher(); await render();
   } catch (error) { problem(error); }
+}
+
+async function takeClaim() { await askAbout("claim"); }
+
+async function askAbout(command: string) {
+  if (!current) return;
+  const target = document.querySelector<HTMLDivElement>("#claim")!;
+  try {
+    const claim = await invoke<Claim>(command, { path: current.entry.path });
+    writing = claim.standing !== "waiting";
+    editor.disabled = !writing;
+    const minutes = claim.left === null ? "" : `<span class="quiet">it lapses in ${Math.max(1, Math.ceil(claim.left / 60))} minutes</span>`;
+    const action = writing
+      ? `<button id="let-go">Let it go</button>`
+      : `<button id="ask-for-it"${claim.asked ? " disabled" : ""}>${claim.asked ? "Asked for" : "Ask for it"}</button>`;
+    target.innerHTML = `<div class="job"><span>${escape(claim.said)}</span>${minutes}${action}</div>`;
+    const go = document.querySelector<HTMLButtonElement>("#let-go");
+    if (go) go.onclick = () => askAbout("let_go");
+    const ask = document.querySelector<HTMLButtonElement>("#ask-for-it");
+    if (ask) ask.onclick = () => askAbout("ask_for_line");
+  } catch (error) { target.textContent = String(error); }
+}
+
+async function drawParted() {
+  if (!current) return;
+  const block = document.querySelector<HTMLElement>("#parted-block")!;
+  const target = document.querySelector<HTMLDivElement>("#parted")!;
+  decisions = new Map();
+  let found: Disagreement[] = [];
+  try { found = await invoke<Disagreement[]>("parted", { path: current.entry.path }); }
+  catch (error) { block.hidden = false; target.textContent = String(error); return; }
+  block.hidden = found.length === 0;
+  if (!found.length) return;
+  target.innerHTML = found.map((one) => `<div class="job"><strong>${escape(one.mark)}</strong><span class="quiet">${escape(one.said)}</span>
+    <pre class="version">${escape(one.here ?? "it is not here")}</pre>
+    <pre class="version">${escape(one.there ?? "it is not there")}</pre>
+    <span><button data-keep="here" data-mark="${escape(one.siglum)}|${escape(one.part)}">Keep this machine&#39;s</button><button data-keep="there" data-mark="${escape(one.siglum)}|${escape(one.part)}">Keep the other</button></span></div>`).join("")
+    + `<button id="bring-together" disabled>Bring them together</button>`
+    + `<p class="quiet">Neither version is discarded: the one not kept stays in this machine&#39;s history.</p>`;
+  document.querySelectorAll<HTMLButtonElement>("#parted button[data-keep]").forEach((button) => button.onclick = () => {
+    decisions.set(button.dataset.mark!, button.dataset.keep as "here" | "there");
+    button.parentElement!.querySelectorAll("button").forEach((other) => other.classList.remove("kept"));
+    button.classList.add("kept");
+    document.querySelector<HTMLButtonElement>("#bring-together")!.disabled = decisions.size < found.length;
+  });
+  document.querySelector<HTMLButtonElement>("#bring-together")!.onclick = async () => {
+    try {
+      await invoke("settle", { path: current!.entry.path, decisions: [...decisions].map(([mark, keep]) => ({ siglum: mark.split("|")[0], part: mark.split("|")[1], keep })) });
+      await open(current!.entry.path);
+    } catch (error) { target.textContent = String(error); }
+  };
 }
 
 async function drawVault(group: string) {
@@ -68,7 +128,7 @@ async function drawVault(group: string) {
 }
 
 function changed() {
-  if (!current) return;
+  if (!current || !writing) return;
   saved.textContent = "saving";
   window.clearTimeout(saveTimer); window.clearTimeout(previewTimer);
   saveTimer = window.setTimeout(save, 450); previewTimer = window.setTimeout(render, 650);

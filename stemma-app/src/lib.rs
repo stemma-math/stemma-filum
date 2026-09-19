@@ -64,6 +64,32 @@ struct Job {
 }
 
 #[derive(Serialize)]
+struct Claim {
+    standing: String,
+    label: Option<String>,
+    left: Option<u64>,
+    asked: bool,
+    said: String,
+}
+
+#[derive(Serialize)]
+struct Disagreement {
+    siglum: String,
+    part: String,
+    mark: String,
+    here: Option<String>,
+    there: Option<String>,
+    said: String,
+}
+
+#[derive(serde::Deserialize)]
+struct Decision {
+    siglum: String,
+    part: String,
+    keep: String,
+}
+
+#[derive(Serialize)]
 struct Offer {
     machine: String,
     label: String,
@@ -272,6 +298,148 @@ fn offers(group: String) -> Result<Vec<Offer>, String> {
         .collect())
 }
 
+/// Takes the line for this machine, which also renews a claim it holds.
+#[tauri::command]
+fn claim(path: String) -> Result<Claim, String> {
+    with_claim(&path, |server, token, about| {
+        server.take_claim(token, about)
+    })
+}
+
+/// Lets the line go.
+#[tauri::command]
+fn let_go(path: String) -> Result<Claim, String> {
+    with_claim(&path, |server, token, about| {
+        server.release_claim(token, about)
+    })
+}
+
+/// Asks whichever machine has the line to hand it back.
+#[tauri::command]
+fn ask_for_line(path: String) -> Result<Claim, String> {
+    with_claim(&path, |server, token, about| {
+        server.ask_for_claim(token, about)
+    })
+}
+
+/// One of the four things a machine says to the instance about a claim.
+fn with_claim(
+    path: &str,
+    speak: impl Fn(
+        &stemma::api::Server,
+        &str,
+        &stemma::api::About,
+    ) -> anyhow::Result<stemma::api::Claimed>,
+) -> Result<Claim, String> {
+    let path = admitted(path)?;
+    let (group, side, line) = identity(&path)?;
+    let home = home();
+    let credentials = stemma::session::required(&home).map_err(said)?;
+    let server = stemma::api::Server::at(&credentials.server).map_err(said)?;
+    let claimed = speak(
+        &server,
+        &credentials.token,
+        &stemma::api::About { group, side, line },
+    )
+    .map_err(said)?;
+
+    Ok(Claim {
+        said: claimed
+            .said
+            .clone()
+            .unwrap_or_else(|| "nobody is writing this line".to_owned()),
+        standing: claimed.standing,
+        label: claimed.label,
+        left: claimed.left,
+        asked: claimed.asked,
+    })
+}
+
+/// Asks an agent to reconcile the two versions, as a proposal.
+#[tauri::command]
+fn reconcile(path: String, agent: String) -> Result<String, String> {
+    let path = admitted(&path)?;
+    let at = path
+        .parent()
+        .ok_or_else(|| "the line has no directory".to_owned())?;
+    let mut output = Vec::new();
+
+    stemma::conflicts::reconcile(&home(), at, &agent, &mut output).map_err(said)?;
+
+    String::from_utf8(output).map_err(said)
+}
+
+/// What the two versions of this line disagree about.
+#[tauri::command]
+fn parted(path: String) -> Result<Vec<Disagreement>, String> {
+    let path = admitted(&path)?;
+    let (clone, name) = clone_and_line(&path)?;
+    let _ = stemma::git::fetch(&clone);
+
+    let found = stemma::conflicts::between(&clone).map_err(said)?;
+    let Some(line) = found.into_iter().find(|line| line.line.as_str() == name) else {
+        return Ok(Vec::new());
+    };
+
+    Ok(line
+        .divergences
+        .into_iter()
+        .map(|divergence| Disagreement {
+            siglum: divergence.mark.siglum.to_string(),
+            part: match divergence.mark.part {
+                stemma_core::reconcile::Part::Statement => "statement".to_owned(),
+                stemma_core::reconcile::Part::Proof => "proof".to_owned(),
+            },
+            mark: divergence.mark.to_string(),
+            said: divergence.said().to_owned(),
+            here: divergence.here,
+            there: divergence.there,
+        })
+        .collect())
+}
+
+/// Writes what the person decided, as one merge commit.
+#[tauri::command]
+fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, String> {
+    let path = admitted(&path)?;
+    let (clone, name) = clone_and_line(&path)?;
+    let mut decided = std::collections::BTreeMap::new();
+
+    for decision in decisions {
+        let mark = stemma_core::reconcile::Mark {
+            siglum: decision.siglum.parse().map_err(said)?,
+            part: match decision.part.as_str() {
+                "proof" => stemma_core::reconcile::Part::Proof,
+                _ => stemma_core::reconcile::Part::Statement,
+            },
+        };
+        let keep = match decision.keep.as_str() {
+            "there" => stemma_core::reconcile::Keep::There,
+            _ => stemma_core::reconcile::Keep::Here,
+        };
+
+        decided.insert(mark, keep);
+    }
+
+    let settled =
+        stemma::conflicts::settle(&clone, &std::collections::BTreeMap::from([(name, decided)]))
+            .map_err(said)?;
+
+    Ok(settled.iter().map(ToString::to_string).collect())
+}
+
+/// The repository a line is in, and what the line is called.
+fn clone_and_line(path: &Path) -> Result<(PathBuf, String), String> {
+    let clone = path
+        .ancestors()
+        .nth(3)
+        .ok_or_else(|| "the line has no repository".to_owned())?
+        .to_owned();
+    let (_, _, name) = identity(path)?;
+
+    Ok((clone, name))
+}
+
 #[tauri::command]
 fn vault(group: String) -> Result<stemma::api::Vault, String> {
     let home = home();
@@ -384,7 +552,21 @@ fn said(error: impl std::fmt::Display) -> String {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            lines, open_line, save_line, preview, machine, job_output, offers, vault, launch
+            lines,
+            open_line,
+            save_line,
+            preview,
+            machine,
+            job_output,
+            offers,
+            vault,
+            launch,
+            claim,
+            let_go,
+            ask_for_line,
+            parted,
+            settle,
+            reconcile
         ])
         .run(tauri::generate_context!())
         .expect("the Stemma application could not start");
