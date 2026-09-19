@@ -149,6 +149,28 @@ impl fmt::Display for Name {
     }
 }
 
+impl FromStr for Name {
+    type Err = BadName;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Self::parse(input)
+    }
+}
+
+impl Serialize for Name {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for Name {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = String::deserialize(deserializer)?;
+
+        Self::parse(&raw).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Why a name will not do.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BadName {

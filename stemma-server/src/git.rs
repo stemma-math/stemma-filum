@@ -15,9 +15,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use stemma_core::id::{GroupId, Slug, UserId};
-
-/// What the instance writes into a repository when it makes one.
-const MARKER: &str = "stemma.toml";
+use stemma_core::repository::{self, Manifest};
 
 /// Who the instance is, when it is the one making a commit.
 const COMMITTER: (&str, &str) = ("Stemma", "stemma@localhost");
@@ -118,7 +116,7 @@ impl Repositories {
 ///
 /// Returns whether it made one, so that the caller can say what happened
 /// rather than guess.
-pub fn ensure(path: &Path, description: &str) -> Result<bool> {
+pub fn ensure(path: &Path, manifest: &Manifest) -> Result<bool> {
     if path.join("HEAD").is_file() {
         return Ok(false);
     }
@@ -142,25 +140,18 @@ pub fn ensure(path: &Path, description: &str) -> Result<bool> {
     // A repository with no branch clones with a warning and leaves the
     // person wondering what went wrong, so it starts with one commit that
     // says what it is.
-    seed(path, description)?;
+    seed(path, manifest)?;
 
     Ok(true)
 }
 
 /// Writes the first commit, without ever making a working tree.
-fn seed(path: &Path, description: &str) -> Result<()> {
-    let marker = format!(
-        "# Written by Stemma when it made this repository.\n\
-         \n\
-         description = \"{description}\"\n\
-         format = 1\n"
-    );
-
-    let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], &marker)?;
+fn seed(path: &Path, manifest: &Manifest) -> Result<()> {
+    let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], &manifest.to_text())?;
     let tree = run_with_input(
         path,
         &["mktree"],
-        &format!("100644 blob {blob}\t{MARKER}\n"),
+        &format!("100644 blob {blob}\t{}\n", repository::MANIFEST),
     )?;
     let commit = run(
         path,
@@ -316,20 +307,50 @@ mod tests {
         }
     }
 
+    fn manifest() -> Manifest {
+        Manifest::new(
+            group(),
+            stemma_core::repository::Side::Shared,
+            "Algebra, shared",
+        )
+    }
+
     #[test]
     fn a_new_repository_has_a_branch_to_clone() {
         let root = somewhere("seeded");
         let repositories = Repositories::new(&root);
         let path = repositories.shared(&group());
 
-        assert!(ensure(&path, "Algebra, shared").unwrap());
+        assert!(ensure(&path, &manifest()).unwrap());
         assert!(exists(&path));
         assert!(head_commit(&path).is_some());
 
         // Making it again finds it and changes nothing.
         let before = head_commit(&path);
-        assert!(!ensure(&path, "Algebra, shared").unwrap());
+        assert!(!ensure(&path, &manifest()).unwrap());
         assert_eq!(head_commit(&path), before);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_new_repository_says_which_group_and_which_side_it_is() {
+        let root = somewhere("manifest");
+        let repositories = Repositories::new(&root);
+        let path = repositories.shared(&group());
+
+        ensure(&path, &manifest()).unwrap();
+
+        let written = run(
+            &path,
+            &["show", &format!("refs/heads/main:{}", repository::MANIFEST)],
+        )
+        .unwrap();
+        let read_back = Manifest::parse(&written).unwrap();
+
+        assert_eq!(read_back.group, group());
+        assert_eq!(read_back.side, stemma_core::repository::Side::Shared);
+        assert_eq!(read_back.pins.typst, None, "nobody has pinned anything yet");
 
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -341,10 +362,14 @@ mod tests {
 
         assert!(repositories.groups_on_disk().unwrap().is_empty());
 
-        ensure(&repositories.shared(&group()), "Algebra").unwrap();
+        ensure(&repositories.shared(&group()), &manifest()).unwrap();
         ensure(
             &repositories.shared(&"grp:topology".parse().unwrap()),
-            "Topology",
+            &Manifest::new(
+                "grp:topology".parse().unwrap(),
+                stemma_core::repository::Side::Shared,
+                "Topology",
+            ),
         )
         .unwrap();
 

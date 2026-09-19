@@ -6,6 +6,7 @@
 //! membership, rather than the first time they need it.
 
 use anyhow::Result;
+use stemma_core::repository::{Manifest, Side};
 
 use crate::git::{self, Repositories};
 use crate::store::groups::Group;
@@ -15,7 +16,11 @@ use crate::store::users::User;
 pub fn for_group(repositories: &Repositories, group: &Group) -> Result<bool> {
     git::ensure(
         &repositories.shared(&group.id),
-        &format!("{} — the group's own repository", group.name),
+        &Manifest::new(
+            group.id.clone(),
+            Side::Shared,
+            format!("{} — the group's own repository", group.name),
+        ),
     )
 }
 
@@ -23,7 +28,11 @@ pub fn for_group(repositories: &Repositories, group: &Group) -> Result<bool> {
 pub fn for_member(repositories: &Repositories, group: &Group, user: &User) -> Result<bool> {
     git::ensure(
         &repositories.personal(&group.id, &user.id),
-        &format!("{} — {} only", group.name, user.display_name),
+        &Manifest::new(
+            group.id.clone(),
+            Side::Private,
+            format!("{} — {} only", group.name, user.display_name),
+        ),
     )
 }
 

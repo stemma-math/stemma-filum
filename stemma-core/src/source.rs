@@ -140,6 +140,20 @@ pub fn read(source: &str) -> Result<Vec<Declaration>, Problem> {
     Scanner::new(source).run()
 }
 
+/// What a line calls itself, which is its first heading.
+///
+/// A line with no heading has no title, and that is not worth reporting:
+/// the directory it is in already names it.
+pub fn title(source: &str) -> Option<String> {
+    source
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("= "))
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .map(str::to_owned)
+}
+
 /// Walks a source once, looking for environments.
 struct Scanner<'a> {
     source: &'a str,
@@ -469,6 +483,20 @@ fn unquote(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_line_is_called_what_its_first_heading_says() {
+        assert_eq!(
+            title("#import \"x\"\n\n= Quotient groups\n\nProse.\n").as_deref(),
+            Some("Quotient groups")
+        );
+        assert_eq!(
+            title("== A subheading first\n= The title\n").as_deref(),
+            Some("The title")
+        );
+        assert_eq!(title("No heading at all.\n"), None);
+        assert_eq!(title("=\n= \n"), None);
+    }
 
     #[test]
     fn an_environment_is_read_with_its_arguments() {

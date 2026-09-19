@@ -8,11 +8,13 @@
 pub mod access;
 pub mod actor;
 pub mod agent;
+pub mod artefact;
 pub mod fact;
 pub mod id;
 pub mod line;
 pub mod model;
 pub mod protocol;
+pub mod repository;
 pub mod source;
 
 pub use protocol::{PROTOCOL_HEADER, PROTOCOL_VERSION, ProtocolVersion};
