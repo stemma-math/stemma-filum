@@ -47,6 +47,15 @@ command. Set `STEMMA_HOME` to an absolute directory to isolate a test account:
 STEMMA_HOME="$PWD/.test-state/client" just app-dev
 ```
 
+## Typefaces
+
+The server carries the four faces the interface is set in — Libertinus Serif,
+Archivo, Archivo Narrow and Iosevka — in `stemma-server/assets/fonts`, subset
+to Latin and built into the binary, so an instance never sends a reader to
+somebody else's font host. All four are under the SIL Open Font License; each
+licence sits beside the files. The desktop application takes the same faces
+from its own npm dependencies.
+
 ## Verification
 
 The normal pre-commit suite is:

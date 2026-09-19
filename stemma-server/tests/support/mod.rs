@@ -203,6 +203,8 @@ pub struct Page {
     pub location: Option<String>,
     /// The cookie it handed out, if any.
     pub set_cookie: Option<String>,
+    /// What kind of thing it says it is.
+    pub content_type: Option<String>,
     /// What it says.
     pub body: String,
 }
@@ -221,6 +223,7 @@ impl Page {
 
         let location = header(header::LOCATION);
         let set_cookie = header(header::SET_COOKIE);
+        let content_type = header(header::CONTENT_TYPE);
 
         let body = axum::body::to_bytes(response.into_body(), 1 << 20)
             .await
@@ -230,6 +233,7 @@ impl Page {
             status,
             location,
             set_cookie,
+            content_type,
             body: String::from_utf8_lossy(&body).into_owned(),
         }
     }

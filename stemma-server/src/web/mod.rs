@@ -228,6 +228,7 @@ pub fn router() -> Router<Instance> {
         .route("/admin/requests/{id}/approve", post(admin::approve))
         .route("/admin/requests/{id}/decline", post(admin::decline))
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
+        .route(assets::FONT_PATH, get(assets::font))
         .fallback(get(not_found))
 }
 
