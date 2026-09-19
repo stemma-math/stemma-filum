@@ -679,3 +679,115 @@ th.numeric {
         gap: var(--space-3);
     }
 }
+
+/* ── The anchored launcher ─────────────────────────────────────────────
+ *
+ * An agent action is offered where its effect will land, so this is a
+ * popover beside the mathematics and not a screen of its own. At rest it
+ * is one line of grey grotesk: something that starts work must never be
+ * the loudest thing on a page of mathematics. It earns its rule on hover,
+ * on focus and when it is open, and the only colour in it is that rule on
+ * what is currently chosen.
+ */
+
+.launcher > summary {
+    display: inline-block;
+    font-family: var(--grotesk);
+    font-size: var(--step-2);
+    color: var(--ink-3);
+    cursor: pointer;
+    padding-left: var(--space-2);
+    border-left: 2px solid transparent;
+    list-style: none;
+}
+
+.launcher > summary::-webkit-details-marker {
+    display: none;
+}
+
+.launcher > summary:hover,
+.launcher > summary:focus-visible,
+.launcher[open] > summary {
+    color: var(--ink);
+    border-left-color: var(--ditto);
+}
+
+.launcher__panel {
+    position: relative;
+    margin-top: var(--space-3);
+    margin-left: var(--space-4);
+    max-width: 32rem;
+    border: 1px solid var(--rule);
+    background: var(--paper-raise);
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+/* The leader back to the line that opened it. */
+.launcher__panel::before {
+    content: "";
+    position: absolute;
+    top: var(--space-4);
+    left: calc(-1 * var(--space-4));
+    width: var(--space-4);
+    border-top: 1px solid var(--rule);
+}
+
+.launcher__machine {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.launcher__name {
+    font-family: var(--narrow);
+    font-size: var(--step-1);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+}
+
+.launcher__agent {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    padding-left: var(--space-2);
+    border-left: 2px solid transparent;
+}
+
+.launcher__agent:has(input:checked) {
+    border-left-color: var(--ditto);
+}
+
+.launcher__agent input {
+    accent-color: var(--ditto);
+}
+
+/* Shown, named and unavailable. An agent a machine does not have implies
+ * nothing false, and its absence teaches the owner about their machine. */
+.launcher__agent--out {
+    color: var(--ink-3);
+}
+
+.box__ask {
+    grid-column: 2;
+}
+
+/* A count is on a person's decision and never on the state of the
+ * mathematics, so it is ink among grey rather than a colour of its own. */
+.count {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+}
+
+@media (max-width: 56rem) {
+    .box__ask {
+        grid-column: auto;
+    }
+}

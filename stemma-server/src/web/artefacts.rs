@@ -13,7 +13,7 @@ use stemma_core::artefact::{self, Kind, Scope};
 use stemma_core::id::{GroupId, Slug};
 use stemma_core::repository::Side;
 
-use super::api::Machine;
+use super::api::Credential;
 use super::{Instance, WebError};
 use crate::artefacts::{LARGEST, Shelf};
 use crate::store::{artefacts as index, groups};
@@ -24,7 +24,7 @@ type Address = Path<(String, String, String, String)>;
 /// Takes one artefact in.
 pub async fn receive(
     State(instance): State<Instance>,
-    machine: Machine,
+    machine: Credential,
     Path((group, side, kind, commit)): Address,
     body: Body,
 ) -> Result<Response, WebError> {
@@ -96,7 +96,7 @@ pub async fn receive(
 /// Hands one back.
 pub async fn send(
     State(instance): State<Instance>,
-    machine: Machine,
+    machine: Credential,
     Path((group, side, kind, commit)): Address,
 ) -> Result<Response, WebError> {
     let (group, scope, kind) = admit(&instance, &machine, &group, &side, &kind, &commit).await?;
@@ -119,7 +119,7 @@ pub async fn send(
 /// Works out what was asked for, and whether this machine may have it.
 async fn admit(
     instance: &Instance,
-    machine: &Machine,
+    machine: &Credential,
     group: &str,
     side: &str,
     kind: &str,

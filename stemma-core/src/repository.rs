@@ -53,6 +53,23 @@ impl fmt::Display for Side {
     }
 }
 
+/// Why a string does not name one of a group's repositories.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("`{0}` is not one of a group's repositories")]
+pub struct BadSide(String);
+
+impl std::str::FromStr for Side {
+    type Err = BadSide;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "shared" => Ok(Self::Shared),
+            "private" => Ok(Self::Private),
+            other => Err(BadSide(other.to_owned())),
+        }
+    }
+}
+
 /// What the group has pinned.
 ///
 /// Absent means nobody has pinned it yet, which is honest for a group
@@ -173,6 +190,15 @@ mod tests {
 
     fn group() -> GroupId {
         "grp:algebra".parse().unwrap()
+    }
+
+    #[test]
+    fn either_repository_survives_being_written_down() {
+        for side in [Side::Shared, Side::Private] {
+            assert_eq!(side.to_string().parse(), Ok(side));
+        }
+
+        assert!("both".parse::<Side>().is_err());
     }
 
     #[test]

@@ -14,10 +14,12 @@ use axum::response::{IntoResponse, Response};
 use maud::{Markup, html};
 use stemma_core::artefact::{Kind, LineDigest, Nodes, Scope};
 use stemma_core::id::{GroupId, Slug};
+use stemma_core::job::Task;
 use stemma_core::line::{Element, Name};
 use stemma_core::model::BoxState;
 use stemma_core::repository::Side;
 
+use super::jobs::Offer;
 use super::layout::{Chrome, page};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
@@ -45,13 +47,23 @@ pub async fn view(
     };
 
     let policy = instance.policy().await?;
+    let offers = super::jobs::offers(&instance, &group.id).await?;
     let chrome = Chrome::anonymous(
         digest.shown_as().to_owned(),
         super::front::instance_name(&instance, &policy),
     )
     .signed_in(signed.user.clone(), signed.maintainer);
 
-    Ok(page(&chrome, body(&group, side, &digest, &nodes)).into_response())
+    let launchers = Anchored {
+        signed: &signed,
+        group: group.slug().clone(),
+        side,
+        line: digest.name.clone(),
+        commit: nodes.commit.clone(),
+        offers,
+    };
+
+    Ok(page(&chrome, body(&group, side, &digest, &nodes, &launchers)).into_response())
 }
 
 /// Which repository was asked for, and whether this reader may have it.
@@ -129,8 +141,42 @@ pub async fn read(
     Ok(Nodes::parse(&String::from_utf8_lossy(&content)).ok())
 }
 
+/// What a launcher needs, carried down to the thing it is anchored to.
+///
+/// An agent action is offered where its effect will land, so there is no
+/// one screen it belongs on: it travels with the box or the statement.
+struct Anchored<'a> {
+    signed: &'a SignedIn,
+    group: Slug,
+    side: Side,
+    line: Name,
+    commit: String,
+    offers: Vec<Offer>,
+}
+
+impl Anchored<'_> {
+    /// The launcher for one task, here.
+    fn at(&self, task: Task) -> Markup {
+        super::jobs::launcher(
+            self.signed,
+            &self.group,
+            self.side,
+            &self.line,
+            &self.commit,
+            &task,
+            &self.offers,
+        )
+    }
+}
+
 /// The line itself.
-fn body(group: &Group, side: Side, digest: &LineDigest, nodes: &Nodes) -> Markup {
+fn body(
+    group: &Group,
+    side: Side,
+    digest: &LineDigest,
+    nodes: &Nodes,
+    launchers: &Anchored<'_>,
+) -> Markup {
     let boxes = digest.line.boxes();
     let central = digest.line.central();
 
@@ -163,10 +209,19 @@ fn body(group: &Group, side: Side, digest: &LineDigest, nodes: &Nodes) -> Markup
                     @match element {
                         Element::Node(siglum) => {
                             @if let Some(node) = digest.line.node(&siglum) {
-                                (drawn(node))
+                                (drawn(node, launchers))
                             }
                         }
-                        Element::Box(black_box) => (drawn_box(&black_box)),
+                        Element::Box(black_box) => (drawn_box(&black_box, launchers)),
+                    }
+                }
+
+                // The line's open end, where a question about where it
+                // could go next belongs.
+                @if !digest.line.nodes.is_empty() {
+                    div class="node" {
+                        div class="node__mark" { span { "the end" } }
+                        div class="node__body" { (launchers.at(Task::Explore)) }
                     }
                 }
             }
@@ -179,7 +234,7 @@ fn body(group: &Group, side: Side, digest: &LineDigest, nodes: &Nodes) -> Markup
 }
 
 /// One node, with what is known about it in the margin.
-fn drawn(node: &stemma_core::line::Node) -> Markup {
+fn drawn(node: &stemma_core::line::Node, launchers: &Anchored<'_>) -> Markup {
     let central = node.is_central();
 
     html! {
@@ -214,13 +269,22 @@ fn drawn(node: &stemma_core::line::Node) -> Markup {
                         }
                     }
                 }
+
+                // A central statement is frozen against agents, so the
+                // one thing that may be asked about it is whether it is
+                // false.
+                @if central {
+                    (launchers.at(Task::Refute {
+                        statement: node.siglum.clone(),
+                    }))
+                }
             }
         }
     }
 }
 
 /// One box, drawn as the declared absence it is.
-fn drawn_box(black_box: &stemma_core::line::BlackBox) -> Markup {
+fn drawn_box(black_box: &stemma_core::line::BlackBox, launchers: &Anchored<'_>) -> Markup {
     let filled = black_box.state != BoxState::Empty;
 
     html! {
@@ -243,6 +307,12 @@ fn drawn_box(black_box: &stemma_core::line::BlackBox) -> Markup {
                     // here, because in both cases nothing is known.
                     span { "nothing here yet" }
                 }
+            }
+
+            div class="box__ask" {
+                (launchers.at(Task::Fill {
+                    after: black_box.after.clone(),
+                }))
             }
         }
     }

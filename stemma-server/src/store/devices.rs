@@ -261,16 +261,29 @@ fn issue_token(
 
 /// Whose account a machine's credential acts for.
 pub fn holder(connection: &Connection, key: &Key, token: &str) -> Result<Option<UserId>> {
-    let found: Option<String> = connection
+    Ok(credential(connection, key, token)?.map(|(_, user)| user))
+}
+
+/// The credential itself, and whose account it acts for.
+///
+/// The row's identifier is what a machine is registered against, so a
+/// machine keeps its identity across everything except signing in again.
+pub fn credential(
+    connection: &Connection,
+    key: &Key,
+    token: &str,
+) -> Result<Option<(String, UserId)>> {
+    let found: Option<(String, String)> = connection
         .query_row(
-            "SELECT user_id FROM client_tokens WHERE token_hash = ?1 AND revoked_at IS NULL",
+            "SELECT id, user_id FROM client_tokens
+              WHERE token_hash = ?1 AND revoked_at IS NULL",
             [key.fingerprint(token)],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .context("cannot read the credential")?;
 
-    let Some(raw) = found else {
+    let Some((id, user)) = found else {
         return Ok(None);
     };
 
@@ -281,7 +294,7 @@ pub fn holder(connection: &Connection, key: &Key, token: &str) -> Result<Option<
         )
         .context("cannot record the credential's use")?;
 
-    Ok(raw.parse().ok())
+    Ok(user.parse().ok().map(|user| (id, user)))
 }
 
 /// Stops a machine's credential working, from wherever it is revoked.

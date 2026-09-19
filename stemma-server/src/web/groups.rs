@@ -253,10 +253,21 @@ pub async fn space(
     )
     .signed_in(signed.user.clone(), signed.maintainer);
     let work = read_work(&instance, &group, &signed).await?;
+    let (offers, queue) = read_machines(&instance, &group, &signed).await?;
 
     Ok(page(
         &chrome,
-        space_body(&signed, &group, role, &members, &invitations, &work, None),
+        space_body(
+            &signed,
+            &group,
+            role,
+            &members,
+            &invitations,
+            &work,
+            &offers,
+            &queue,
+            None,
+        ),
     )
     .into_response())
 }
@@ -320,6 +331,7 @@ pub async fn invite(
         .link(&format!("invite/{secret}"));
     let (_, members, live) = read_space(&instance, &group, &signed).await?;
     let work = read_work(&instance, &group, &signed).await?;
+    let (offers, queue) = read_machines(&instance, &group, &signed).await?;
 
     let chrome = Chrome::anonymous(
         group.name.clone(),
@@ -329,7 +341,17 @@ pub async fn invite(
 
     Ok(page(
         &chrome,
-        space_body(&signed, &group, role, &members, &live, &work, Some(&link)),
+        space_body(
+            &signed,
+            &group,
+            role,
+            &members,
+            &live,
+            &work,
+            &offers,
+            &queue,
+            Some(&link),
+        ),
     )
     .into_response())
 }
@@ -431,7 +453,28 @@ async fn read_work(
     Ok(found)
 }
 
+/// The machines this group has, and what they have been asked to do.
+///
+/// Work on somebody's own repository is listed for them alone, because
+/// the repository it is about is one nobody else can clone.
+async fn read_machines(
+    instance: &Instance,
+    group: &Group,
+    signed: &SignedIn,
+) -> Result<(Vec<super::jobs::Offer>, Vec<crate::store::jobs::Job>), WebError> {
+    let offers = super::jobs::offers(instance, &group.id).await?;
+
+    let id = group.id.clone();
+    let reader = signed.user.id.clone();
+    let queue = instance
+        .read(move |connection| crate::store::jobs::for_group(connection, &id, &reader, 20))
+        .await?;
+
+    Ok((offers, queue))
+}
+
 /// The group space.
+#[allow(clippy::too_many_arguments)]
 fn space_body(
     signed: &SignedIn,
     group: &Group,
@@ -439,6 +482,8 @@ fn space_body(
     members: &[Member],
     invitations: &[Invitation],
     work: &[(Side, Nodes)],
+    offers: &[super::jobs::Offer],
+    queue: &[crate::store::jobs::Job],
     fresh_link: Option<&str>,
 ) -> Markup {
     html! {
@@ -461,6 +506,9 @@ fn space_body(
                 }
             }
         }
+
+        (super::jobs::machine_list(offers))
+        (super::jobs::queue(queue))
 
         @if role.can_invite() {
             (invitations_block(signed, group, role, invitations, fresh_link))

@@ -15,16 +15,23 @@ use super::{Instance, WebError, transport};
 use crate::store::devices;
 use crate::store::users::{self, User};
 
-/// A machine acting for somebody.
+/// A credential a program on somebody's machine is carrying.
+///
+/// Whether that machine has also registered as one that runs jobs is a
+/// separate question: signing in and offering to work are two acts, and
+/// a laptop somebody only writes on does neither the second.
 #[derive(Debug, Clone)]
-pub struct Machine {
+pub struct Credential {
     /// The account it acts for.
     pub user: User,
-    /// The credential it carried, so it can be given back.
+    /// The row it was issued as, which is what a machine is registered
+    /// against.
+    pub token_id: String,
+    /// The credential itself, so it can be given back.
     pub token: String,
 }
 
-impl FromRequestParts<Instance> for Machine {
+impl FromRequestParts<Instance> for Credential {
     type Rejection = WebError;
 
     async fn from_request_parts(
@@ -49,23 +56,27 @@ impl FromRequestParts<Instance> for Machine {
 
         let found = instance
             .read(move |connection| {
-                let Some(id) = devices::holder(connection, &key, &carried)? else {
+                let Some((token_id, id)) = devices::credential(connection, &key, &carried)? else {
                     return Ok(None);
                 };
 
-                users::by_id(connection, &id)
+                Ok(users::by_id(connection, &id)?.map(|user| (token_id, user)))
             })
             .await?;
 
-        match found.filter(User::is_active) {
-            Some(user) => Ok(Self { user, token }),
+        match found.filter(|(_, user)| user.is_active()) {
+            Some((token_id, user)) => Ok(Self {
+                user,
+                token_id,
+                token,
+            }),
             None => Err(refuse()),
         }
     }
 }
 
 /// Who this credential acts for.
-pub async fn me(machine: Machine) -> Response {
+pub async fn me(machine: Credential) -> Response {
     Json(json!({
         "user": machine.user.id.to_string(),
         "display_name": machine.user.display_name,
@@ -82,7 +93,7 @@ pub async fn me(machine: Machine) -> Response {
 /// kept by hand goes stale the moment it matters.
 pub async fn workspace(
     State(instance): State<Instance>,
-    machine: Machine,
+    machine: Credential,
 ) -> Result<Response, WebError> {
     let public_url = instance.settings.public_url.clone();
     let user = machine.user.id.clone();
@@ -118,7 +129,7 @@ pub async fn workspace(
 /// Gives a credential back.
 pub async fn sign_out(
     State(instance): State<Instance>,
-    machine: Machine,
+    machine: Credential,
 ) -> Result<Response, WebError> {
     let key = instance.key.clone();
     let token = machine.token.clone();

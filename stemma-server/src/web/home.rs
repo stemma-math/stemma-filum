@@ -36,13 +36,21 @@ pub async fn home(
         })
         .await?;
 
+    let machines = super::machines::owned_by(&instance, &signed.user.id).await?;
+
     let chrome = Chrome::anonymous("Home", name)
         .at("/")
         .signed_in(signed.user.clone(), signed.maintainer);
 
     Ok(page(
         &chrome,
-        body(&signed, &memberships, &requests, policy.group_requests_open),
+        body(
+            &signed,
+            &memberships,
+            &requests,
+            &machines,
+            policy.group_requests_open,
+        ),
     )
     .into_response())
 }
@@ -52,6 +60,7 @@ fn body(
     signed: &SignedIn,
     memberships: &[Membership],
     requests: &[Request],
+    machines: &[(crate::store::machines::Machine, usize)],
     may_ask: bool,
 ) -> Markup {
     html! {
@@ -89,6 +98,8 @@ fn body(
                 p { a href="/groups/new" { "Ask for a group" } }
             }
         }
+
+        (super::machines::summary(machines))
 
         @if !requests.is_empty() {
             div class="block" {

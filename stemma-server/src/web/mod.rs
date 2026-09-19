@@ -15,8 +15,10 @@ pub mod front;
 pub mod groups;
 pub mod home;
 pub mod invite;
+pub mod jobs;
 pub mod layout;
 pub mod lines;
+pub mod machines;
 pub mod reset;
 pub mod transport;
 pub mod visitor;
@@ -165,11 +167,16 @@ pub fn router() -> Router<Instance> {
         )
         .route("/g/{slug}", get(groups::space))
         .route("/g/{slug}/{side}/{line}", get(lines::view))
+        .route("/g/{slug}/{side}/{line}/jobs", post(jobs::launch))
         .route("/g/{slug}/invitations", post(groups::invite))
         .route(
             "/g/{slug}/invitations/{id}/withdraw",
             post(groups::withdraw),
         )
+        .route("/machines/{id}", get(machines::panel))
+        .route("/machines/{id}/serve", post(machines::serve))
+        .route("/machines/{id}/retire", post(machines::retire))
+        .route("/machines/{id}/jobs/{job}/clear", post(machines::clear))
         .route("/invite/{secret}", get(invite::offer))
         .route("/invite/{secret}/join", post(invite::join))
         .route("/invite/{secret}/register", post(invite::join_and_register))
@@ -185,6 +192,14 @@ pub fn router() -> Router<Instance> {
             "/api/groups/{group}/{side}/artefacts/{kind}/{commit}",
             get(artefacts::send).put(artefacts::receive),
         )
+        .route(
+            "/api/machines",
+            get(machines::mine).post(machines::register),
+        )
+        .route("/api/machines/beat", post(machines::beat))
+        .route("/api/jobs", get(jobs::listing).post(jobs::start))
+        .route("/api/jobs/take", post(jobs::take))
+        .route("/api/jobs/{id}/finish", post(jobs::finish))
         .route("/api/logout", post(api::sign_out))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))

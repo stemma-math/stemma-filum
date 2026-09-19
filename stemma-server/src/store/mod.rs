@@ -10,6 +10,8 @@ pub mod artefacts;
 pub mod devices;
 pub mod groups;
 pub mod invitations;
+pub mod jobs;
+pub mod machines;
 pub mod resets;
 pub mod sessions;
 pub mod settings;

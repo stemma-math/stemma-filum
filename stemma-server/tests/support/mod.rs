@@ -102,6 +102,43 @@ impl Harness {
         self.send(request).await
     }
 
+    /// Sends JSON as a machine would, carrying a credential.
+    pub async fn post_json_with_token(&mut self, path: &str, token: &str, body: &str) -> Page {
+        let request = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned()))
+            .expect("a request");
+
+        self.send(request).await
+    }
+
+    /// A credential for an account, made the way a signed-in machine
+    /// collects one.
+    pub async fn credential(&self, account: &str) -> String {
+        let account = account.to_owned();
+
+        self.instance
+            .write(move |connection| {
+                let key = Key::from_material(b"a test key");
+                let user = stemma_server::store::users::by_login(connection, &account)?
+                    .expect("the account");
+                let (grant, device_code) =
+                    stemma_server::store::devices::start(connection, &key, "a test machine")?;
+
+                stemma_server::store::devices::approve(connection, &grant.id, &user.id)?;
+
+                match stemma_server::store::devices::collect(connection, &key, &device_code)? {
+                    stemma_server::store::devices::Collected::Issued { token, .. } => Ok(token),
+                    other => panic!("no credential: {other:?}"),
+                }
+            })
+            .await
+            .expect("a credential")
+    }
+
     /// Asks for something as a machine would, carrying a credential.
     pub async fn get_with_token(&mut self, path: &str, token: &str) -> Page {
         let request = Request::builder()
