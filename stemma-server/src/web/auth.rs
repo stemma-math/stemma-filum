@@ -327,6 +327,10 @@ fn login_body(next: Option<&str>, registration_open: bool, problem: Option<&str>
                 button class="button" type="submit" { "Log in" }
             }
 
+            p class="quiet" {
+                a href="/forgotten" { "Forgotten your password?" }
+            }
+
             @if registration_open {
                 p class="quiet" {
                     "No account here yet? " a href="/register" { "Create one" } "."

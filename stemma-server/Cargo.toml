@@ -26,6 +26,7 @@ base64.workspace = true
 clap.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
+lettre.workspace = true
 maud.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

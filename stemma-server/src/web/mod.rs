@@ -154,6 +154,40 @@ impl Instance {
     pub async fn policy(&self) -> Result<Policy, WebError> {
         self.read(crate::store::settings::policy).await
     }
+
+    /// Hands one message to the instance's mail server.
+    ///
+    /// Nothing depends on this working. An instance with no way out is
+    /// an ordinary instance, and a message that does not go is said so
+    /// to the person who asked for it, with the link still in front of
+    /// them.
+    pub async fn deliver(&self, to: &str, subject: &str, body: &str) -> Delivered {
+        let policy = match self.policy().await {
+            Ok(policy) => policy,
+            Err(_) => return Delivered::NoWayOut,
+        };
+        let named = crate::web::front::instance_name(self, &policy);
+        let Some(post) = crate::mail::Post::of(&policy, &named) else {
+            return Delivered::NoWayOut;
+        };
+
+        let (to, subject, body) = (to.to_owned(), subject.to_owned(), body.to_owned());
+        let sent = tokio::task::spawn_blocking(move || post.send(&to, &subject, &body)).await;
+
+        match sent {
+            Ok(Ok(())) => Delivered::Sent,
+            Ok(Err(why)) => {
+                tracing::warn!("a message did not go out: {why:#}");
+
+                Delivered::Refused(why.to_string())
+            }
+            Err(error) => {
+                tracing::warn!("a message did not go out: {error}");
+
+                Delivered::Refused("the instance could not finish sending it".to_owned())
+            }
+        }
+    }
 }
 
 /// Every page the instance serves.
@@ -202,6 +236,7 @@ pub fn router() -> Router<Instance> {
         .route("/invite/{secret}/join", post(invite::join))
         .route("/invite/{secret}/register", post(invite::join_and_register))
         .route("/reset/{secret}", get(reset::form).post(reset::set))
+        .route("/forgotten", get(reset::asking).post(reset::forgotten))
         .route("/device", get(device::form).post(device::answer))
         .route(
             "/git/{group}/{*rest}",
@@ -250,6 +285,30 @@ pub fn router() -> Router<Instance> {
         .route(assets::DESCENT_PATH, get(assets::descent))
         .route(assets::FONT_PATH, get(assets::font))
         .fallback(get(not_found))
+}
+
+/// What became of a message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Delivered {
+    /// The mail server took it.
+    Sent,
+    /// This instance has no mail server, which is not a fault.
+    NoWayOut,
+    /// It has one, and it would not take the message.
+    Refused(String),
+}
+
+impl Delivered {
+    /// What to tell whoever asked for it, when there is anything to tell.
+    pub fn said(&self, to: &str) -> Option<String> {
+        match self {
+            Self::Sent => Some(format!("It has been sent to {to}.")),
+            Self::NoWayOut => None,
+            Self::Refused(why) => Some(format!(
+                "It could not be sent to {to} ({why}), so the link below is the only copy."
+            )),
+        }
+    }
 }
 
 /// What is served when there is nothing at an address.

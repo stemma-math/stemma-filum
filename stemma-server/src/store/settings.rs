@@ -62,6 +62,8 @@ pub struct Policy {
     pub mail_from: Option<String>,
     /// The SMTP server, when there is one.
     pub mail_smtp_url: Option<String>,
+    /// The environment variable holding the password, never the password.
+    pub mail_password_env: Option<String>,
 }
 
 impl Policy {
@@ -89,6 +91,7 @@ pub fn policy(connection: &Connection) -> Result<Policy> {
         )?,
         mail_from: get(connection, MAIL_FROM)?,
         mail_smtp_url: get(connection, MAIL_SMTP_URL)?,
+        mail_password_env: get(connection, MAIL_PASSWORD_ENV)?,
     })
 }
 

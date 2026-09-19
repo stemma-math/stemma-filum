@@ -23,6 +23,119 @@ pub struct NewPassword {
     pub password: String,
 }
 
+/// What somebody who cannot get in sends.
+#[derive(Debug, Default, Deserialize)]
+pub struct Forgotten {
+    /// The address they registered with.
+    #[serde(default)]
+    pub email: String,
+}
+
+/// The way back in, for somebody who cannot get in.
+pub async fn asking(State(instance): State<Instance>) -> Result<Response, WebError> {
+    let policy = instance.policy().await?;
+    let name = super::front::instance_name(&instance, &policy);
+    let chrome = Chrome::anonymous("Forgotten password", name);
+
+    Ok(page(&chrome, ask(policy.sends_mail(), None)).into_response())
+}
+
+/// Sends a link, and says the same thing either way.
+///
+/// The answer never depends on whether the address has an account here.
+/// Telling somebody which addresses are registered is telling anybody
+/// who asks, and an instance that hosts one research group would be
+/// telling them who is in it.
+pub async fn forgotten(
+    State(instance): State<Instance>,
+    axum::Form(form): axum::Form<Forgotten>,
+) -> Result<Response, WebError> {
+    let policy = instance.policy().await?;
+    let name = super::front::instance_name(&instance, &policy);
+    let chrome = Chrome::anonymous("Forgotten password", name);
+    let address = form.email.trim().to_owned();
+
+    if !policy.sends_mail() {
+        return Ok(page(&chrome, ask(false, None)).into_response());
+    }
+
+    let key = instance.key.clone();
+    let asked = address.clone();
+    let made = instance
+        .read(move |connection| {
+            let Some(user) = users::by_email(connection, &asked)? else {
+                return Ok(None);
+            };
+
+            Ok(Some(resets::create(connection, &key, &user.id)?))
+        })
+        .await?;
+
+    if let Some(secret) = made {
+        let link = instance
+            .settings
+            .public_url
+            .link(&format!("reset/{secret}"));
+
+        instance
+            .deliver(
+                &address,
+                "Setting your password",
+                &format!(
+                    "Somebody asked for a way to set the password on this account.\n\n\
+                     Open this link to set one. It works once, and for a couple of \
+                     hours.\n\n{link}\n\n\
+                     If it was not you, nothing has happened and you can ignore this."
+                ),
+            )
+            .await;
+    }
+
+    Ok(page(&chrome, ask(true, Some(&address))).into_response())
+}
+
+/// The form, and what it says once it has been sent.
+fn ask(sends_mail: bool, sent_to: Option<&str>) -> Markup {
+    html! {
+        div class="sheet--narrow stack" {
+            h1 { "Forgotten password" }
+
+            @if !sends_mail {
+                p {
+                    "This instance does not send mail, so a link cannot be posted to you. "
+                    "Ask whoever runs it for one: they make it on the machine, with "
+                    code { "stemma-server admin reset" } "."
+                }
+            } @else if let Some(address) = sent_to {
+                p {
+                    "If " (address) " has an account here, a link to set a password is "
+                    "on its way. It works once, and for a couple of hours."
+                }
+                p class="quiet" {
+                    "Nothing about the account has changed, and nothing changes until "
+                    "the link is used."
+                }
+            } @else {
+                p {
+                    "Give the address the account uses, and a link to set a password "
+                    "goes to it."
+                }
+
+                form method="post" action="/forgotten" class="stack" {
+                    div class="field" {
+                        label for="email" { "Email address" }
+                        input type="email" id="email" name="email" autofocus required;
+                    }
+
+                    button class="button" type="submit" { "Send me a link" }
+                }
+            }
+
+            p { a href="/login" { "Back to logging in" } }
+        }
+    }
+}
+
 /// The form, if the link still works.
 pub async fn form(
     State(instance): State<Instance>,

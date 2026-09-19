@@ -361,3 +361,76 @@ async fn a_reset_link_sets_a_password_once_and_ends_every_session() {
         .await;
     assert_eq!(admitted.status, StatusCode::SEE_OTHER);
 }
+
+#[tokio::test]
+async fn an_instance_that_cannot_send_mail_says_so_rather_than_pretending() {
+    let mut harness = Harness::new();
+
+    let login = harness.get("/login").await;
+    assert!(login.says("Forgotten your password?"));
+
+    let asked = harness.get("/forgotten").await;
+    assert!(asked.says("does not send mail"));
+    assert!(asked.says("stemma-server admin reset"));
+
+    // And it does not quietly claim to have sent anything.
+    let sent = harness
+        .post("/forgotten", &[("email", "ana@example.org")])
+        .await;
+
+    assert!(sent.says("does not send mail"));
+    assert!(!sent.says("on its way"));
+}
+
+#[tokio::test]
+async fn asking_for_a_link_says_the_same_thing_whoever_asks() {
+    let mut harness = Harness::new();
+
+    harness
+        .instance
+        .write(|connection| {
+            stemma_server::store::settings::set(
+                connection,
+                stemma_server::store::settings::MAIL_FROM,
+                "stemma@example.org",
+                None,
+            )?;
+            stemma_server::store::settings::set(
+                connection,
+                stemma_server::store::settings::MAIL_SMTP_URL,
+                "smtp://127.0.0.1:1",
+                None,
+            )?;
+
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    harness
+        .post(
+            "/register",
+            &[
+                ("display_name", "Ana"),
+                ("slug", "ana"),
+                ("email", "ana@example.org"),
+                ("password", "a long enough password"),
+            ],
+        )
+        .await;
+
+    let known = harness
+        .post("/forgotten", &[("email", "ana@example.org")])
+        .await;
+    let unknown = harness
+        .post("/forgotten", &[("email", "nobody@example.org")])
+        .await;
+
+    assert!(known.says("on its way"));
+    assert!(unknown.says("on its way"));
+    assert_eq!(
+        known.body.replace("ana@", "nobody@"),
+        unknown.body,
+        "the answer must not say which addresses have accounts"
+    );
+}

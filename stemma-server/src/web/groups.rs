@@ -267,6 +267,7 @@ pub async fn space(
             &offers,
             &queue,
             None,
+            None,
         ),
     )
     .into_response())
@@ -319,16 +320,40 @@ pub async fn invite(
     };
     let days = policy.invitation_ttl_days;
 
-    let (_, secret) = instance
-        .read(move |connection| {
-            invitations::create(connection, &key, &id, offered, email.as_deref(), &by, days)
-        })
-        .await?;
+    let (_, secret) = {
+        let email = email.clone();
+
+        instance
+            .read(move |connection| {
+                invitations::create(connection, &key, &id, offered, email.as_deref(), &by, days)
+            })
+            .await?
+    };
 
     let link = instance
         .settings
         .public_url
         .link(&format!("invite/{secret}"));
+
+    // The link is what the invitation is. Mail carries a copy of it
+    // where the instance can send mail, and the page shows it either
+    // way, because a link that never arrived is not an invitation.
+    let delivered = match &email {
+        Some(address) => instance
+            .deliver(
+                address,
+                &format!("{} invites you to {}", signed.user.display_name, group.name),
+                &format!(
+                    "{} has invited you to join {} on this instance.\n\n\
+                         Open this link to accept. It works once, and it expires.\n\n{link}",
+                    signed.user.display_name, group.name
+                ),
+            )
+            .await
+            .said(address),
+        None => None,
+    };
+
     let (_, members, live) = read_space(&instance, &group, &signed).await?;
     let work = read_work(&instance, &group, &signed).await?;
     let (offers, queue) = read_machines(&instance, &group, &signed).await?;
@@ -351,6 +376,7 @@ pub async fn invite(
             &offers,
             &queue,
             Some(&link),
+            delivered.as_deref(),
         ),
     )
     .into_response())
@@ -485,6 +511,7 @@ fn space_body(
     offers: &[super::jobs::Offer],
     queue: &[crate::store::jobs::Job],
     fresh_link: Option<&str>,
+    delivered: Option<&str>,
 ) -> Markup {
     html! {
         div class="stack" {
@@ -516,7 +543,7 @@ fn space_body(
         (super::jobs::queue(queue))
 
         @if role.can_invite() {
-            (invitations_block(signed, group, role, invitations, fresh_link))
+            (invitations_block(signed, group, role, invitations, fresh_link, delivered))
         }
     }
 }
@@ -577,6 +604,7 @@ fn invitations_block(
     role: GroupRole,
     invitations: &[Invitation],
     fresh_link: Option<&str>,
+    delivered: Option<&str>,
 ) -> Markup {
     html! {
         div class="block" {
@@ -584,7 +612,12 @@ fn invitations_block(
 
             @if let Some(link) = fresh_link {
                 div class="stack stack--tight" {
-                    p { "Send this link to the person you are inviting. It is shown once." }
+                    @match delivered {
+                        Some(said) => p { (said) }
+                        None => p {
+                            "Send this link to the person you are inviting. It is shown once."
+                        }
+                    }
                     p class="secret" { (link) }
                 }
             }

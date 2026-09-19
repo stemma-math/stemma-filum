@@ -13,6 +13,7 @@ pub mod config;
 pub mod db;
 pub mod git;
 pub mod install;
+pub mod mail;
 pub mod password;
 pub mod repositories;
 pub mod serve;
