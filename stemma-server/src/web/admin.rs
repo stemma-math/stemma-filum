@@ -184,19 +184,32 @@ pub async fn approve(
     let maintainer = signed.user.id.clone();
     let note = trimmed(&decision.note);
 
-    instance
+    let made = instance
         .write(move |connection| {
             let Some(request) = groups::request_by_id(connection, &id)? else {
-                return Ok(());
+                return Ok(None);
             };
 
-            if request.is_open() {
-                groups::approve(connection, &request, &maintainer, note.as_deref())?;
+            if !request.is_open() {
+                return Ok(None);
             }
 
-            Ok(())
+            let group = groups::approve(connection, &request, &maintainer, note.as_deref())?;
+            let owner = users::by_id(connection, &request.requested_by)?;
+
+            Ok(owner.map(|owner| (group, owner)))
         })
         .await?;
+
+    // A group without a repository is a group nobody can work in, so the
+    // two arrive together.
+    if let Some((group, owner)) = made {
+        instance
+            .with_repositories(move |repositories| {
+                crate::repositories::for_both(repositories, &group, &owner)
+            })
+            .await?;
+    }
 
     Ok(Redirect::to("/admin").into_response())
 }

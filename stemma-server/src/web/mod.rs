@@ -16,6 +16,7 @@ pub mod home;
 pub mod invite;
 pub mod layout;
 pub mod reset;
+pub mod transport;
 pub mod visitor;
 
 use std::sync::{Arc, Mutex};
@@ -99,6 +100,30 @@ impl Instance {
         outcome.map_err(WebError::Internal)
     }
 
+    /// Runs work against the repositories.
+    ///
+    /// Git is a program, not a library here, so this also goes to a thread
+    /// that is allowed to block.
+    pub async fn with_repositories<T, F>(&self, work: F) -> Result<T, WebError>
+    where
+        F: FnOnce(&crate::git::Repositories) -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let repositories = self.repositories();
+
+        tokio::task::spawn_blocking(move || work(&repositories))
+            .await
+            .map_err(|error| {
+                WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
+            })?
+            .map_err(WebError::Internal)
+    }
+
+    /// Where this instance keeps its repositories.
+    pub fn repositories(&self) -> crate::git::Repositories {
+        crate::git::Repositories::new(self.settings.paths.git_dir())
+    }
+
     /// What the instance's policy says right now.
     pub async fn policy(&self) -> Result<Policy, WebError> {
         self.read(crate::store::settings::policy).await
@@ -130,6 +155,10 @@ pub fn router() -> Router<Instance> {
         .route("/invite/{secret}/register", post(invite::join_and_register))
         .route("/reset/{secret}", get(reset::form).post(reset::set))
         .route("/device", get(device::form).post(device::answer))
+        .route(
+            "/git/{group}/{*rest}",
+            get(transport::serve).post(transport::serve),
+        )
         .route("/api/me", get(api::me))
         .route("/api/logout", post(api::sign_out))
         .route("/api/device/start", post(device::start))

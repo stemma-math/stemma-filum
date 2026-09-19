@@ -110,6 +110,14 @@ pub async fn join(
         ));
     }
 
+    let joining = signed.user.clone();
+    let joined_group = group.clone();
+    instance
+        .with_repositories(move |repositories| {
+            crate::repositories::for_member(repositories, &joined_group, &joining)
+        })
+        .await?;
+
     Ok(Redirect::to(&format!("/g/{}", group.slug())).into_response())
 }
 
@@ -201,6 +209,14 @@ pub async fn join_and_register(
             ));
         }
     };
+
+    let joining = user.clone();
+    let joined_group = group.clone();
+    instance
+        .with_repositories(move |repositories| {
+            crate::repositories::for_member(repositories, &joined_group, &joining)
+        })
+        .await?;
 
     let key = instance.key.clone();
     let id = user.id.clone();
