@@ -118,6 +118,11 @@ fn run(cli: Cli) -> Result<ExitCode> {
 
                 Ok(ExitCode::SUCCESS)
             }
+            JobCommand::Output { job } => {
+                stemma::jobs::output(&home, &job, &mut out)?;
+
+                Ok(ExitCode::SUCCESS)
+            }
         },
 
         Command::Status => {

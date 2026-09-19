@@ -113,6 +113,12 @@ pub enum JobCommand {
 
     /// Says what has been asked of this account's machines.
     List,
+
+    /// Prints the raw output kept on this machine for one job.
+    Output {
+        /// The job whose local output to print.
+        job: String,
+    },
 }
 
 /// What a job asks for, and of whom.
@@ -204,6 +210,20 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn raw_output_names_the_job_that_produced_it() {
+        let Command::Job {
+            command: JobCommand::Output { job },
+        } = Cli::try_parse_from(["stemma", "job", "output", "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T"])
+            .unwrap()
+            .command
+        else {
+            panic!("expected a job output command");
+        };
+
+        assert_eq!(job, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T");
     }
 
     #[test]

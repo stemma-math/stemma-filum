@@ -13,6 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use stemma_core::id::JobId;
 use stemma_core::job::Task;
 use stemma_core::line::Name;
 use stemma_core::repository;
@@ -23,6 +24,7 @@ use crate::credentials::Credentials;
 use crate::git;
 use crate::home::Home;
 use crate::session;
+use crate::work;
 
 /// What a person asked for at the terminal.
 #[derive(Debug, Clone)]
@@ -115,7 +117,31 @@ pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
             "  {} · {} on {}/{}",
             job.task, job.agent, job.group, job.line
         )?;
+
+        if work::output_exists(home, &job.job) {
+            writeln!(
+                out,
+                "  raw output kept here · `stemma job output {}`",
+                job.job
+            )?;
+        }
     }
+
+    Ok(())
+}
+
+/// Prints the raw output one of this machine's agents left behind.
+///
+/// The identifier is parsed before it becomes a path. Besides producing a
+/// useful error for a mistyped id, that makes this local inspection command
+/// incapable of naming an arbitrary file.
+pub fn output(home: &Home, job: &str, out: &mut impl Write) -> Result<()> {
+    let job: JobId = job.parse().context("that is not a job identifier")?;
+    let path = work::output_of(home, &job.to_string());
+    let raw = std::fs::read(&path)
+        .with_context(|| format!("this machine has no raw output for {job}"))?;
+
+    out.write_all(&raw)?;
 
     Ok(())
 }
@@ -221,6 +247,13 @@ mod tests {
         root
     }
 
+    fn home(root: &Path) -> Home {
+        Home::locate(&crate::home::Environment::from_pairs([(
+            crate::home::HOME_VARIABLE,
+            root.to_string_lossy().as_ref(),
+        )]))
+    }
+
     #[test]
     fn a_command_run_inside_a_line_is_about_that_line() {
         let clone = somewhere("inside");
@@ -266,5 +299,37 @@ mod tests {
             "quotient-groups"
         );
         assert!(line_of(&clone, &clone, Some("Not A Line")).is_err());
+    }
+
+    #[test]
+    fn raw_output_can_only_be_read_by_its_job_identifier() {
+        let root = somewhere("raw-output");
+        let home = home(&root);
+        let job = "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T";
+        let path = work::output_of(&home, job);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"the agent's private account detail\n").unwrap();
+
+        let mut shown = Vec::new();
+        output(&home, job, &mut shown).unwrap();
+        assert_eq!(shown, b"the agent's private account detail\n");
+
+        let error = output(&home, "../../credentials", &mut Vec::new()).unwrap_err();
+        assert!(error.to_string().contains("not a job identifier"));
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn absent_raw_output_says_that_it_is_absent_on_this_machine() {
+        let root = somewhere("no-raw-output");
+        let error = output(
+            &home(&root),
+            "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T",
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("this machine has no raw output"));
     }
 }
