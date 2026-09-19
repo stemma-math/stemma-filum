@@ -129,7 +129,7 @@ pub fn read(clone: &Path) -> Result<Built> {
     let commit = git::head(clone).unwrap_or_else(|_| "unknown".to_owned());
 
     let mut nodes = Nodes::new(manifest.group.clone(), manifest.side, commit);
-    nodes.typst = manifest.pins.typst.clone();
+    nodes.typst = group_pin(clone, &manifest);
 
     let mut faults = Vec::new();
 
@@ -161,6 +161,29 @@ pub fn read(clone: &Path) -> Result<Built> {
         nodes,
         faults,
     })
+}
+
+/// What the group has pinned, wherever it is written down.
+///
+/// The pin belongs to the group, not to a repository: a private line is
+/// written against the same environment as the group's own work, or the
+/// two would not compose to the same thing. So a private clone with no
+/// pin of its own takes the group's, from the shared clone beside it.
+pub fn group_pin(clone: &Path, manifest: &Manifest) -> Option<String> {
+    if let Some(pinned) = &manifest.pins.typst {
+        return Some(pinned.clone());
+    }
+
+    if manifest.side != repository::Side::Private {
+        return None;
+    }
+
+    let beside = clone.parent()?.join(Side::Shared.directory());
+    let shared = read_manifest(&beside).ok()?;
+
+    (shared.group == manifest.group)
+        .then_some(shared.pins.typst)
+        .flatten()
 }
 
 /// Reads the file at the root that says what the repository is.
@@ -353,6 +376,37 @@ mod tests {
     fn a_commit_is_shown_short() {
         assert_eq!(short("0123456789abcdef"), "01234567");
         assert_eq!(short("short"), "short");
+    }
+
+    #[test]
+    fn a_private_clone_takes_the_group_pin_from_the_shared_one_beside_it() {
+        use stemma_core::repository::{Manifest, Side as Which};
+
+        let root = std::env::temp_dir().join(format!("stemma-pin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        let group = "grp:algebra".parse().unwrap();
+        let shared = root.join("algebra/shared");
+        let private = root.join("algebra/private");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::create_dir_all(&private).unwrap();
+
+        let mut theirs = Manifest::new(group, Which::Shared, "Algebra");
+        theirs.pins.typst = Some("0.13.1".to_owned());
+        std::fs::write(
+            shared.join(stemma_core::repository::MANIFEST),
+            theirs.to_text(),
+        )
+        .unwrap();
+
+        let mine = Manifest::new("grp:algebra".parse().unwrap(), Which::Private, "Mine");
+        assert_eq!(group_pin(&private, &mine).as_deref(), Some("0.13.1"));
+
+        // A group that has pinned nothing pins nothing either way.
+        let others = Manifest::new("grp:topology".parse().unwrap(), Which::Private, "Mine");
+        assert_eq!(group_pin(&private, &others), None);
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
