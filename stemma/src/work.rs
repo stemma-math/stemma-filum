@@ -1,0 +1,391 @@
+//! Doing one job on this machine.
+//!
+//! The work is read out of git at the commit the job names, never out of
+//! the working tree: the tree belongs to whoever is at the keyboard, it
+//! may be half-written, and nothing here touches it.
+//!
+//! What comes back from the agent stays here. The instance is told the
+//! type of what happened and one line, which is what the group reads.
+
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
+
+use stemma_core::job::{Outcome, Task};
+use stemma_core::line::{BlackBox, Line, Siglum};
+use stemma_core::repository::{self, Side};
+
+use crate::agents::{self, Ran};
+use crate::api::Handed;
+use crate::config::Config;
+use crate::home::Home;
+
+/// Which revision of the prompt this build sends.
+///
+/// It is recorded with every run, because "an agent said so" is not an
+/// attribution: the vendor, the model and the words it was given are.
+pub const PROMPT_REVISION: &str = "1";
+
+/// Carries out one job and says what came of it.
+///
+/// Nothing in here fails: every way this can go wrong is one of the
+/// outcomes, because a job that ends in nothing at all leaves the person
+/// who launched it watching a queue.
+pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Outcome {
+    let task: Task = match handed.task.parse() {
+        Ok(task) => task,
+        Err(problem) => return Outcome::out_of_reach(problem.to_string()),
+    };
+
+    let source = match read_source(home, config, handed) {
+        Ok(source) => source,
+        Err(why) => return Outcome::out_of_reach(why),
+    };
+
+    let line = match Line::read(&source) {
+        Ok(line) => line,
+        Err(faults) => {
+            return Outcome::out_of_reach(format!(
+                "`{}` cannot be read at that commit: {}",
+                handed.line,
+                faults
+                    .first()
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "it is not a line".to_owned())
+            ));
+        }
+    };
+
+    let ran = match agents::run(
+        config,
+        &handed.agent,
+        &prompt(handed, &task, &line, &source),
+        &agents::output_path(home, &handed.job),
+    ) {
+        Ok(ran) => ran,
+        Err(error) => return Outcome::out_of_reach(format!("{error:#}")),
+    };
+
+    became_of(&task, &handed.agent, &ran)
+}
+
+/// What a run of an agent came to.
+fn became_of(task: &Task, agent: &str, ran: &Ran) -> Outcome {
+    let named = match stemma_core::id::Slug::parse(agent) {
+        Ok(agent) => agent,
+        Err(problem) => return Outcome::out_of_reach(problem.to_string()),
+    };
+
+    if let Some(failure) = agents::trouble(&named, ran) {
+        return Outcome::from_failure(&failure);
+    }
+
+    let Ran::Finished(finished) = ran else {
+        return Outcome::out_of_reach("the agent did not run");
+    };
+
+    // Tried and the mathematics did not work is an ordinary outcome of
+    // research: the box goes back to its hatch, and nothing is owed.
+    match found_nothing(&finished.output) {
+        true => Outcome::NothingFound {
+            said: nothing_found(task).to_owned(),
+        },
+        false => Outcome::Produced {
+            said: "there is an answer, on the machine that produced it".to_owned(),
+        },
+    }
+}
+
+/// The word an agent ends with when it did not find anything.
+const NOTHING: &str = "stemma: nothing";
+
+/// Whether the agent said it found nothing.
+fn found_nothing(output: &str) -> bool {
+    output
+        .lines()
+        .rev()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(3)
+        .any(|line| line.eq_ignore_ascii_case(NOTHING))
+}
+
+/// What "it found nothing" means for this task, in the group's words.
+fn nothing_found(task: &Task) -> &'static str {
+    match task {
+        Task::Fill { .. } => "no argument was found",
+        // Never "the statement holds". An absence of a refutation is
+        // evidence of nothing, and the words have to say so.
+        Task::Refute { .. } => "no counterexample was found, which settles nothing",
+        Task::Explore => "nothing to suggest",
+    }
+}
+
+/// The source of the line a job is about, at the commit it names.
+fn read_source(home: &Home, config: &Config, handed: &Handed) -> Result<String, String> {
+    let clone = clone_of(home, config, handed)
+        .ok_or_else(|| format!("this machine has no clone of {}", handed.group))?;
+
+    if !crate::git::holds(&clone, &handed.commit) {
+        // One fetch, in case the commit landed after the last sync. The
+        // tree is left exactly as it was: nothing here resets anything.
+        let _ = crate::git::fetch(&clone);
+    }
+
+    if !crate::git::holds(&clone, &handed.commit) {
+        return Err(format!(
+            "this machine does not have commit {} of {}",
+            short(&handed.commit),
+            handed.group
+        ));
+    }
+
+    let inside = format!(
+        "{}/{}/{}",
+        repository::LINES,
+        handed.line,
+        repository::ENTRY
+    );
+
+    crate::git::show(&clone, &handed.commit, &inside)
+        .map_err(|_| format!("`{}` is not in that commit", handed.line))
+}
+
+/// Where this machine keeps the repository a job is about.
+fn clone_of(home: &Home, config: &Config, handed: &Handed) -> Option<PathBuf> {
+    let side = match handed.side.parse::<Side>().ok()? {
+        Side::Shared => crate::workspace::Side::Shared,
+        Side::Private => crate::workspace::Side::Private,
+    };
+
+    let workspace = config.workspace_or(home.workspace());
+    let clone = config
+        .group_directory(&handed.group, &workspace)
+        .join(side.directory());
+
+    crate::git::is_clone(&clone).then_some(clone)
+}
+
+/// What the agent is asked.
+///
+/// The rules come first because they are the point: what the line rests
+/// on is frozen, the interior of a box is the agent's, and an absence of
+/// a refutation is evidence of nothing.
+fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str) -> String {
+    let mut asked = String::new();
+
+    let _ = writeln!(
+        asked,
+        "You are working on one line of mathematical work, written in Typst. \
+         It belongs to the group `{}`, and this is its state at commit {}.",
+        handed.group,
+        short(&handed.commit)
+    );
+    let _ = writeln!(asked);
+    let _ = writeln!(
+        asked,
+        "Three rules hold, whatever you are asked to do:\n\
+         \n\
+         1. A statement declared `central: true` is what the line rests on. \
+            Do not change its text and do not change what it says it uses.\n\
+         2. Everything between two central statements is yours to write, \
+            repair or rewrite.\n\
+         3. Say what you lean on. A statement that uses another declares it, \
+            and an argument that quietly assumes something undeclared is not \
+            an argument."
+    );
+    let _ = writeln!(asked);
+    let _ = writeln!(asked, "The line as it stands:");
+    let _ = writeln!(asked, "----------------------------------------");
+    let _ = writeln!(asked, "{}", source.trim());
+    let _ = writeln!(asked, "----------------------------------------");
+    let _ = writeln!(asked);
+    let _ = writeln!(asked, "{}", asked_of(task, line));
+    let _ = writeln!(asked);
+    let _ = writeln!(
+        asked,
+        "End with one line on its own: `stemma: produced` if you have \
+         something to offer, or `{NOTHING}` if you did not find anything. \
+         Finding nothing is an ordinary answer and a useful one."
+    );
+
+    asked
+}
+
+/// The one thing this job asks for.
+fn asked_of(task: &Task, line: &Line) -> String {
+    match task {
+        Task::Fill { after } => {
+            let between = line
+                .boxes()
+                .into_iter()
+                .find(|black_box| &black_box.after == after);
+
+            match between {
+                Some(black_box) => format!("Fill the black box {}.", bounded(&black_box)),
+                None => "Fill the black box that box refers to, which is no longer there. \
+                         Say so rather than guessing."
+                    .to_owned(),
+            }
+        }
+        Task::Refute { statement } => format!(
+            "Look for a counterexample to `{statement}`. If you do not find one, \
+             that settles nothing and you must not say it does: say only that you \
+             did not find one."
+        ),
+        Task::Explore => "Say where this line could go next: what is worth stating, \
+                          and why it follows from what is already here."
+            .to_owned(),
+    }
+}
+
+/// A box, said by its two ends.
+fn bounded(black_box: &BlackBox) -> String {
+    let named = |siglum: &Option<Siglum>| match siglum {
+        Some(siglum) => format!("`{siglum}`"),
+        None => "the start of the line".to_owned(),
+    };
+
+    match (&black_box.after, &black_box.before) {
+        (after, Some(before)) => format!("between {} and `{before}`", named(after)),
+        // The end of a line is open, and that is the ordinary state of
+        // work in progress rather than something missing.
+        (after, None) => format!("that begins after {} and is still open", named(after)),
+    }
+}
+
+/// Where the raw output of a job is, for the person whose machine it is.
+pub fn output_of(home: &Home, job: &str) -> PathBuf {
+    agents::output_path(home, job)
+}
+
+/// A commit, short enough to read.
+fn short(commit: &str) -> &str {
+    &commit[..commit.len().min(8)]
+}
+
+/// Whether the file holding a job's output is still there.
+pub fn output_exists(home: &Home, job: &str) -> bool {
+    Path::new(&output_of(home, job)).is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::Finished;
+
+    const SOURCE: &str = r##"
+= Quotient groups
+
+#theorem(id: "thm:first", name: "First", central: true)[y]
+
+#lemma(id: "lem:kernel")[z]
+
+#theorem(id: "thm:second", name: "Second", central: true)[v]
+"##;
+
+    fn handed(task: &str) -> Handed {
+        Handed {
+            job: "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned(),
+            group: "algebra".to_owned(),
+            side: "shared".to_owned(),
+            line: "quotient-groups".to_owned(),
+            commit: "0123456789abcdef".to_owned(),
+            task: task.to_owned(),
+            agent: "claude".to_owned(),
+            launched_by: "usr:ana".to_owned(),
+        }
+    }
+
+    fn line() -> Line {
+        Line::read(SOURCE).unwrap()
+    }
+
+    #[test]
+    fn a_box_is_asked_for_by_both_its_ends() {
+        let task: Task = "fill@thm:first".parse().unwrap();
+        let asked = asked_of(&task, &line());
+
+        assert!(
+            asked.contains("between `thm:first` and `thm:second`"),
+            "{asked}"
+        );
+
+        let first: Task = "fill".parse().unwrap();
+        assert!(asked_of(&first, &line()).contains("between the start of the line"));
+    }
+
+    #[test]
+    fn the_prompt_says_what_an_agent_may_not_touch() {
+        let task: Task = "fill@thm:first".parse().unwrap();
+        let asked = prompt(&handed("fill@thm:first"), &task, &line(), SOURCE);
+
+        assert!(asked.contains("Do not change its text"));
+        assert!(asked.contains("thm:second"));
+        assert!(asked.contains("stemma: nothing"));
+    }
+
+    #[test]
+    fn an_agent_looking_for_a_counterexample_is_told_what_not_finding_one_means() {
+        let task: Task = "refute@thm:first".parse().unwrap();
+        let asked = asked_of(&task, &line());
+
+        assert!(asked.contains("settles nothing"));
+    }
+
+    #[test]
+    fn finding_no_counterexample_is_never_reported_as_the_statement_holding() {
+        let task: Task = "refute@thm:first".parse().unwrap();
+        let ran = Ran::Finished(Finished {
+            status: Some(0),
+            output: "I looked and found nothing.\nstemma: nothing\n".to_owned(),
+            gave_up: false,
+        });
+
+        let outcome = became_of(&task, "claude", &ran);
+
+        assert!(matches!(outcome, Outcome::NothingFound { .. }));
+        assert_eq!(
+            outcome.said(),
+            "no counterexample was found, which settles nothing"
+        );
+        assert!(outcome.taught_anything());
+        assert!(!outcome.is_the_machines());
+    }
+
+    #[test]
+    fn an_agent_that_said_nothing_in_particular_produced_something_to_look_at() {
+        let task: Task = "fill".parse().unwrap();
+        let ran = Ran::Finished(Finished {
+            status: Some(0),
+            output: "Here is an argument.\nstemma: produced\n".to_owned(),
+            gave_up: false,
+        });
+
+        assert!(matches!(
+            became_of(&task, "claude", &ran),
+            Outcome::Produced { .. }
+        ));
+    }
+
+    #[test]
+    fn a_missing_agent_never_becomes_a_statement_about_the_mathematics() {
+        let task: Task = "fill".parse().unwrap();
+        let outcome = became_of(&task, "claude", &Ran::Missing);
+
+        assert!(outcome.is_the_machines());
+        assert!(outcome.is_the_owners_to_fix());
+        assert!(!outcome.taught_anything());
+    }
+
+    #[test]
+    fn the_marker_is_only_read_at_the_end() {
+        assert!(found_nothing("nothing yet\nstemma: nothing"));
+        assert!(found_nothing("stemma: nothing\n\n"));
+        assert!(!found_nothing(
+            "stemma: nothing\nand then an argument\nand more\nand more"
+        ));
+        assert!(!found_nothing(
+            "an argument that mentions stemma: nothing in passing here"
+        ));
+    }
+}

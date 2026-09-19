@@ -310,10 +310,22 @@ impl Outcome {
     /// Whether this says something about the machine rather than about
     /// the mathematics.
     ///
-    /// What it says is the owner's to fix, which is why it is counted for
-    /// them and for nobody else.
+    /// Drawn on the machine and never on the node: a box three agents
+    /// could not be reached for looks exactly like a box nobody has
+    /// attempted.
     pub fn is_the_machines(&self) -> bool {
         self.attempt() == Attempt::NotMade
+    }
+
+    /// Whether what stopped it is the machine owner's to fix.
+    ///
+    /// An agent that is missing, signed out or being refused is theirs:
+    /// they own the machine and they own the account. Work the machine
+    /// could not reach is also a could-not-try, and it is not theirs —
+    /// nothing they install brings down a commit somebody has not
+    /// pushed — so it is reported and never counted against them.
+    pub fn is_the_owners_to_fix(&self) -> bool {
+        matches!(self, Self::CouldNotTry { code, .. } if code.starts_with("agent_"))
     }
 
     /// Whether anything was learned about the mathematics.
@@ -462,6 +474,7 @@ mod tests {
             agent: claude.clone(),
         });
         assert!(missing.is_the_machines());
+        assert!(missing.is_the_owners_to_fix());
         assert!(!missing.taught_anything());
         assert_eq!(missing.code(), Some("agent_not_found"));
 
@@ -477,6 +490,17 @@ mod tests {
         };
         assert!(!nothing.is_the_machines());
         assert!(nothing.taught_anything());
+    }
+
+    #[test]
+    fn work_a_machine_could_not_reach_is_reported_and_not_counted() {
+        let unreachable = Outcome::out_of_reach("this machine does not have that commit");
+
+        assert!(unreachable.is_the_machines());
+        assert!(
+            !unreachable.is_the_owners_to_fix(),
+            "somebody was told to fix a machine that is working"
+        );
     }
 
     #[test]

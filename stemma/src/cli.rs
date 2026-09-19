@@ -4,7 +4,7 @@
 //! a node over SSH, a container — has to be able to do everything, or the
 //! product has been split in two.
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 
 /// The program's arguments.
 #[derive(Debug, Parser)]
@@ -41,6 +41,27 @@ pub enum Command {
     /// Reads what the sources here declare.
     Build,
 
+    /// Offers this machine, or says what the instance makes of it.
+    Node {
+        /// What to do with it.
+        #[command(subcommand)]
+        command: NodeCommand,
+    },
+
+    /// Runs the loop that takes work, or installs it.
+    Daemon {
+        /// What to do with it.
+        #[command(subcommand)]
+        command: DaemonCommand,
+    },
+
+    /// Asks a machine for something.
+    Job {
+        /// What to do.
+        #[command(subcommand)]
+        command: JobCommand,
+    },
+
     /// Says what this machine has, without asking the instance.
     Status,
 
@@ -53,6 +74,71 @@ pub enum Command {
         /// What git wants: `get`, `store` or `erase`.
         action: String,
     },
+}
+
+/// What can be done with this machine as a node.
+#[derive(Debug, Subcommand)]
+pub enum NodeCommand {
+    /// Offers this machine to the instance as one that runs work.
+    Init {
+        /// A group to work for. Given none, it works for every group
+        /// this account is in.
+        #[arg(long = "group", value_name = "SLUG")]
+        groups: Vec<String>,
+    },
+
+    /// Says what the instance makes of this machine.
+    Status,
+}
+
+/// What can be done with the daemon.
+#[derive(Debug, Subcommand)]
+pub enum DaemonCommand {
+    /// Takes work until it is stopped.
+    Run {
+        /// Take at most one job and stop.
+        #[arg(long)]
+        once: bool,
+    },
+
+    /// Puts it under whatever supervises this machine.
+    Install,
+}
+
+/// What can be done with jobs.
+#[derive(Debug, Subcommand)]
+pub enum JobCommand {
+    /// Asks for something to be done.
+    Run(JobRun),
+
+    /// Says what has been asked of this account's machines.
+    List,
+}
+
+/// What a job asks for, and of whom.
+#[derive(Debug, Args)]
+pub struct JobRun {
+    /// What to ask for: `fill`, `fill@thm:main`, `refute@thm:main`
+    /// or `explore`.
+    #[arg(long)]
+    pub task: String,
+
+    /// Which agent is to do it.
+    #[arg(long)]
+    pub agent: String,
+
+    /// Which line of work, when it is not the one this is run inside.
+    #[arg(long)]
+    pub line: Option<String>,
+
+    /// Which machine is to do it. A sleeping one waits, rather than
+    /// being passed over.
+    #[arg(long, conflicts_with = "here")]
+    pub machine: Option<String>,
+
+    /// This machine.
+    #[arg(long)]
+    pub here: bool,
 }
 
 #[cfg(test)]
@@ -71,6 +157,78 @@ mod tests {
         };
 
         assert_eq!(server, "uv.es");
+    }
+
+    #[test]
+    fn a_job_says_what_it_asks_for_and_of_which_agent() {
+        assert!(Cli::try_parse_from(["stemma", "job", "run", "--task", "fill"]).is_err());
+
+        let Command::Job {
+            command: JobCommand::Run(asked),
+        } = Cli::try_parse_from([
+            "stemma",
+            "job",
+            "run",
+            "--task",
+            "refute@thm:main",
+            "--agent",
+            "claude",
+            "--here",
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("expected a job to run");
+        };
+
+        assert_eq!(asked.task, "refute@thm:main");
+        assert_eq!(asked.agent, "claude");
+        assert!(asked.here);
+        assert_eq!(asked.machine, None);
+    }
+
+    #[test]
+    fn one_machine_is_chosen_and_not_two() {
+        assert!(
+            Cli::try_parse_from([
+                "stemma",
+                "job",
+                "run",
+                "--task",
+                "fill",
+                "--agent",
+                "claude",
+                "--here",
+                "--machine",
+                "mch:1",
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_node_works_for_every_group_unless_it_is_told_otherwise() {
+        let Command::Node {
+            command: NodeCommand::Init { groups },
+        } = Cli::try_parse_from(["stemma", "node", "init"])
+            .unwrap()
+            .command
+        else {
+            panic!("expected a node to register");
+        };
+
+        assert!(groups.is_empty());
+
+        let Command::Node {
+            command: NodeCommand::Init { groups },
+        } = Cli::try_parse_from(["stemma", "node", "init", "--group", "algebra"])
+            .unwrap()
+            .command
+        else {
+            panic!("expected a node to register");
+        };
+
+        assert_eq!(groups, ["algebra"]);
     }
 
     #[test]

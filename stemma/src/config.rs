@@ -20,6 +20,20 @@ pub struct Config {
     /// Where a particular group's clones are.
     #[serde(default)]
     pub groups: BTreeMap<String, PathBuf>,
+    /// What to run for an agent this machine keeps somewhere unusual.
+    #[serde(default)]
+    pub agents: BTreeMap<String, AgentConfig>,
+}
+
+/// How this machine invokes one agent, where the ordinary way is wrong.
+///
+/// Detection is still detection: this says where to look, and whether
+/// anything is there is answered by looking.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentConfig {
+    /// The program to run.
+    pub command: Option<String>,
 }
 
 impl Config {

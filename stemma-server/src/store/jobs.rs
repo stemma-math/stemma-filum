@@ -123,7 +123,11 @@ impl Job {
 
     /// Whether it ended in something its machine's owner has to fix.
     pub fn owes_its_owner_a_decision(&self) -> bool {
-        self.cleared_at.is_none() && self.outcome.as_ref().is_some_and(Outcome::is_the_machines)
+        self.cleared_at.is_none()
+            && self
+                .outcome
+                .as_ref()
+                .is_some_and(Outcome::is_the_owners_to_fix)
     }
 }
 
@@ -338,7 +342,8 @@ pub fn owed_by(connection: &Connection, user: &UserId) -> Result<i64> {
     connection
         .query_one(
             "SELECT count(*) FROM jobs
-              WHERE outcome = 'could_not_try' AND cleared_at IS NULL
+              WHERE outcome = 'could_not_try' AND code GLOB 'agent_*'
+                AND cleared_at IS NULL
                 AND taken_by IN (SELECT id FROM machines WHERE user_id = ?1)",
             params![user.to_string()],
             |row| row.get(0),
@@ -755,6 +760,36 @@ mod tests {
         .unwrap();
 
         assert_eq!(owed_by(database.connection(), &ana.user).unwrap(), 0);
+    }
+
+    #[test]
+    fn work_the_machine_could_not_reach_is_nobodys_to_fix() {
+        let mut database = test_database();
+        let (algebra, ana) = ready(database.connection_mut());
+
+        let job = launch(
+            database.connection(),
+            &asked(&algebra, &ana.user, Choice::Anyone),
+        )
+        .unwrap();
+        take_next(database.connection_mut(), &ana.machine, &[claude()]).unwrap();
+        finish(
+            database.connection(),
+            &job.id,
+            &ana.machine,
+            &Outcome::out_of_reach("this machine does not have that commit"),
+        )
+        .unwrap();
+
+        // The machine is working. Telling its owner to fix it would send
+        // them looking for something that is not wrong.
+        assert_eq!(owed_by(database.connection(), &ana.user).unwrap(), 0);
+        assert!(
+            !by_id(database.connection(), &job.id)
+                .unwrap()
+                .unwrap()
+                .owes_its_owner_a_decision()
+        );
     }
 
     #[test]

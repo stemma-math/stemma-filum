@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Parser;
-use stemma::cli::{Cli, Command};
+use stemma::cli::{Cli, Command, DaemonCommand, JobCommand, NodeCommand};
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
 use stemma::session;
@@ -68,6 +68,57 @@ fn run(cli: Cli) -> Result<ExitCode> {
 
             Ok(ExitCode::SUCCESS)
         }
+
+        Command::Node { command } => match command {
+            NodeCommand::Init { groups } => {
+                stemma::node::init(&home, &groups, &mut out)?;
+
+                Ok(ExitCode::SUCCESS)
+            }
+            NodeCommand::Status => Ok(match stemma::node::status(&home, &mut out)? {
+                true => ExitCode::SUCCESS,
+                false => ExitCode::FAILURE,
+            }),
+        },
+
+        Command::Daemon { command } => match command {
+            DaemonCommand::Run { once } => {
+                stemma::daemon::run(&home, once, &mut out)?;
+
+                Ok(ExitCode::SUCCESS)
+            }
+            DaemonCommand::Install => {
+                stemma::daemon::install(&home, &mut out)?;
+
+                Ok(ExitCode::SUCCESS)
+            }
+        },
+
+        Command::Job { command } => match command {
+            JobCommand::Run(asked) => {
+                let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
+
+                stemma::jobs::run(
+                    &home,
+                    &here,
+                    &stemma::jobs::Wanted {
+                        line: asked.line,
+                        task: asked.task,
+                        agent: asked.agent,
+                        machine: asked.machine,
+                        here: asked.here,
+                    },
+                    &mut out,
+                )?;
+
+                Ok(ExitCode::SUCCESS)
+            }
+            JobCommand::List => {
+                stemma::jobs::list(&home, &mut out)?;
+
+                Ok(ExitCode::SUCCESS)
+            }
+        },
 
         Command::Status => {
             stemma::sync::status(&home, &mut out)?;

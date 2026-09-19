@@ -156,6 +156,24 @@ pub fn head(repository: &Path) -> Result<String> {
     Ok(run(repository, &["rev-parse", "HEAD"])?.trim().to_owned())
 }
 
+/// What a file held at one commit.
+///
+/// Reading the work a job is about goes through git rather than through
+/// the working tree: the tree belongs to whoever is at the keyboard, may
+/// be dirty, and is never touched by anything that runs here.
+pub fn show(repository: &Path, commit: &str, path: &str) -> Result<String> {
+    run(repository, &["show", &format!("{commit}:{path}")])
+}
+
+/// Whether a commit is one this clone holds.
+pub fn holds(repository: &Path, commit: &str) -> bool {
+    run(
+        repository,
+        &["cat-file", "-e", &format!("{commit}^{{commit}}")],
+    )
+    .is_ok()
+}
+
 /// The repository a path is inside, if it is inside one.
 ///
 /// Walking up is how git finds a repository, and doing it the same way is

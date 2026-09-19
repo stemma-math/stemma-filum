@@ -9,7 +9,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use stemma_core::PROTOCOL_VERSION;
 use stemma_core::protocol::ProtocolVersion;
 
@@ -82,6 +82,80 @@ pub struct Workspace {
     pub user: String,
     /// The groups, with their repositories.
     pub groups: Vec<GroupRemote>,
+}
+
+/// What the instance knows about this machine as a node.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Node {
+    /// Its identifier here.
+    pub machine: String,
+    /// What it calls itself.
+    pub label: String,
+    /// Whether the instance takes it to be there.
+    pub presence: stemma_core::machine::Presence,
+    /// The groups it serves.
+    pub groups: Vec<String>,
+    /// What it last reported finding.
+    pub agents: Vec<stemma_core::machine::Detected>,
+}
+
+/// One job, as the machine that took it is told about it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Handed {
+    /// Its identifier.
+    pub job: String,
+    /// The group's short name.
+    pub group: String,
+    /// Which of its repositories.
+    pub side: String,
+    /// Which line of work.
+    pub line: String,
+    /// The commit to work against.
+    pub commit: String,
+    /// What is being asked.
+    pub task: String,
+    /// Which agent to use.
+    pub agent: String,
+    /// Who asked, and answers for it.
+    pub launched_by: String,
+}
+
+/// One job in a listing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Listed {
+    /// Its identifier.
+    pub job: String,
+    /// The group's short name.
+    pub group: String,
+    /// Which line of work.
+    pub line: String,
+    /// What is being asked.
+    pub task: String,
+    /// Which agent.
+    pub agent: String,
+    /// Where it has got to.
+    pub state: String,
+    /// One line about it.
+    pub said: String,
+}
+
+/// What a machine says to launch a job.
+#[derive(Debug, Clone, Serialize)]
+pub struct Asking {
+    /// The group's short name.
+    pub group: String,
+    /// Which of its repositories.
+    pub side: String,
+    /// Which line of work.
+    pub line: String,
+    /// The commit to work against.
+    pub commit: String,
+    /// What is being asked.
+    pub task: String,
+    /// Which agent.
+    pub agent: String,
+    /// Which machine, where one was chosen.
+    pub machine: Option<String>,
 }
 
 /// Who a credential acts for.
@@ -260,6 +334,165 @@ impl Server {
         }
     }
 
+    /// Offers this machine to the instance as one that runs work.
+    pub fn register_node(
+        &self,
+        token: &str,
+        label: &str,
+        agents: &[stemma_core::machine::Detected],
+        groups: Option<&[String]>,
+    ) -> Result<Node> {
+        self.ask(
+            token,
+            "/api/machines",
+            &serde_json::json!({
+                "label": label,
+                "agents": agents,
+                "groups": groups,
+            }),
+        )
+    }
+
+    /// Says this machine is still there, and what it can do right now.
+    pub fn beat(&self, token: &str, agents: &[stemma_core::machine::Detected]) -> Result<Node> {
+        self.ask(
+            token,
+            "/api/machines/beat",
+            &serde_json::json!({ "agents": agents }),
+        )
+    }
+
+    /// What the instance thinks of this machine.
+    pub fn node(&self, token: &str) -> Result<Option<Node>> {
+        let mut response = self
+            .agent
+            .get(self.url("/api/machines"))
+            .header("authorization", format!("Bearer {token}"))
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        match response.status().as_u16() {
+            200 => response
+                .body_mut()
+                .read_json()
+                .map(Some)
+                .context("the instance answered with something this build does not understand"),
+            // Not registered is an answer and not a failure: this
+            // machine has signed in and has not offered itself.
+            403 => Ok(None),
+            status => bail!("{} answered with {status}", self.address),
+        }
+    }
+
+    /// Asks for whatever work this machine may have next.
+    pub fn take_job(&self, token: &str) -> Result<Option<Handed>> {
+        let mut response = self
+            .agent
+            .post(self.url("/api/jobs/take"))
+            .header("authorization", format!("Bearer {token}"))
+            .send_empty()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        match response.status().as_u16() {
+            200 => response
+                .body_mut()
+                .read_json()
+                .map(Some)
+                .context("the instance answered with something this build does not understand"),
+            204 => Ok(None),
+            403 => bail!(
+                "{} does not know this machine: run `stemma node init`",
+                self.address
+            ),
+            status => bail!("{} answered with {status}", self.address),
+        }
+    }
+
+    /// Says how a job ended.
+    pub fn finish_job(
+        &self,
+        token: &str,
+        job: &str,
+        outcome: &stemma_core::job::Outcome,
+    ) -> Result<()> {
+        let _: serde_json::Value = self.ask(token, &format!("/api/jobs/{job}/finish"), outcome)?;
+
+        Ok(())
+    }
+
+    /// Puts a job in the queue.
+    pub fn launch_job(&self, token: &str, asking: &Asking) -> Result<String> {
+        let answer: serde_json::Value = self.ask(token, "/api/jobs", asking)?;
+
+        answer["job"]
+            .as_str()
+            .map(str::to_owned)
+            .context("the instance did not say which job it made")
+    }
+
+    /// What this machine has in the queue.
+    pub fn jobs(&self, token: &str) -> Result<Vec<Listed>> {
+        let mut response = self
+            .agent
+            .get(self.url("/api/jobs"))
+            .header("authorization", format!("Bearer {token}"))
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        if response.status() != 200 {
+            bail!("{} answered with {}", self.address, response.status());
+        }
+
+        let answer: serde_json::Value = response
+            .body_mut()
+            .read_json()
+            .context("the instance answered with something this build does not understand")?;
+
+        serde_json::from_value(answer["jobs"].clone())
+            .context("the instance answered with something this build does not understand")
+    }
+
+    /// Sends something as this machine, and reads the answer.
+    ///
+    /// A refusal carries a line saying which refusal it is, and that line
+    /// is what somebody at a terminal needs, so it is not thrown away.
+    fn ask<T: serde::de::DeserializeOwned>(
+        &self,
+        token: &str,
+        path: &str,
+        body: &impl Serialize,
+    ) -> Result<T> {
+        let mut response = self
+            .agent
+            .post(self.url(path))
+            .header("authorization", format!("Bearer {token}"))
+            .send_json(body)
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        if response.status() != 200 {
+            let status = response.status();
+            let said = response
+                .body_mut()
+                .read_to_string()
+                .unwrap_or_else(|_| String::new());
+
+            bail!("{} refused ({status}): {}", self.address, summarise(&said));
+        }
+
+        response
+            .body_mut()
+            .read_json()
+            .context("the instance answered with something this build does not understand")
+    }
+
     /// Gives a credential back.
     pub fn sign_out(&self, token: &str) -> Result<()> {
         self.agent
@@ -296,6 +529,27 @@ impl Server {
 
         Ok(())
     }
+}
+
+/// The readable part of what an instance said when it refused.
+///
+/// A refusal is a page when a person is reading and a line when a
+/// program is, and a wall of markup at a terminal says nothing.
+fn summarise(said: &str) -> String {
+    let text = said.trim();
+
+    if !text.starts_with('<') {
+        return text.to_owned();
+    }
+
+    let stripped: String = text
+        .split('<')
+        .filter_map(|piece| piece.split_once('>'))
+        .map(|(_, words)| words)
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    stripped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// The address of an instance, in the one form the rest of this uses.
@@ -346,6 +600,18 @@ mod tests {
             normalise("https://example.org/stemma/").unwrap(),
             "https://example.org/stemma"
         );
+    }
+
+    #[test]
+    fn a_refusal_meant_for_a_browser_is_read_back_as_a_line() {
+        let page = "<html><body><h1>403 Forbidden</h1><p>This machine is not \
+                    registered here.</p></body></html>";
+
+        assert_eq!(
+            summarise(page),
+            "403 Forbidden This machine is not registered here."
+        );
+        assert_eq!(summarise("  plain words  "), "plain words");
     }
 
     #[test]
