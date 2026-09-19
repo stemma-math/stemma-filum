@@ -22,5 +22,6 @@ pub mod pin;
 pub mod proposals;
 pub mod session;
 pub mod sync;
+pub mod vault;
 pub mod work;
 pub mod workspace;

@@ -130,6 +130,45 @@ pub struct OfferedMachine {
     pub agents: Vec<stemma_core::machine::Detected>,
 }
 
+/// One immutable definition returned by the group vault.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct VaultEntry {
+    /// Stable vault identity.
+    pub id: String,
+    /// Stable source siglum.
+    pub siglum: String,
+    /// Distinguishing name.
+    pub name: String,
+    /// Current correspondence condition.
+    pub correspondence: String,
+}
+
+/// One proved substitution licence returned by the group vault.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct VaultBridge {
+    /// Stable bridge identity.
+    pub id: String,
+    /// Definition at one end.
+    pub left: String,
+    /// Definition at the other end.
+    pub right: String,
+    /// Predicate or structure bridge.
+    pub kind: String,
+    /// Current correspondence condition.
+    pub correspondence: String,
+    /// Whether Stemma composed it on demand.
+    pub derived: bool,
+}
+
+/// The usable and historical objects in a group's vault.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Vault {
+    /// Definitions.
+    pub entries: Vec<VaultEntry>,
+    /// Proved bridges.
+    pub bridges: Vec<VaultBridge>,
+}
+
 #[derive(Deserialize)]
 struct MachineChoices {
     machines: Vec<OfferedMachine>,
@@ -534,6 +573,73 @@ impl Server {
             .read_json::<MachineChoices>()
             .context("the instance answered with something this build does not understand")?
             .machines)
+    }
+
+    /// Reads one group's immutable mathematical base.
+    pub fn vault(&self, token: &str, group: &str) -> Result<Vault> {
+        let mut response = self
+            .agent
+            .get(self.url(&format!("/api/groups/{group}/vault")))
+            .header("authorization", format!("Bearer {token}"))
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+        self.check_protocol(response.headers())?;
+        if response.status() != 200 {
+            bail!(
+                "{} would not show that vault ({})",
+                self.address,
+                response.status()
+            );
+        }
+        response
+            .body_mut()
+            .read_json()
+            .context("the instance answered with something this build does not understand")
+    }
+
+    /// Admits a locally verified definition.
+    pub fn admit_vault_entry(
+        &self,
+        token: &str,
+        group: &str,
+        body: &serde_json::Value,
+    ) -> Result<String> {
+        let answer: serde_json::Value =
+            self.ask(token, &format!("/api/groups/{group}/vault/entries"), body)?;
+        answer["entry"]
+            .as_str()
+            .map(str::to_owned)
+            .context("the instance did not identify the vault entry")
+    }
+
+    /// Admits a locally compiled unconditional bridge.
+    pub fn admit_bridge(
+        &self,
+        token: &str,
+        group: &str,
+        body: &serde_json::Value,
+    ) -> Result<String> {
+        let answer: serde_json::Value =
+            self.ask(token, &format!("/api/groups/{group}/vault/bridges"), body)?;
+        answer["bridge"]
+            .as_str()
+            .map(str::to_owned)
+            .context("the instance did not identify the bridge")
+    }
+
+    /// Records a signed correspondence action.
+    pub fn audit_vault(
+        &self,
+        token: &str,
+        group: &str,
+        body: &serde_json::Value,
+    ) -> Result<String> {
+        let answer: serde_json::Value =
+            self.ask(token, &format!("/api/groups/{group}/vault/audits"), body)?;
+        answer["audit"]
+            .as_str()
+            .map(str::to_owned)
+            .context("the instance did not identify the audit")
     }
 
     /// Sends something as this machine, and reads the answer.

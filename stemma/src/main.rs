@@ -6,7 +6,9 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Parser;
-use stemma::cli::{Cli, Command, DaemonCommand, JobCommand, NodeCommand, ProposalCommand};
+use stemma::cli::{
+    Cli, Command, DaemonCommand, JobCommand, NodeCommand, ProposalCommand, VaultCommand,
+};
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
 use stemma::session;
@@ -131,6 +133,42 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 Ok(ExitCode::SUCCESS)
             }
         },
+
+        Command::Vault { command } => {
+            match command {
+                VaultCommand::List { group } => stemma::vault::list(&home, &group, &mut out)?,
+                VaultCommand::Admit {
+                    group,
+                    siglum,
+                    name,
+                    prose,
+                    lean,
+                } => stemma::vault::admit(&home, &group, &siglum, &name, &prose, &lean, &mut out)?,
+                VaultCommand::Bridge {
+                    group,
+                    left,
+                    right,
+                    kind,
+                    lean,
+                } => stemma::vault::bridge(&home, &group, &left, &right, &kind, &lean, &mut out)?,
+                VaultCommand::Audit {
+                    group,
+                    target_kind,
+                    target,
+                    action,
+                    note,
+                } => stemma::vault::audit(
+                    &home,
+                    &group,
+                    &target_kind,
+                    &target,
+                    &action,
+                    &note,
+                    &mut out,
+                )?,
+            }
+            Ok(ExitCode::SUCCESS)
+        }
 
         Command::Status => {
             stemma::sync::status(&home, &mut out)?;

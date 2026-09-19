@@ -69,6 +69,13 @@ pub enum Command {
         command: ProposalCommand,
     },
 
+    /// Works with a group's immutable definitions and correspondence audits.
+    Vault {
+        /// What to do in it.
+        #[command(subcommand)]
+        command: VaultCommand,
+    },
+
     /// Says what this machine has, without asking the instance.
     Status,
 
@@ -90,6 +97,67 @@ pub enum ProposalCommand {
     Apply {
         /// The accepted proposal to write.
         proposal: String,
+    },
+}
+
+/// What can be done with a group's vault without a graphical interface.
+#[derive(Debug, Subcommand)]
+pub enum VaultCommand {
+    /// Lists definitions and proved bridges.
+    List {
+        /// Group slug.
+        group: String,
+    },
+    /// Admits a definition whose complete Lean module compiles locally.
+    Admit {
+        /// Group slug.
+        group: String,
+        /// Definition siglum in the published source.
+        #[arg(long)]
+        siglum: String,
+        /// Distinguishing mathematical name.
+        #[arg(long)]
+        name: String,
+        /// File holding the exact prose.
+        #[arg(long)]
+        prose: std::path::PathBuf,
+        /// Complete Lean module to compile and admit.
+        #[arg(long)]
+        lean: std::path::PathBuf,
+    },
+    /// Admits an unconditional bridge whose complete Lean module compiles locally.
+    Bridge {
+        /// Group slug.
+        group: String,
+        /// Vault definition at one end.
+        #[arg(long)]
+        left: String,
+        /// Vault definition at the other end.
+        #[arg(long)]
+        right: String,
+        /// Predicate or structure equivalence.
+        #[arg(long)]
+        kind: String,
+        /// Complete Lean module containing the unconditional theorem.
+        #[arg(long)]
+        lean: std::path::PathBuf,
+    },
+    /// Attests or withdraws correspondence.
+    Audit {
+        /// Group slug.
+        group: String,
+        /// Entry or bridge.
+        #[arg(long)]
+        target_kind: String,
+        /// Stable vault object identifier.
+        #[arg(long)]
+        target: String,
+        /// Attest or withdraw.
+        #[arg(long)]
+        action: String,
+        /// What was checked or why the guarantee is withdrawn.
+        #[arg(long)]
+        note: String,
     },
 }
 

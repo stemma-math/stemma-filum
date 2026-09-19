@@ -243,6 +243,7 @@ fn nothing_found(task: &Task) -> &'static str {
         Task::Refute { .. } => "no counterexample was found, which settles nothing",
         Task::Formalize { .. } => "no formalization was found",
         Task::Verify { .. } => "no Lean argument was found",
+        Task::Promote { .. } => "no justified promotion was found",
         Task::Explore => "nothing to suggest",
     }
 }
@@ -381,6 +382,11 @@ fn asked_of(task: &Task, line: &Line) -> String {
                     .to_owned(),
             }
         }
+        Task::Promote { statement } => format!(
+            "Promote `{statement}` out of its black box by declaring it `central: true`. \
+             Do not change its claim. Explain why it deserves a stable name; promotion freezes \
+             it, splits the surrounding box, and reserves a human correspondence audit."
+        ),
         Task::Explore => "Say where this line could go next: what is worth stating, \
                           and why it follows from what is already here."
             .to_owned(),

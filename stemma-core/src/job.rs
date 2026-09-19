@@ -52,6 +52,11 @@ pub enum Task {
         /// The statement after which the box begins, if any.
         after: Option<Siglum>,
     },
+    /// Promote an interior statement so it becomes a frozen box boundary.
+    Promote {
+        /// The lemma or proposition to move out of its box.
+        statement: Siglum,
+    },
     /// Say where the line could go next.
     Explore,
 }
@@ -64,6 +69,7 @@ impl Task {
             Self::Refute { .. } => "look for a counterexample",
             Self::Formalize { .. } => "formalize in Lean",
             Self::Verify { .. } => "verify this box in Lean",
+            Self::Promote { .. } => "promote this statement",
             Self::Explore => "say where the line could go next",
         }
     }
@@ -75,6 +81,7 @@ impl Task {
             Self::Refute { statement } => Some(statement),
             Self::Formalize { statement } => Some(statement),
             Self::Verify { after } => after.as_ref(),
+            Self::Promote { statement } => Some(statement),
             Self::Explore => None,
         }
     }
@@ -97,6 +104,7 @@ impl fmt::Display for Task {
             Self::Formalize { statement } => write!(f, "formalize@{statement}"),
             Self::Verify { after: None } => f.write_str("verify"),
             Self::Verify { after: Some(node) } => write!(f, "verify@{node}"),
+            Self::Promote { statement } => write!(f, "promote@{statement}"),
             Self::Explore => f.write_str("explore"),
         }
     }
@@ -140,6 +148,10 @@ impl FromStr for Task {
             ("verify", after) => Ok(Self::Verify {
                 after: after.map(str::parse).transpose()?,
             }),
+            ("promote", Some(statement)) => Ok(Self::Promote {
+                statement: statement.parse()?,
+            }),
+            ("promote", None) => Err(BadTask::Unanchored(input.to_owned())),
             ("explore", _) => Ok(Self::Explore),
             _ => Err(BadTask::Unknown(verb.to_owned())),
         }
@@ -429,6 +441,9 @@ mod tests {
                 after: Some(statement()),
             },
             Task::Verify { after: None },
+            Task::Promote {
+                statement: statement(),
+            },
             Task::Explore,
         ] {
             assert_eq!(task.to_string().parse(), Ok(task.clone()), "for {task}");
