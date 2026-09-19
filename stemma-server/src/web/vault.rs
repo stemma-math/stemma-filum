@@ -2,15 +2,17 @@
 
 use anyhow::Context;
 use axum::extract::{Path, State};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::{IntoResponse, Json, Redirect, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
+use serde_json::json;
 use stemma_core::artefact::Scope;
 use stemma_core::id::{BridgeId, Slug, UserId, VaultEntryId};
 use stemma_core::line::{NodeKind, Siglum};
 use stemma_core::model::Correspondence;
 use stemma_core::vault::{Bridge, BridgeKind, DownstreamDecision, Entry};
 
+use super::api::Credential;
 use super::layout::{Chrome, page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
@@ -65,6 +67,196 @@ pub struct Deciding {
     decision: String,
     note: String,
     form_token: String,
+}
+
+#[derive(Deserialize)]
+/// Definition already checked by the local client and ready for admission.
+pub struct ApiAdmission {
+    /// Stable source siglum.
+    pub siglum: String,
+    /// Distinguishing name.
+    pub name: String,
+    /// Exact prose.
+    pub prose: String,
+    /// Exact compiled Lean declaration.
+    pub formalization: String,
+}
+
+#[derive(Deserialize)]
+/// A compiled direct bridge submitted by a client.
+pub struct ApiBridge {
+    /// Left vault definition.
+    pub left: String,
+    /// Right vault definition.
+    pub right: String,
+    /// Predicate or structure equivalence.
+    pub kind: String,
+    /// Exact compiled unconditional theorem.
+    pub theorem: String,
+}
+
+#[derive(Deserialize)]
+/// A signed audit submitted by a client.
+pub struct ApiAudit {
+    /// Entry or bridge.
+    pub target_kind: String,
+    /// Stable object identifier.
+    pub target: String,
+    /// Attest or withdraw.
+    pub action: String,
+    /// What was checked or why it was withdrawn.
+    pub note: String,
+}
+
+/// Lists vault objects for a non-browser client.
+pub async fn api_view(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(slug): Path<String>,
+) -> Result<Response, WebError> {
+    let group = credential_group(&instance, &credential, &slug).await?;
+    let id = group.id;
+    let (entries, bridges) = instance
+        .read(move |connection| {
+            Ok((
+                vault::entries(connection, &id)?,
+                vault::bridges(connection, &id)?,
+            ))
+        })
+        .await?;
+    Ok(Json(json!({
+        "entries": entries.into_iter().map(|stored| json!({
+            "id": stored.entry.id, "siglum": stored.entry.siglum, "name": stored.entry.name,
+            "prose": stored.entry.prose, "formalization": stored.entry.formalization,
+            "correspondence": correspondence_word(stored.entry.correspondence),
+            "admitted_by": stored.admitted_by, "admitted_at": stored.admitted_at
+        })).collect::<Vec<_>>(),
+        "bridges": bridges.into_iter().map(|stored| json!({
+            "id": stored.bridge.id, "left": stored.bridge.left, "right": stored.bridge.right,
+            "kind": format!("{:?}", stored.bridge.kind).to_ascii_lowercase(),
+            "correspondence": correspondence_word(stored.bridge.correspondence),
+            "derived": matches!(stored.bridge.origin, stemma_core::vault::BridgeOrigin::Derived { .. })
+        })).collect::<Vec<_>>()
+    })).into_response())
+}
+
+/// Admits a locally verified definition for a CLI or desktop client.
+pub async fn api_admit(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(slug): Path<String>,
+    Json(form): Json<ApiAdmission>,
+) -> Result<Response, WebError> {
+    let group = credential_group(&instance, &credential, &slug).await?;
+    let siglum: Siglum = form
+        .siglum
+        .parse()
+        .map_err(|_| WebError::BadRequest("That is not a siglum.".to_owned()))?;
+    if siglum.kind != NodeKind::Definition {
+        return Err(WebError::BadRequest(
+            "Only a definition enters the vault.".to_owned(),
+        ));
+    }
+    require_published_verification(&instance, &group.id, &siglum).await?;
+    let entry = Entry::admit(group.id, siglum, form.name, form.prose, form.formalization)
+        .map_err(|error| WebError::BadRequest(error.to_string()))?;
+    let id = entry.id;
+    let by = credential.user.id;
+    instance
+        .read(move |connection| vault::admit(connection, &entry, &by))
+        .await?;
+    Ok(Json(json!({"entry": id})).into_response())
+}
+
+/// Admits a locally compiled direct bridge for a client.
+pub async fn api_bridge(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(slug): Path<String>,
+    Json(form): Json<ApiBridge>,
+) -> Result<Response, WebError> {
+    let group = credential_group(&instance, &credential, &slug).await?;
+    let left: VaultEntryId = form
+        .left
+        .parse()
+        .map_err(|_| WebError::BadRequest("That is not a vault entry.".to_owned()))?;
+    let right: VaultEntryId = form
+        .right
+        .parse()
+        .map_err(|_| WebError::BadRequest("That is not a vault entry.".to_owned()))?;
+    let kind = match form.kind.as_str() {
+        "predicate" => BridgeKind::Predicate,
+        "structure" => BridgeKind::Structure,
+        _ => {
+            return Err(WebError::BadRequest(
+                "That is not a bridge kind.".to_owned(),
+            ));
+        }
+    };
+    let bridge = Bridge::direct(left, right, kind, form.theorem)
+        .map_err(|error| WebError::BadRequest(error.to_string()))?;
+    let id = bridge.id;
+    let group_id = group.id;
+    let by = credential.user.id;
+    instance
+        .read(move |connection| {
+            let both_here = [bridge.left, bridge.right].into_iter().all(|id| {
+                vault::entry(connection, &id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|entry| entry.entry.group == group_id)
+            });
+            if !both_here {
+                anyhow::bail!("both definitions must be in this group's vault")
+            }
+            vault::admit_bridge(connection, &group_id, &bridge, &by)
+        })
+        .await?;
+    Ok(Json(json!({"bridge": id})).into_response())
+}
+
+/// Records a correspondence action for a client.
+pub async fn api_audit(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(slug): Path<String>,
+    Json(form): Json<ApiAudit>,
+) -> Result<Response, WebError> {
+    let group = credential_group(&instance, &credential, &slug).await?;
+    let group_id = group.id;
+    let by = credential.user.id;
+    let id = instance
+        .write(move |connection| {
+            let belongs = match form.target_kind.as_str() {
+                "entry" => form
+                    .target
+                    .parse::<VaultEntryId>()
+                    .ok()
+                    .and_then(|id| vault::entry(connection, &id).ok().flatten())
+                    .is_some_and(|entry| entry.entry.group == group_id),
+                "bridge" => form.target.parse::<BridgeId>().ok().is_some_and(|id| {
+                    vault::bridges(connection, &group_id)
+                        .unwrap_or_default()
+                        .iter()
+                        .any(|bridge| bridge.bridge.id == id)
+                }),
+                _ => false,
+            };
+            if !belongs {
+                anyhow::bail!("the audit target is not in this group's vault")
+            }
+            match form.action.as_str() {
+                "attest" => {
+                    vault::attest(connection, &form.target_kind, &form.target, &by, &form.note)
+                }
+                "withdraw" => {
+                    vault::withdraw(connection, &form.target_kind, &form.target, &by, &form.note)
+                }
+                _ => anyhow::bail!("that is not an audit action"),
+            }
+        })
+        .await?;
+    Ok(Json(json!({"audit": id})).into_response())
 }
 
 /// Shows the vault as objects rather than unexplained graph edges.
@@ -402,6 +594,59 @@ async fn member_group(
         })
         .await
         .map_err(|_| WebError::NotFound)
+}
+
+async fn credential_group(
+    instance: &Instance,
+    credential: &Credential,
+    slug: &str,
+) -> Result<groups::Group, WebError> {
+    let slug = Slug::parse(slug).map_err(|_| WebError::NotFound)?;
+    let user = credential.user.id.clone();
+    instance
+        .read(move |connection| {
+            let group = groups::by_slug(connection, &slug)?.context("group not found")?;
+            if groups::role_of(connection, &group.id, &user)?.is_none() {
+                anyhow::bail!("not a member")
+            }
+            Ok(group)
+        })
+        .await
+        .map_err(|_| WebError::NotFound)
+}
+
+async fn require_published_verification(
+    instance: &Instance,
+    group: &stemma_core::id::GroupId,
+    siglum: &Siglum,
+) -> Result<(), WebError> {
+    let nodes = super::lines::read(instance, group, &Scope::Shared)
+        .await?
+        .ok_or_else(|| {
+            WebError::BadRequest("Build and publish the shared repository first.".to_owned())
+        })?;
+    let verified = nodes.lines.iter().any(|line| {
+        line.line.node(siglum).is_some()
+            && line.lean.as_ref().is_some_and(|lean| {
+                lean.verification_of(siglum) == stemma_core::model::Verification::Verified
+            })
+    });
+    if verified {
+        Ok(())
+    } else {
+        Err(WebError::BadRequest(
+            "The latest shared build does not contain a Lean-verified definition with that siglum."
+                .to_owned(),
+        ))
+    }
+}
+
+fn correspondence_word(value: Correspondence) -> &'static str {
+    match value {
+        Correspondence::NotAudited => "not_audited",
+        Correspondence::Audited => "audited",
+        Correspondence::AuditWithdrawn => "audit_withdrawn",
+    }
 }
 
 fn body(
