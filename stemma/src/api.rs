@@ -60,6 +60,30 @@ pub enum Answer {
     },
 }
 
+/// One group this machine can work in.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct GroupRemote {
+    /// The group's short name, which is also its directory.
+    pub slug: String,
+    /// What the group calls itself.
+    pub name: String,
+    /// What this person may do in it.
+    pub role: String,
+    /// Where the group's own repository is.
+    pub shared: String,
+    /// Where this person's repository inside it is.
+    pub personal: String,
+}
+
+/// What the instance says this machine can work in.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Workspace {
+    /// Whose account this is.
+    pub user: String,
+    /// The groups, with their repositories.
+    pub groups: Vec<GroupRemote>,
+}
+
 /// Who a credential acts for.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Whoami {
@@ -171,6 +195,30 @@ impl Server {
                 .map(Some)
                 .context("the instance answered with something this build does not understand"),
             403 | 401 => Ok(None),
+            status => bail!("{} answered with {status}", self.address),
+        }
+    }
+
+    /// The groups this machine can work in.
+    pub fn workspace(&self, token: &str) -> Result<Workspace> {
+        let mut response = self
+            .agent
+            .get(self.url("/api/workspace"))
+            .header("authorization", format!("Bearer {token}"))
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        match response.status().as_u16() {
+            200 => response
+                .body_mut()
+                .read_json()
+                .context("the instance answered with something this build does not understand"),
+            403 | 401 => bail!(
+                "{} no longer accepts this machine's credential: run `stemma login` again",
+                self.address
+            ),
             status => bail!("{} answered with {status}", self.address),
         }
     }

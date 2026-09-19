@@ -35,8 +35,21 @@ pub enum Command {
     /// Gives the credential back and forgets it.
     Logout,
 
+    /// Brings every group this machine can work in into step.
+    Sync,
+
+    /// Says what this machine has, without asking the instance.
+    Status,
+
     /// Says where this machine keeps its things.
     Where,
+
+    /// Answers git when it asks for a credential.
+    #[command(hide = true)]
+    Credential {
+        /// What git wants: `get`, `store` or `erase`.
+        action: String,
+    },
 }
 
 #[cfg(test)]

@@ -160,6 +160,7 @@ pub fn router() -> Router<Instance> {
             get(transport::serve).post(transport::serve),
         )
         .route("/api/me", get(api::me))
+        .route("/api/workspace", get(api::workspace))
         .route("/api/logout", post(api::sign_out))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))

@@ -11,7 +11,7 @@ use axum::response::{IntoResponse, Json, Response};
 use serde_json::json;
 use stemma_core::PROTOCOL_VERSION;
 
-use super::{Instance, WebError};
+use super::{Instance, WebError, transport};
 use crate::store::devices;
 use crate::store::users::{self, User};
 
@@ -72,6 +72,47 @@ pub async fn me(machine: Machine) -> Response {
         "protocol": PROTOCOL_VERSION.to_string(),
     }))
     .into_response()
+}
+
+/// The groups this credential can work in, and where their repositories
+/// are.
+///
+/// The client asks for this rather than being configured with it: what a
+/// person is in changes when somebody invites them, and a list of remotes
+/// kept by hand goes stale the moment it matters.
+pub async fn workspace(
+    State(instance): State<Instance>,
+    machine: Machine,
+) -> Result<Response, WebError> {
+    let public_url = instance.settings.public_url.clone();
+    let user = machine.user.id.clone();
+
+    let memberships = instance
+        .read(move |connection| crate::store::groups::for_user(connection, &user))
+        .await?;
+
+    let groups: Vec<_> = memberships
+        .iter()
+        .map(|membership| {
+            let slug = membership.group.slug();
+
+            json!({
+                "id": membership.group.id.to_string(),
+                "slug": slug.as_str(),
+                "name": membership.group.name,
+                "role": membership.role.as_str(),
+                "shared": public_url.link(&transport::shared_path(slug)),
+                "personal": public_url
+                    .link(&transport::personal_path(slug, &machine.user.id)),
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "user": machine.user.id.to_string(),
+        "groups": groups,
+    }))
+    .into_response())
 }
 
 /// Gives a credential back.

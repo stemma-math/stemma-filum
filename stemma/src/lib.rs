@@ -7,6 +7,11 @@
 
 pub mod api;
 pub mod cli;
+pub mod config;
+pub mod credential;
 pub mod credentials;
+pub mod git;
 pub mod home;
 pub mod session;
+pub mod sync;
+pub mod workspace;

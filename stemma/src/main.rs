@@ -14,11 +14,23 @@ use stemma::session;
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(code) => code,
+        // Somebody piping this into `head` closes the output, and that is
+        // not a failure of the command they ran.
+        Err(error) if is_broken_pipe(&error) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("stemma: {error:#}");
             ExitCode::FAILURE
         }
     }
+}
+
+/// Whether what went wrong is that nobody is reading any more.
+fn is_broken_pipe(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|error| error.kind() == std::io::ErrorKind::BrokenPipe)
+    })
 }
 
 /// Carries out one command.
@@ -40,6 +52,25 @@ fn run(cli: Cli) -> Result<ExitCode> {
 
         Command::Logout => {
             session::log_out(&home, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Sync => {
+            stemma::sync::run(&home, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Status => {
+            stemma::sync::status(&home, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Credential { action } => {
+            let input = std::io::stdin().lock();
+            stemma::credential::answer(&home, &action, input, &mut out)?;
 
             Ok(ExitCode::SUCCESS)
         }
