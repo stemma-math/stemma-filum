@@ -1,0 +1,36 @@
+[package]
+name = "stemma-app"
+description = "The Stemma desktop writing application."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "stemma_app"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "stemma-app"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+stemma = { path = "../stemma" }
+stemma-core.workspace = true
+tauri = { version = "2.11", features = [] }
+typst = "=0.14.0"
+typst-as-lib = { version = "0.15.4", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
+typst-kit = "=0.14.0"
+typst-layout = "=0.14.0"
+typst-library = "=0.14.0"
+typst-svg = "=0.14.0"
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[lints]
+workspace = true

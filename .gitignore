@@ -4,3 +4,6 @@ AGENTS.override.md
 
 # Build outputs.
 /target
+/stemma-app/frontend/dist
+/stemma-app/frontend/node_modules
+/stemma-app/gen

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["stemma", "stemma-core", "stemma-server"]
+members = ["stemma", "stemma-app", "stemma-core", "stemma-server"]
 
 [workspace.package]
 version = "0.0.0"
