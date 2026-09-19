@@ -16,6 +16,8 @@ pub struct Proposal {
     pub job: Job,
     /// Complete proposed source.
     pub source: String,
+    /// Complete proposed Lean module, when the proposal formalizes work.
+    pub lean_source: Option<String>,
     /// Agent vendor.
     pub vendor: String,
     /// Concrete model.
@@ -33,12 +35,13 @@ pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<Propo
     let id = ProposalId::generate();
     connection
         .execute(
-            "INSERT INTO proposals (id, job_id, source, vendor, model, prompt_revision)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO proposals (id, job_id, source, lean_source, vendor, model, prompt_revision)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 id.to_string(),
                 job.id.to_string(),
                 offer.source,
+                offer.lean_source,
                 offer.vendor,
                 offer.model,
                 offer.prompt_revision
@@ -52,7 +55,7 @@ pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<Propo
 pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal>> {
     let row = connection
         .query_row(
-            "SELECT job_id, source, vendor, model, prompt_revision, state, decided_by
+            "SELECT job_id, source, lean_source, vendor, model, prompt_revision, state, decided_by
          FROM proposals WHERE id = ?1",
             params![id.to_string()],
             |row| {
@@ -63,12 +66,14 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
                     row.get(3)?,
                     row.get(4)?,
                     row.get(5)?,
-                    row.get::<_, Option<String>>(6)?,
+                    row.get(6)?,
+                    row.get::<_, Option<String>>(7)?,
                 ))
             },
         )
         .optional()?;
-    let Some((job, source, vendor, model, prompt_revision, state, decided_by)) = row else {
+    let Some((job, source, lean_source, vendor, model, prompt_revision, state, decided_by)) = row
+    else {
         return Ok(None);
     };
     let job: JobId = job
@@ -81,6 +86,7 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         id: *id,
         job,
         source,
+        lean_source,
         vendor,
         model,
         prompt_revision,
@@ -167,6 +173,7 @@ mod tests {
             &job,
             &Offer {
                 source: "= A proposal".to_owned(),
+                lean_source: None,
                 vendor: "Anthropic".to_owned(),
                 model: "claude-opus-5".to_owned(),
                 prompt_revision: "1".to_owned(),

@@ -45,9 +45,14 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal) -> Markup {
         }
         div class="proposal" {
             pre { (proposal.source) }
+            @if let Some(lean) = &proposal.lean_source {
+                p class="label" { "Lean module" }
+                pre { (lean) }
+            }
             ul class="findings" {
                 li { "source reads as a line" }
                 li { "central statements and their declared dependencies are untouched" }
+                @if proposal.lean_source.is_some() { li { "Lean accepted the complete module on the producing machine" } }
             }
         }
         @if proposal.state == "awaiting_review" {
@@ -130,5 +135,5 @@ pub async fn accepted(
     if proposal.state != "accepted" || proposal.decided_by.as_ref() != Some(&credential.user.id) {
         return Err(WebError::NotFound);
     }
-    Ok(Json(json!({"source": proposal.source, "group": proposal.job.group.slug().as_str(), "side": proposal.job.side.as_str(), "line": proposal.job.line.as_str(), "commit": proposal.job.commit})).into_response())
+    Ok(Json(json!({"source": proposal.source, "lean_source": proposal.lean_source, "group": proposal.job.group.slug().as_str(), "side": proposal.job.side.as_str(), "line": proposal.job.line.as_str(), "commit": proposal.job.commit})).into_response())
 }
