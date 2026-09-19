@@ -9,6 +9,7 @@ model, and the Tauri desktop application.
 - macOS 12 or newer to build the macOS application
 - Rust from `rust-toolchain.toml`
 - Node.js and npm
+- Just
 - Xcode Command Line Tools
 - Git
 - Lean/Lake and Typst when exercising formalization or composition features
@@ -16,7 +17,7 @@ model, and the Tauri desktop application.
 Install the frontend dependencies once:
 
 ```sh
-make setup
+just setup
 ```
 
 ## Desktop application
@@ -24,13 +25,13 @@ make setup
 Run the app against the development frontend:
 
 ```sh
-make app-dev
+just app-dev
 ```
 
 Build a local macOS application with an ad-hoc signature:
 
 ```sh
-make app
+just app
 open target/release/bundle/macos/Stemma.app
 ```
 
@@ -43,7 +44,7 @@ The app uses the same XDG client state and local workspace as the `stemma`
 command. Set `STEMMA_HOME` to an absolute directory to isolate a test account:
 
 ```sh
-STEMMA_HOME="$PWD/.test-state/client" make app-dev
+STEMMA_HOME="$PWD/.test-state/client" just app-dev
 ```
 
 ## Verification
@@ -51,7 +52,7 @@ STEMMA_HOME="$PWD/.test-state/client" make app-dev
 The normal pre-commit suite is:
 
 ```sh
-make check
+just check
 ```
 
 It checks formatting, runs Clippy with warnings denied, type-checks and builds
@@ -60,15 +61,15 @@ transport integration tests bind a loopback TCP port; run them directly if a
 sandbox blocks network binding:
 
 ```sh
-make test-repositories
+just test-repositories
 ```
 
 Useful narrower commands are:
 
 ```sh
-make test          # all Rust tests
-make test-app      # desktop Rust shell and frontend
-make test-server   # server library and HTTP integration tests
+just test          # all Rust tests
+just test-app      # desktop Rust shell and frontend
+just test-server   # server library and HTTP integration tests
 ```
 
 ## Local server
