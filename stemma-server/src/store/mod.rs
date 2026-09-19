@@ -17,6 +17,7 @@ pub mod resets;
 pub mod sessions;
 pub mod settings;
 pub mod users;
+pub mod vault;
 
 use std::str::FromStr;
 

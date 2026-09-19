@@ -354,6 +354,8 @@ id_kinds! {
     Audit: "aud" => AuditId as UniqueId,
     /// A person's answer to a downstream audit obligation.
     Decision: "dcs" => DecisionId as UniqueId,
+    /// A counted request for somebody to answer affected downstream work.
+    Obligation: "obl" => ObligationId as UniqueId,
     /// A build output stored outside git and keyed by commit.
     Artefact: "art" => ArtefactId as UniqueId,
     /// A revocable instance-level permission held by an account.
