@@ -8,6 +8,7 @@
 
 pub mod groups;
 pub mod invitations;
+pub mod resets;
 pub mod sessions;
 pub mod settings;
 pub mod users;

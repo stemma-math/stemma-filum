@@ -5,7 +5,7 @@
 //! stem with two hairlines descending from it, which is both the grammar of
 //! the product — weight is commitment — and literally a descent tree.
 
-use maud::{DOCTYPE, Markup, html};
+use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use super::WebError;
 use super::assets::STYLESHEET_PATH;
@@ -159,14 +159,18 @@ pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
 }
 
 /// The mark: a heavy stem with two hairlines descending from it.
+///
+/// Written out rather than built element by element, because the elements
+/// of an SVG close themselves and the HTML ones around them do not.
 pub fn mark() -> Markup {
-    html! {
-        svg width="14" height="17" viewBox="0 0 14 17" fill="none" aria-hidden="true" {
-            path d="M2 1 V16" stroke="currentColor" stroke-width="2.2";
-            path d="M2 5 H8 V9.5" stroke="currentColor" stroke-width="1";
-            path d="M2 10.5 H12 V15" stroke="currentColor" stroke-width="1";
-        }
-    }
+    PreEscaped(
+        r#"<svg class="mark" width="14" height="17" viewBox="0 0 14 17" fill="none" aria-hidden="true">
+            <path d="M2 1 V16" stroke="currentColor" stroke-width="2.2" />
+            <path d="M2 5 H8 V9.5" stroke="currentColor" stroke-width="1" />
+            <path d="M2 10.5 H12 V15" stroke="currentColor" stroke-width="1" />
+        </svg>"#
+            .to_owned(),
+    )
 }
 
 /// The page shown when a request could not be answered.

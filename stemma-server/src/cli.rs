@@ -96,6 +96,28 @@ pub enum Command {
         user: String,
     },
 
+    /// Instance maintainers.
+    Admin {
+        /// What to do about them.
+        #[command(subcommand)]
+        action: AdminAction,
+
+        /// Settings given on the command line.
+        #[command(flatten)]
+        settings: SettingsArgs,
+    },
+
+    /// Accounts, from the machine.
+    User {
+        /// What to do about one.
+        #[command(subcommand)]
+        action: UserAction,
+
+        /// Settings given on the command line.
+        #[command(flatten)]
+        settings: SettingsArgs,
+    },
+
     /// Reports what this instance is and what is in it.
     Status {
         /// Settings given on the command line.
@@ -123,6 +145,39 @@ pub enum Command {
         /// Treat warnings as failures, for a deployment pipeline.
         #[arg(long)]
         strict: bool,
+    },
+}
+
+/// What can be done about instance maintainers.
+///
+/// A grant takes an account that already exists, so the way to the first
+/// maintainer is to register through the web like anybody else and then run
+/// `grant` here. That keeps passwords out of the command line.
+#[derive(Debug, Subcommand)]
+pub enum AdminAction {
+    /// Gives an account the run of the instance.
+    Grant {
+        /// A name, an address or a full identifier.
+        account: String,
+    },
+
+    /// Takes it away, keeping the record that it was held.
+    Revoke {
+        /// A name, an address or a full identifier.
+        account: String,
+    },
+
+    /// Says who operates this instance.
+    List,
+}
+
+/// What can be done about an account from the machine.
+#[derive(Debug, Subcommand)]
+pub enum UserAction {
+    /// Prints a single-use link for setting a new password.
+    ResetPassword {
+        /// A name, an address or a full identifier.
+        account: String,
     },
 }
 

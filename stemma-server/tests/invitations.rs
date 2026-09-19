@@ -206,8 +206,8 @@ async fn somebody_who_already_has_an_account_simply_joins() {
         .instance
         .read(|connection| {
             let enric = users::by_login(connection, "enric")?.expect("the account");
-            let group = groups::by_slug(connection, &Slug::parse("algebra").unwrap())?
-                .expect("the group");
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
 
             groups::role_of(connection, &group.id, &enric.id)
         })
@@ -265,8 +265,8 @@ async fn a_withdrawn_invitation_stops_working() {
     let id = harness
         .instance
         .read(|connection| {
-            let group = groups::by_slug(connection, &Slug::parse("algebra").unwrap())?
-                .expect("the group");
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
 
             Ok(invitations::live_for_group(connection, &group.id)?[0].id)
         })
@@ -300,8 +300,8 @@ async fn nobody_may_invite_somebody_to_more_than_they_hold() {
         .instance
         .write(|connection| {
             let enric = users::by_login(connection, "enric")?.expect("the account");
-            let group = groups::by_slug(connection, &Slug::parse("algebra").unwrap())?
-                .expect("the group");
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
 
             groups::add_member(connection, &group.id, &enric.id, GroupRole::Admin)?;
 
@@ -340,8 +340,8 @@ async fn a_member_sees_the_group_without_the_invitations() {
         .instance
         .write(|connection| {
             let enric = users::by_login(connection, "enric")?.expect("the account");
-            let group = groups::by_slug(connection, &Slug::parse("algebra").unwrap())?
-                .expect("the group");
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
 
             groups::add_member(connection, &group.id, &enric.id, GroupRole::Member)?;
 

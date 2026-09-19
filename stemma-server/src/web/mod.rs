@@ -13,6 +13,7 @@ pub mod groups;
 pub mod home;
 pub mod invite;
 pub mod layout;
+pub mod reset;
 pub mod visitor;
 
 use std::sync::{Arc, Mutex};
@@ -125,6 +126,7 @@ pub fn router() -> Router<Instance> {
         .route("/invite/{secret}", get(invite::offer))
         .route("/invite/{secret}/join", post(invite::join))
         .route("/invite/{secret}/register", post(invite::join_and_register))
+        .route("/reset/{secret}", get(reset::form).post(reset::set))
         .route("/admin", get(admin::area))
         .route(
             "/admin/authenticate",

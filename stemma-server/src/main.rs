@@ -8,10 +8,10 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 
 use stemma_server::check::Report;
-use stemma_server::cli::{Cli, Command};
+use stemma_server::cli::{AdminAction, Cli, Command, UserAction};
 use stemma_server::config::{ConfigFile, Environment, Overrides, Settings};
 use stemma_server::install::{Journal, Options, RemovalOptions};
-use stemma_server::{check, config, db, install, serve, service, setup, status, system};
+use stemma_server::{admin, check, config, db, install, serve, service, setup, status, system};
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
@@ -103,6 +103,39 @@ fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
 
+        Command::Admin { action, settings } => {
+            let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
+            let database = open_database(&settings)?;
+
+            println!(
+                "{}",
+                match action {
+                    AdminAction::Grant { account } =>
+                        admin::grant(database.connection(), &account)?,
+                    AdminAction::Revoke { account } =>
+                        admin::revoke(database.connection(), &account)?,
+                    AdminAction::List => admin::list(database.connection())?,
+                }
+            );
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::User { action, settings } => {
+            let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
+            let database = open_database(&settings)?;
+
+            println!(
+                "{}",
+                match action {
+                    UserAction::ResetPassword { account } =>
+                        admin::reset_password(database.connection(), &settings, &account)?,
+                }
+            );
+
+            Ok(ExitCode::SUCCESS)
+        }
+
         Command::Status { settings } => {
             let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
             println!("{}", status::Status::gather(&settings));
@@ -147,6 +180,22 @@ fn run(cli: Cli) -> Result<ExitCode> {
             })
         }
     }
+}
+
+/// Opens the database, refusing one this build does not understand.
+fn open_database(settings: &Settings) -> Result<db::Database> {
+    let database = db::Database::open(&settings.paths.database())?;
+
+    if !database.is_current()? {
+        bail!(
+            "the database is at schema version {} and this build needs {}: run \
+             `stemma-server migrate`",
+            database.version()?,
+            db::expected_version()
+        );
+    }
+
+    Ok(database)
 }
 
 /// Brings the database up to date, keeping a copy of what it was.

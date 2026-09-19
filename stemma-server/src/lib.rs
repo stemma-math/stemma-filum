@@ -5,6 +5,7 @@
 //! The binary beside it only parses arguments and calls in here, so that
 //! every part of the server can be exercised from a test.
 
+pub mod admin;
 pub mod check;
 pub mod cli;
 pub mod config;

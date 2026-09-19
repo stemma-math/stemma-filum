@@ -309,3 +309,55 @@ async fn the_stylesheet_is_served_from_this_instance_and_can_be_cached() {
         "the page reaches off the instance"
     );
 }
+
+#[tokio::test]
+async fn a_reset_link_sets_a_password_once_and_ends_every_session() {
+    let mut harness = Harness::new();
+    harness
+        .post("/register", &fields(&registration("ana")))
+        .await;
+
+    let secret = harness
+        .instance
+        .read(|connection| {
+            let ana = users::by_login(connection, "ana")?.expect("the account");
+            stemma_server::store::resets::create(
+                connection,
+                &stemma_server::tokens::Key::from_material(b"a test key"),
+                &ana.id,
+            )
+        })
+        .await
+        .unwrap();
+
+    let form = harness.get(&format!("/reset/{secret}")).await;
+    assert!(form.says("Set a password"));
+
+    let too_short = harness
+        .post(&format!("/reset/{secret}"), &[("password", "short")])
+        .await;
+    assert_eq!(too_short.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let set = harness
+        .post(
+            &format!("/reset/{secret}"),
+            &[("password", "another long password")],
+        )
+        .await;
+    assert_eq!(set.location.as_deref(), Some("/login"));
+
+    // The session it held before is gone, and the link is spent.
+    assert!(harness.get("/").await.says("Log in"));
+    assert_eq!(
+        harness.get(&format!("/reset/{secret}")).await.status,
+        StatusCode::GONE
+    );
+
+    let admitted = harness
+        .post(
+            "/login",
+            &[("login", "ana"), ("password", "another long password")],
+        )
+        .await;
+    assert_eq!(admitted.status, StatusCode::SEE_OTHER);
+}
