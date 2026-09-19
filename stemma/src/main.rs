@@ -62,6 +62,13 @@ fn run(cli: Cli) -> Result<ExitCode> {
             Ok(ExitCode::SUCCESS)
         }
 
+        Command::Build => {
+            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
+            stemma::build::run(&home, &here, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
         Command::Status => {
             stemma::sync::status(&home, &mut out)?;
 

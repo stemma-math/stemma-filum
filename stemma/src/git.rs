@@ -151,6 +151,11 @@ pub fn push(repository: &Path) -> Result<()> {
     Ok(())
 }
 
+/// What the clone's branch points at.
+pub fn head(repository: &Path) -> Result<String> {
+    Ok(run(repository, &["rev-parse", "HEAD"])?.trim().to_owned())
+}
+
 /// The repository a path is inside, if it is inside one.
 ///
 /// Walking up is how git finds a repository, and doing it the same way is

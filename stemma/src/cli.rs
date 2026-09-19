@@ -38,6 +38,9 @@ pub enum Command {
     /// Brings every group this machine can work in into step.
     Sync,
 
+    /// Reads what the sources here declare.
+    Build,
+
     /// Says what this machine has, without asking the instance.
     Status,
 
