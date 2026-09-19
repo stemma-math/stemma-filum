@@ -265,6 +265,11 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                 " · " (side)
             }
             h1 { (digest.shown_as()) }
+
+            @if let Some(question) = &digest.question {
+                p class="serif" { (question) }
+            }
+
             p class="quiet identifier" { "lines/" (digest.name) }
         }
 

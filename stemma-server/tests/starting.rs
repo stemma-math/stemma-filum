@@ -425,3 +425,80 @@ async fn a_machine_with_no_desktop_starts_and_shares_a_line_too() {
     assert!(source(&harness, None, "quotient-groups").await.is_some());
     assert_eq!(source(&harness, Some("ana"), "quotient-groups").await, None);
 }
+
+#[tokio::test]
+async fn the_question_is_what_a_listing_shows_when_a_title_is_not_enough() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    start(
+        &mut harness,
+        "Quotient groups",
+        "Does every finite group split?",
+        "group",
+    )
+    .await;
+
+    // A machine builds it and hands over what it read.
+    let built = source(&harness, None, "quotient-groups")
+        .await
+        .expect("the line");
+
+    assert_eq!(
+        stemma_core::source::question(&built).as_deref(),
+        Some("Does every finite group split?")
+    );
+
+    publish(&mut harness, &built).await;
+
+    let space = harness.get("/g/algebra").await;
+    assert!(space.says("Does every finite group split?"));
+
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    assert!(line.says("Does every finite group split?"));
+}
+
+/// Puts the line on the instance, as the machine that built it would.
+async fn publish(harness: &mut Harness, built: &str) {
+    use stemma_core::artefact::{Kind, LineDigest, Nodes, Scope};
+    use stemma_server::artefacts::Shelf;
+    use stemma_server::store::artefacts as index;
+
+    let built = built.to_owned();
+    let shelf = Shelf::new(harness.instance.settings.paths.artefacts_dir());
+
+    harness
+        .instance
+        .write(move |connection| {
+            let user = users::by_login(connection, "ana")?.expect("the account");
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
+            let scope = Scope::of(Side::Shared, &user.id);
+            let commit = "0123456789abcdef0123456789abcdef01234567";
+
+            let mut nodes = Nodes::new(group.id.clone(), Side::Shared, commit.to_owned());
+            nodes.lines.push(LineDigest {
+                name: Name::parse("quotient-groups").unwrap(),
+                title: stemma_core::source::title(&built),
+                question: stemma_core::source::question(&built),
+                line: stemma_core::line::Line::read(&built).expect("a line that reads"),
+                lean: None,
+            });
+
+            let text = nodes.to_text();
+            shelf.put(&group.id, &scope, Kind::Nodes, commit, text.as_bytes())?;
+            index::record(
+                connection,
+                &group.id,
+                &scope,
+                Kind::Nodes,
+                commit,
+                text.len(),
+                &user.id,
+            )?;
+
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
