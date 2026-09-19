@@ -12,6 +12,7 @@ pub mod devices;
 pub mod groups;
 pub mod invitations;
 pub mod jobs;
+pub mod lines;
 pub mod machines;
 pub mod proposals;
 pub mod resets;

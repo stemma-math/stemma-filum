@@ -132,6 +132,7 @@ mod tests {
         LineDigest {
             name: Name::parse("quotient-groups").unwrap(),
             title: stemma_core::source::title(source),
+            question: None,
             line: Line::read(source).unwrap(),
             lean: None,
         }

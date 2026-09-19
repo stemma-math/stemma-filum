@@ -7,8 +7,8 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Parser;
 use stemma::cli::{
-    ClaimCommand, Cli, Command, ConflictCommand, DaemonCommand, JobCommand, NodeCommand,
-    ProposalCommand, VaultCommand,
+    ClaimCommand, Cli, Command, ConflictCommand, DaemonCommand, JobCommand, LineCommand,
+    NodeCommand, ProposalCommand, VaultCommand,
 };
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
@@ -77,6 +77,33 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Build => {
             let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
             stemma::build::run(&home, &here, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Line { command } => {
+            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
+
+            match command {
+                LineCommand::New {
+                    group,
+                    title,
+                    question,
+                    shared,
+                } => stemma::lines::start(&home, &group, &title, &question, shared, &mut out)?,
+                LineCommand::Share {
+                    line,
+                    history,
+                    mine_to_write,
+                } => stemma::lines::share(
+                    &home,
+                    &here,
+                    line.as_deref(),
+                    history,
+                    mine_to_write,
+                    &mut out,
+                )?,
+            }
 
             Ok(ExitCode::SUCCESS)
         }

@@ -85,6 +85,7 @@ async fn publish(harness: &mut Harness, side: Side, who: &str, commit: &str) {
             nodes.lines.push(LineDigest {
                 name: Name::parse("quotient-groups").unwrap(),
                 title: stemma_core::source::title(SOURCE),
+                question: None,
                 line: Line::read(SOURCE).expect("a line that reads"),
                 lean: None,
             });

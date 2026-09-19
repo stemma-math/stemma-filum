@@ -60,10 +60,19 @@ pub async fn take(
         .write(move |connection| {
             in_the_group(connection, &group, &owner)?;
 
+            // A shared line its author kept is theirs to write, and
+            // everybody else proposes. Nothing about that is a warning:
+            // the machine simply is not the one writing it.
+            if let Some(started) = crate::store::lines::by_name(connection, &group, side, &line)?
+                && !started.admits(&owner)
+            {
+                anyhow::bail!("its author writes this line; everybody else proposes")
+            }
+
             claims::take(connection, &group, side, line.as_str(), &id, &owner)
         })
         .await
-        .map_err(nothing_here)?;
+        .map_err(refused)?;
 
     Ok(Json(standing(&claim, &machine.id)).into_response())
 }
@@ -261,6 +270,26 @@ fn nothing_here(error: WebError) -> WebError {
     match error {
         WebError::Internal(reason) if reason.to_string() == "nothing here" => WebError::NotFound,
         other => other,
+    }
+}
+
+/// The same, plus the one refusal that is worth saying out loud.
+fn refused(error: WebError) -> WebError {
+    match error {
+        WebError::Internal(reason) if reason.to_string().starts_with("its author writes") => {
+            WebError::Forbidden(capitalised(&reason.to_string()))
+        }
+        other => nothing_here(other),
+    }
+}
+
+/// A reason, as a sentence.
+fn capitalised(reason: &str) -> String {
+    let mut characters = reason.chars();
+
+    match characters.next() {
+        Some(first) => format!("{}{}.", first.to_uppercase(), characters.as_str()),
+        None => reason.to_owned(),
     }
 }
 

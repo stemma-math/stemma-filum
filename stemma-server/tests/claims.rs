@@ -79,6 +79,7 @@ async fn a_group_with_a_line(harness: &mut Harness, owner: &str) {
             nodes.lines.push(LineDigest {
                 name: Name::parse(LINE).unwrap(),
                 title: stemma_core::source::title(SOURCE),
+                question: None,
                 line: Line::read(SOURCE).expect("a line that reads"),
                 lean: None,
             });

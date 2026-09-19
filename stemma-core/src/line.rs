@@ -142,6 +142,61 @@ impl Name {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// What a line called this would be called on disk.
+    ///
+    /// A directory name is not a title: it is lowercase, it has no
+    /// accents and no punctuation, and it is short. Somebody who wants
+    /// a different one renames the directory, which is the ordinary way
+    /// to rename anything in a repository.
+    pub fn from_title(title: &str) -> Option<Self> {
+        let mut name = String::new();
+
+        for character in title.trim().chars() {
+            let plain = plainly(character);
+
+            for character in plain.chars() {
+                match character {
+                    'a'..='z' | '0'..='9' => name.push(character),
+                    'A'..='Z' => name.push(character.to_ascii_lowercase()),
+                    _ if name.ends_with('-') => {}
+                    _ if name.is_empty() => {}
+                    _ => name.push('-'),
+                }
+            }
+        }
+
+        while name.len() > LONGEST_NAME {
+            name.pop();
+        }
+
+        Self::parse(name.trim_end_matches('-')).ok()
+    }
+}
+
+/// One letter without whatever is written over it.
+///
+/// Enough of Latin-1 for the languages this is written in; anything
+/// else becomes a hyphen, which is honest and still a usable name.
+fn plainly(character: char) -> String {
+    match character {
+        'á' | 'à' | 'ä' | 'â' | 'ã' | 'å' => "a".to_owned(),
+        'é' | 'è' | 'ë' | 'ê' => "e".to_owned(),
+        'í' | 'ì' | 'ï' | 'î' => "i".to_owned(),
+        'ó' | 'ò' | 'ö' | 'ô' | 'õ' => "o".to_owned(),
+        'ú' | 'ù' | 'ü' | 'û' => "u".to_owned(),
+        'ñ' => "n".to_owned(),
+        'ç' => "c".to_owned(),
+        'ß' => "ss".to_owned(),
+        'Á' | 'À' | 'Ä' | 'Â' | 'Ã' | 'Å' => "A".to_owned(),
+        'É' | 'È' | 'Ë' | 'Ê' => "E".to_owned(),
+        'Í' | 'Ì' | 'Ï' | 'Î' => "I".to_owned(),
+        'Ó' | 'Ò' | 'Ö' | 'Ô' | 'Õ' => "O".to_owned(),
+        'Ú' | 'Ù' | 'Ü' | 'Û' => "U".to_owned(),
+        'Ñ' => "N".to_owned(),
+        'Ç' => "C".to_owned(),
+        other => other.to_string(),
+    }
 }
 
 impl fmt::Display for Name {
@@ -828,6 +883,26 @@ impl Fault {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_title_becomes_a_name_a_directory_can_carry() {
+        let named = |title: &str| Name::from_title(title).map(|name| name.as_str().to_owned());
+
+        assert_eq!(named("Quotient groups"), Some("quotient-groups".to_owned()));
+        assert_eq!(
+            named("  Álgebra: ¿se parte?  "),
+            Some("algebra-se-parte".to_owned())
+        );
+        assert_eq!(named("Two  spaces"), Some("two-spaces".to_owned()));
+        assert_eq!(named("§§§"), None);
+        assert_eq!(named(""), None);
+        assert!(named(&"a very long title ".repeat(10)).unwrap().len() <= LONGEST_NAME);
+        assert!(
+            !named(&"a very long title ".repeat(10))
+                .unwrap()
+                .ends_with('-')
+        );
+    }
 
     /// A line with two central statements and work between them.
     const ORDINARY: &str = r#"

@@ -135,6 +135,9 @@ pub struct LineDigest {
     pub name: Name,
     /// What its first heading calls it, where it has one.
     pub title: Option<String>,
+    /// What it exists to answer, where it says.
+    #[serde(default)]
+    pub question: Option<String>,
     /// What it declares.
     pub line: Line,
     /// What the pinned Lean environment established for this line.
@@ -275,6 +278,7 @@ mod tests {
         nodes.lines.push(LineDigest {
             name: Name::parse("quotient-groups").unwrap(),
             title: Some("Quotient groups".to_owned()),
+            question: None,
             line: Line::read(
                 r#"
                 #definition(id: "def:quotient")[x]
@@ -309,6 +313,7 @@ mod tests {
         let digest = LineDigest {
             name: Name::parse("untitled").unwrap(),
             title: None,
+            question: None,
             line: Line::read("").unwrap(),
             lean: None,
         };

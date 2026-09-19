@@ -15,7 +15,11 @@ use std::fmt;
 use std::ops::Range;
 
 /// The environments a line is written with.
-pub const ENVIRONMENTS: [&str; 7] = [
+///
+/// `question` is not mathematics and declares no node: it is what the
+/// line exists to answer, and it is here so that it lives in the source
+/// like everything else about a line rather than in somebody's database.
+pub const ENVIRONMENTS: [&str; 8] = [
     "definition",
     "theorem",
     "lemma",
@@ -23,6 +27,7 @@ pub const ENVIRONMENTS: [&str; 7] = [
     "corollary",
     "remark",
     "proof",
+    "question",
 ];
 
 /// What an argument was given as.
@@ -160,6 +165,59 @@ pub fn title(source: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+/// What the line exists to answer.
+///
+/// A line with no question is a folder, which is why the form that
+/// starts one insists on it — but a source somebody wrote by hand may
+/// not have one, and that is not worth reporting as a fault.
+pub fn question(source: &str) -> Option<String> {
+    let declarations = read(source).ok()?;
+    let asked = declarations
+        .iter()
+        .find(|declaration| declaration.environment == "question")?;
+    let body = source[asked.body.clone()?].trim();
+
+    match body.is_empty() {
+        true => None,
+        false => Some(body.to_owned()),
+    }
+}
+
+/// Every file this source pulls in, as it was written.
+///
+/// Nothing is resolved here: a path is what the author typed. What it
+/// is for is the one mechanical rule about sharing — nothing the group
+/// can see may lean on something only its author can.
+pub fn imports(source: &str) -> Vec<String> {
+    let mut found = Vec::new();
+
+    for line in source.lines() {
+        let line = line.trim();
+
+        if line.starts_with("//") {
+            continue;
+        }
+
+        for keyword in ["#import", "#include"] {
+            let Some(rest) = line.split_once(keyword).map(|(_, rest)| rest) else {
+                continue;
+            };
+            let Some((_, quoted)) = rest.split_once('"') else {
+                continue;
+            };
+            let Some((path, _)) = quoted.split_once('"') else {
+                continue;
+            };
+
+            if !path.trim().is_empty() {
+                found.push(path.to_owned());
+            }
+        }
+    }
+
+    found
+}
+
 /// Walks a source once, looking for environments.
 struct Scanner<'a> {
     source: &'a str,
@@ -261,18 +319,33 @@ impl<'a> Scanner<'a> {
             .unwrap_or(self.source.len());
         let name = &self.source[after_hash..name_end];
 
-        if !ENVIRONMENTS.contains(&name) || self.bytes.get(name_end) != Some(&b'(') {
+        if !ENVIRONMENTS.contains(&name) {
+            return Ok(None);
+        }
+
+        // A question takes nothing and says everything between its
+        // brackets, so it is written `#question[...]` and not with an
+        // empty pair of parentheses first.
+        let asks_nothing = name == "question" && self.bytes.get(name_end) == Some(&b'[');
+
+        if self.bytes.get(name_end) != Some(&b'(') && !asks_nothing {
             return Ok(None);
         }
 
         let line = self.line_at(start);
         self.at = name_end;
 
-        let arguments_range = self.balanced(b'(', b')').ok_or(Problem {
-            line,
-            problem: Wrong::Unclosed,
-        })?;
-        let arguments = parse_arguments(&self.source[arguments_range], line)?;
+        let arguments = match asks_nothing {
+            true => BTreeMap::new(),
+            false => {
+                let arguments_range = self.balanced(b'(', b')').ok_or(Problem {
+                    line,
+                    problem: Wrong::Unclosed,
+                })?;
+
+                parse_arguments(&self.source[arguments_range], line)?
+            }
+        };
 
         // A body is optional: `#proof(of: "thm:one")` on its own is a
         // statement that a proof exists somewhere else, and reading it
@@ -490,6 +563,38 @@ fn unquote(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_a_source_pulls_in_is_read_as_written() {
+        let source = "#import \"../shared-notation/main.typ\": *\n\
+                      #include \"figures/one.typ\"\n\
+                      // #import \"not-this.typ\"\n\
+                      #theorem(id: \"thm:one\")[Something.]\n";
+
+        assert_eq!(
+            imports(source),
+            [
+                "../shared-notation/main.typ".to_owned(),
+                "figures/one.typ".to_owned()
+            ]
+        );
+        assert!(imports("nothing here").is_empty());
+    }
+
+    #[test]
+    fn a_line_says_what_it_exists_to_answer() {
+        let source = "= Quotient groups\n\n                      #question[Does every finite group split?]\n\n                      #theorem(id: \"thm:one\", central: true)[It does.]\n";
+
+        assert_eq!(
+            question(source).as_deref(),
+            Some("Does every finite group split?")
+        );
+        assert_eq!(question("= Nothing asked\n"), None);
+
+        // It declares nothing, so the line reads exactly as before.
+        let line = crate::line::Line::read(source).unwrap();
+        assert_eq!(line.nodes.len(), 1);
+    }
 
     #[test]
     fn a_line_is_called_what_its_first_heading_says() {

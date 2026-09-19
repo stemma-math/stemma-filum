@@ -10,6 +10,8 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
+use crate::id::UserId;
+
 /// What somebody may do inside one group.
 ///
 /// The variants are ordered by authority, so `Owner > Admin > Member`.
@@ -95,6 +97,69 @@ impl fmt::Display for Grant {
     }
 }
 
+/// Who may write a line the group can see.
+///
+/// A line somebody shares stays theirs to write unless they say
+/// otherwise; the alternative is not a free-for-all either, because a
+/// line is written by one machine at a time and the claim says which.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WhoWrites {
+    /// Its author. Everybody else proposes.
+    Author,
+    /// Anybody in the group, one at a time by claim.
+    Anyone,
+}
+
+impl WhoWrites {
+    /// The word for it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Author => "author",
+            Self::Anyone => "anyone",
+        }
+    }
+
+    /// What it says on screen.
+    pub fn said(self) -> &'static str {
+        match self {
+            Self::Author => "only its author, and everybody else proposes",
+            Self::Anyone => "anybody in the group, one at a time",
+        }
+    }
+
+    /// Whether this person may write the line themselves.
+    pub fn admits(self, author: &UserId, who: &UserId) -> bool {
+        match self {
+            Self::Author => author == who,
+            Self::Anyone => true,
+        }
+    }
+}
+
+impl fmt::Display for WhoWrites {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A string that names nobody who could write a line.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("`{0}` does not say who writes a line: use `author` or `anyone`")]
+pub struct UnknownWriter(pub String);
+
+impl FromStr for WhoWrites {
+    type Err = UnknownWriter;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input.trim() {
+            "author" => Ok(Self::Author),
+            "anyone" => Ok(Self::Anyone),
+            other => Err(UnknownWriter(other.to_owned())),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +177,20 @@ mod tests {
         assert!(!GroupRole::Member.can_invite());
         assert!(GroupRole::Admin.can_invite());
         assert!(GroupRole::Owner.can_invite());
+    }
+
+    #[test]
+    fn a_line_its_author_keeps_admits_only_them() {
+        let ana: UserId = "usr:ana".parse().unwrap();
+        let bruno: UserId = "usr:bruno".parse().unwrap();
+
+        assert!(WhoWrites::Author.admits(&ana, &ana));
+        assert!(!WhoWrites::Author.admits(&ana, &bruno));
+        assert!(WhoWrites::Anyone.admits(&ana, &bruno));
+
+        for who in [WhoWrites::Author, WhoWrites::Anyone] {
+            assert_eq!(who.as_str().parse::<WhoWrites>().unwrap(), who);
+        }
     }
 
     #[test]

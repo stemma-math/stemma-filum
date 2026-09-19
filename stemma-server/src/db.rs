@@ -63,6 +63,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "claims",
         sql: include_str!("../migrations/0009-claims.sql"),
     },
+    Migration {
+        name: "lines",
+        sql: include_str!("../migrations/0010-lines.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.

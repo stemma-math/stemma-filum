@@ -23,6 +23,7 @@ pub mod lines;
 pub mod machines;
 pub mod proposals;
 pub mod reset;
+pub mod starting;
 pub mod transport;
 pub mod vault;
 pub mod visitor;
@@ -170,6 +171,12 @@ pub fn router() -> Router<Instance> {
             get(groups::request_form).post(groups::request),
         )
         .route("/g/{slug}", get(groups::space))
+        .route("/g/{slug}/lines/new", get(starting::form))
+        .route("/g/{slug}/lines", post(starting::start))
+        .route(
+            "/g/{slug}/private/{line}/share",
+            get(starting::share_form).post(starting::share),
+        )
         .route("/g/{slug}/vault", get(vault::page_view))
         .route("/g/{slug}/vault/entries", post(vault::admit))
         .route("/g/{slug}/vault/bridges", post(vault::bridge))
@@ -211,6 +218,8 @@ pub fn router() -> Router<Instance> {
             get(machines::mine).post(machines::register),
         )
         .route("/api/machines/beat", post(machines::beat))
+        .route("/api/lines", post(starting::api_start))
+        .route("/api/lines/{slug}/{line}/share", post(starting::api_share))
         .route("/api/claims", get(claims::listing).post(claims::take))
         .route("/api/claims/renew", post(claims::renew))
         .route("/api/claims/release", post(claims::release))

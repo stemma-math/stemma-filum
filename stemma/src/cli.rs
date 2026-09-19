@@ -41,6 +41,13 @@ pub enum Command {
     /// Reads what the sources here declare.
     Build,
 
+    /// Starts a line, or moves one to the group.
+    Line {
+        /// What to do with it.
+        #[command(subcommand)]
+        command: LineCommand,
+    },
+
     /// Says who is writing a line, and takes it or lets it go.
     Claim {
         /// What to do with it.
@@ -172,6 +179,44 @@ pub enum VaultCommand {
         /// What was checked or why the guarantee is withdrawn.
         #[arg(long)]
         note: String,
+    },
+}
+
+/// What can be done with a line itself.
+#[derive(Debug, Subcommand)]
+pub enum LineCommand {
+    /// Starts one.
+    New {
+        /// Which group it belongs to.
+        #[arg(long)]
+        group: String,
+
+        /// What it is called.
+        #[arg(long)]
+        title: String,
+
+        /// What it exists to answer.
+        #[arg(long)]
+        question: String,
+
+        /// Let the whole group see it. Left out, it is yours alone.
+        #[arg(long)]
+        shared: bool,
+    },
+
+    /// Moves one of yours to the group.
+    Share {
+        /// Which line, when it is not the one this is run inside.
+        #[arg(long)]
+        line: Option<String>,
+
+        /// Send everything you wrote getting here, not only today's state.
+        #[arg(long)]
+        history: bool,
+
+        /// Keep the writing to yourself; everybody else proposes.
+        #[arg(long)]
+        mine_to_write: bool,
     },
 }
 
@@ -397,6 +442,44 @@ mod tests {
         };
 
         assert_eq!(groups, ["algebra"]);
+    }
+
+    #[test]
+    fn a_new_line_says_what_it_answers_and_who_sees_it() {
+        assert!(
+            Cli::try_parse_from(["stemma", "line", "new", "--group", "algebra"]).is_err(),
+            "a line with no title and no question is a folder"
+        );
+
+        let Command::Line {
+            command:
+                LineCommand::New {
+                    group,
+                    title,
+                    question,
+                    shared,
+                },
+        } = Cli::try_parse_from([
+            "stemma",
+            "line",
+            "new",
+            "--group",
+            "algebra",
+            "--title",
+            "Quotient groups",
+            "--question",
+            "Does it split?",
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("expected a line to start");
+        };
+
+        assert_eq!(group, "algebra");
+        assert_eq!(title, "Quotient groups");
+        assert_eq!(question, "Does it split?");
+        assert!(!shared, "a line is its author's until they say otherwise");
     }
 
     #[test]

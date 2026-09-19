@@ -145,6 +145,7 @@ pub fn read(clone: &Path) -> Result<Built> {
                 nodes.lines.push(LineDigest {
                     name,
                     title: source::title(&text),
+                    question: source::question(&text),
                     line,
                     lean,
                 });

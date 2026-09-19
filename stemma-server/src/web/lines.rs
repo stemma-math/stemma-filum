@@ -307,6 +307,21 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             }
 
             div class="apparatus__register" {
+                @if side == Side::Private {
+                    div class="block" {
+                        p class="label" { "Yours alone" }
+                        p {
+                            a href={ "/g/" (group.slug()) "/private/" (digest.name) "/share" } {
+                                "Share it with the group"
+                            }
+                        }
+                        p class="quiet" {
+                            "Sharing is a move: the group receives the line, and what "
+                            "you wrote getting there stays with you."
+                        }
+                    }
+                }
+
                 (claim_block(group, side, &digest.name, writing, signed))
                 (register(digest, &central, &boxes, nodes))
             }

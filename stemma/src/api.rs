@@ -239,6 +239,39 @@ pub struct Asking {
     pub machine: Option<String>,
 }
 
+/// What starting a line asks for.
+#[derive(Debug, Clone, Serialize)]
+pub struct Starting {
+    /// The group's short name.
+    pub group: String,
+    /// What the line is called.
+    pub title: String,
+    /// What it exists to answer.
+    pub question: String,
+    /// `me` or `group`.
+    pub seen_by: String,
+}
+
+/// What moving a line to the group asks for.
+#[derive(Debug, Clone, Serialize)]
+pub struct Sharing {
+    /// `today` or `everything`.
+    pub travels: String,
+    /// `author` or `anyone`.
+    pub writing: String,
+}
+
+/// Where a line ended up.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Placed {
+    /// The group's short name.
+    pub group: String,
+    /// Which of its repositories.
+    pub side: String,
+    /// What the line is called.
+    pub line: String,
+}
+
 /// Which line a machine is talking to the instance about.
 #[derive(Debug, Clone, Serialize)]
 pub struct About {
@@ -595,6 +628,22 @@ impl Server {
             .as_str()
             .map(str::to_owned)
             .context("the instance did not say which job it made")
+    }
+
+    /// Starts a line.
+    pub fn start_line(&self, token: &str, starting: &Starting) -> Result<Placed> {
+        self.ask(token, "/api/lines", starting)
+    }
+
+    /// Moves one to the group.
+    pub fn share_line(
+        &self,
+        token: &str,
+        group: &str,
+        line: &str,
+        sharing: &Sharing,
+    ) -> Result<Placed> {
+        self.ask(token, &format!("/api/lines/{group}/{line}/share"), sharing)
     }
 
     /// Takes a line for this machine, unless another one has it.

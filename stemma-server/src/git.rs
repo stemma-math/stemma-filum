@@ -15,6 +15,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use stemma_core::id::{GroupId, Slug, UserId};
+use stemma_core::line::Name;
 use stemma_core::repository::{self, Manifest};
 
 /// Who the instance is, when it is the one making a commit.
@@ -172,6 +173,301 @@ fn seed(path: &Path, manifest: &Manifest) -> Result<()> {
     Ok(())
 }
 
+/// Whoever a commit is by.
+///
+/// The instance commits, and the person authors. Git keeps the two
+/// apart and so does this: every mutation is attributed to a concrete
+/// person, and the machinery that carried it out is not that person.
+#[derive(Debug, Clone, Copy)]
+pub struct Author<'a> {
+    /// What they are called.
+    pub name: &'a str,
+    /// Where they are reachable.
+    pub email: &'a str,
+}
+
+impl Author<'_> {
+    /// What git is told about them.
+    fn environment(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("GIT_AUTHOR_NAME", self.name.to_owned()),
+            ("GIT_AUTHOR_EMAIL", self.email.to_owned()),
+            ("GIT_COMMITTER_NAME", COMMITTER.0.to_owned()),
+            ("GIT_COMMITTER_EMAIL", COMMITTER.1.to_owned()),
+        ]
+    }
+}
+
+/// Starts a line in a bare repository, with nothing in it but itself.
+///
+/// The source is the author's from the first commit: what the form
+/// collected is written into the file rather than kept in a row
+/// beside it, so a clone of this repository is the whole line.
+pub fn start_line(path: &Path, name: &Name, source: &str, author: &Author<'_>) -> Result<String> {
+    let inside = format!("{}/{}/{}", repository::LINES, name, repository::ENTRY);
+
+    write_commit(path, author, &format!("Start {name}"), |index| {
+        let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], source)?;
+
+        index_git(
+            path,
+            index,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("100644,{blob},{inside}"),
+            ],
+        )?;
+
+        Ok(())
+    })
+}
+
+/// Whether a repository already has a line by this name.
+pub fn holds_line(path: &Path, name: &Name) -> bool {
+    let Some(head) = head_commit(path) else {
+        return false;
+    };
+
+    run(
+        path,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{head}:{}/{name}", repository::LINES),
+        ],
+    )
+    .is_ok()
+}
+
+/// Every line a repository holds at a commit.
+pub fn lines_at(path: &Path, commit: &str) -> Result<Vec<String>> {
+    let listed = run(
+        path,
+        &[
+            "ls-tree",
+            "--name-only",
+            &format!("{commit}:{}", repository::LINES),
+        ],
+    )
+    .unwrap_or_default();
+
+    Ok(listed.lines().map(str::to_owned).collect())
+}
+
+/// Moves a line from one repository into another.
+///
+/// `history` decides what the other side receives: the state of the
+/// day, or every commit that ever touched the line. Neither carries
+/// anything else the author wrote — their false starts elsewhere stay
+/// where they are.
+pub fn bring_line(to: &Path, from: &Path, name: &Name, history: bool) -> Result<()> {
+    let kept = format!("refs/stemma/moving/{name}");
+
+    // The objects have to be here before anything can be built from
+    // them, and a ref keeps them from being collected meanwhile.
+    run(
+        to,
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            &from.display().to_string(),
+            &format!("+refs/heads/main:{kept}"),
+        ],
+    )?;
+
+    let inside = format!("{}/{}", repository::LINES, name);
+    let commits: Vec<String> = match history {
+        true => run(to, &["rev-list", "--reverse", &kept, "--", &inside])?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+        false => vec![run(to, &["rev-parse", &kept])?],
+    };
+
+    for commit in &commits {
+        let Ok(tree) = run(to, &["rev-parse", &format!("{commit}:{inside}")]) else {
+            continue;
+        };
+        let author = author_of(to, commit)?;
+        let message = run(to, &["log", "-1", "--format=%B", commit])?;
+        let when = run(to, &["log", "-1", "--format=%aI", commit])?;
+
+        write_commit_at(
+            to,
+            &Author {
+                name: &author.0,
+                email: &author.1,
+            },
+            Some(&when),
+            message.trim(),
+            |index| {
+                remove_prefix(to, index, &inside)?;
+                graft(to, index, &inside, &tree)
+            },
+        )?;
+    }
+
+    run(to, &["update-ref", "-d", &kept])?;
+
+    Ok(())
+}
+
+/// Takes a line out of a repository.
+pub fn drop_line(path: &Path, name: &Name, author: &Author<'_>) -> Result<String> {
+    let inside = format!("{}/{}", repository::LINES, name);
+
+    write_commit(
+        path,
+        author,
+        &format!("Move {name} to the group"),
+        |index| remove_prefix(path, index, &inside),
+    )
+}
+
+/// Who wrote a commit: their name and their address.
+fn author_of(path: &Path, commit: &str) -> Result<(String, String)> {
+    let said = run(path, &["log", "-1", "--format=%an%n%ae", commit])?;
+    let mut parts = said.lines();
+
+    Ok((
+        parts.next().unwrap_or_default().to_owned(),
+        parts.next().unwrap_or_default().to_owned(),
+    ))
+}
+
+/// Puts a whole tree under a path in the index being built.
+///
+/// Entry by entry rather than with `read-tree --prefix`, which wants a
+/// working tree to check against and there is none here: the instance
+/// keeps bare repositories and never checks anything out.
+fn graft(path: &Path, index: &Path, inside: &str, tree: &str) -> Result<()> {
+    let listed = run(path, &["ls-tree", "-r", "-z", tree])?;
+
+    for entry in listed.split('\0').filter(|entry| !entry.is_empty()) {
+        let (about, file) = entry
+            .split_once('\t')
+            .context("git described a tree in a way this does not understand")?;
+        let mut parts = about.split_whitespace();
+        let mode = parts.next().unwrap_or("100644");
+        let object = parts.nth(1).context("git named no object")?;
+
+        index_git(
+            path,
+            index,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("{mode},{object},{inside}/{file}"),
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Takes everything under a path out of the index being built.
+fn remove_prefix(path: &Path, index: &Path, inside: &str) -> Result<()> {
+    let listed = index_git(path, index, &["ls-files", "--", &format!("{inside}/*")])?;
+
+    for file in listed.lines() {
+        index_git(path, index, &["update-index", "--force-remove", file])?;
+    }
+
+    Ok(())
+}
+
+/// Builds a commit on the branch out of an index nobody else can see.
+fn write_commit(
+    path: &Path,
+    author: &Author<'_>,
+    message: &str,
+    build: impl FnOnce(&Path) -> Result<()>,
+) -> Result<String> {
+    write_commit_at(path, author, None, message, build)
+}
+
+/// The same, dated as the commit it is replaying was dated.
+fn write_commit_at(
+    path: &Path,
+    author: &Author<'_>,
+    when: Option<&str>,
+    message: &str,
+    build: impl FnOnce(&Path) -> Result<()>,
+) -> Result<String> {
+    let head = head_commit(path).context("the repository has no branch yet")?;
+    let index = path.join(format!("stemma-index-{}", uuid()));
+    let _ = std::fs::remove_file(&index);
+
+    let built = (|| {
+        index_git(path, &index, &["read-tree", &head])?;
+        build(&index)?;
+
+        let tree = index_git(path, &index, &["write-tree"])?;
+        let mut environment = author.environment();
+
+        if let Some(when) = when {
+            environment.push(("GIT_AUTHOR_DATE", when.to_owned()));
+        }
+
+        let commit = run_with(
+            path,
+            &["commit-tree", &tree, "-p", &head, "-m", message],
+            None,
+            &environment,
+        )?;
+
+        run(path, &["update-ref", "refs/heads/main", &commit, &head])?;
+
+        Ok(commit)
+    })();
+
+    let _ = std::fs::remove_file(&index);
+    let _ = std::fs::remove_dir_all(index.with_extension("worktree"));
+
+    built
+}
+
+/// Runs git against an index of our own rather than the repository's.
+///
+/// Some of these ask for a working tree even though they touch only the
+/// index, so they are given an empty directory to be satisfied by.
+/// Nothing is ever written into it: these repositories are bare, and
+/// the instance checks nothing out.
+fn index_git(path: &Path, index: &Path, arguments: &[&str]) -> Result<String> {
+    let empty = index.with_extension("worktree");
+    std::fs::create_dir_all(&empty).with_context(|| format!("cannot make {}", empty.display()))?;
+
+    let mut with_worktree = vec!["-c", "core.bare=false"];
+    with_worktree.extend_from_slice(arguments);
+
+    run_with(
+        path,
+        &with_worktree,
+        None,
+        &[
+            ("GIT_INDEX_FILE", index.display().to_string()),
+            ("GIT_WORK_TREE", empty.display().to_string()),
+        ],
+    )
+}
+
+/// Something short and unrepeated, for a file only this call uses.
+fn uuid() -> String {
+    format!(
+        "{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|since| since.as_nanos())
+            .unwrap_or_default()
+    )
+}
+
 /// Whether a path holds a repository this instance made.
 pub fn exists(path: &Path) -> bool {
     path.join("HEAD").is_file()
@@ -189,16 +485,21 @@ pub fn show(path: &Path, commit: &str, inside: &str) -> Result<String> {
 
 /// Runs git inside a repository.
 fn run(repository: &Path, arguments: &[&str]) -> Result<String> {
-    run_with(repository, arguments, None)
+    run_with(repository, arguments, None, &[])
 }
 
 /// Runs git inside a repository, handing it something on its input.
 fn run_with_input(repository: &Path, arguments: &[&str], input: &str) -> Result<String> {
-    run_with(repository, arguments, Some(input))
+    run_with(repository, arguments, Some(input), &[])
 }
 
 /// Runs git, and turns a failure into something an operator can read.
-fn run_with(repository: &Path, arguments: &[&str], input: Option<&str>) -> Result<String> {
+fn run_with(
+    repository: &Path,
+    arguments: &[&str],
+    input: Option<&str>,
+    environment: &[(&str, String)],
+) -> Result<String> {
     use std::io::Write;
     use std::process::Stdio;
 
@@ -206,6 +507,7 @@ fn run_with(repository: &Path, arguments: &[&str], input: Option<&str>) -> Resul
     command
         .args(arguments)
         .current_dir(repository)
+        .envs(environment.iter().map(|(name, value)| (*name, value)))
         .stdin(match input {
             Some(_) => Stdio::piped(),
             None => Stdio::null(),
@@ -310,6 +612,134 @@ mod tests {
                 "reached `{asked}`"
             );
         }
+    }
+
+    fn ana() -> Author<'static> {
+        Author {
+            name: "Ana",
+            email: "ana@example.org",
+        }
+    }
+
+    fn quotients() -> Name {
+        Name::parse("quotient-groups").unwrap()
+    }
+
+    /// A source with a question and one statement in it.
+    fn source(question: &str) -> String {
+        format!(
+            "= Quotient groups\n\n#question[{question}]\n\n             #theorem(id: \"thm:one\", central: true)[It splits.]\n"
+        )
+    }
+
+    #[test]
+    fn a_line_starts_with_the_person_as_its_author_and_the_instance_as_its_committer() {
+        let root = somewhere("started");
+        let path = Repositories::new(&root).personal(&group(), &user());
+        ensure(&path, &manifest()).unwrap();
+
+        let commit = start_line(&path, &quotients(), &source("Does it split?"), &ana()).unwrap();
+
+        assert!(holds_line(&path, &quotients()));
+        assert_eq!(head_commit(&path).as_deref(), Some(commit.as_str()));
+
+        let who = run(&path, &["log", "-1", "--format=%an <%ae> / %cn", &commit]).unwrap();
+        assert_eq!(who, "Ana <ana@example.org> / Stemma");
+
+        let written = show(
+            &path,
+            &commit,
+            &format!(
+                "{}/{}/{}",
+                repository::LINES,
+                quotients(),
+                repository::ENTRY
+            ),
+        )
+        .unwrap();
+        assert!(written.contains("Does it split?"));
+
+        // Everything that was already there is still there.
+        assert!(show(&path, &commit, repository::MANIFEST).is_ok());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn sharing_moves_the_line_and_leaves_the_rest_where_it_was() {
+        let root = somewhere("moved");
+        let repositories = Repositories::new(&root);
+        let mine = repositories.personal(&group(), &user());
+        let ours = repositories.shared(&group());
+        ensure(&mine, &manifest()).unwrap();
+        ensure(&ours, &manifest()).unwrap();
+
+        start_line(&mine, &quotients(), &source("First thought"), &ana()).unwrap();
+        let other = Name::parse("another-line").unwrap();
+        start_line(&mine, &other, &source("Still mine"), &ana()).unwrap();
+        start_line(&mine, &quotients(), &source("A better question"), &ana()).unwrap();
+
+        bring_line(&ours, &mine, &quotients(), false).unwrap();
+        drop_line(&mine, &quotients(), &ana()).unwrap();
+
+        assert!(holds_line(&ours, &quotients()));
+        assert!(!holds_line(&mine, &quotients()), "a move, not a copy");
+        assert!(holds_line(&mine, &other), "the rest is untouched");
+
+        let head = head_commit(&ours).unwrap();
+        let written = show(
+            &ours,
+            &head,
+            &format!(
+                "{}/{}/{}",
+                repository::LINES,
+                quotients(),
+                repository::ENTRY
+            ),
+        )
+        .unwrap();
+
+        assert!(written.contains("A better question"));
+        assert!(
+            !written.contains("First thought"),
+            "the state of the day, and nothing before it"
+        );
+        assert_eq!(
+            run(&ours, &["rev-list", "--count", "HEAD"]).unwrap(),
+            "2",
+            "the group receives one commit, not somebody's whole history"
+        );
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_line_can_travel_with_everything_from_the_beginning() {
+        let root = somewhere("history");
+        let repositories = Repositories::new(&root);
+        let mine = repositories.personal(&group(), &user());
+        let ours = repositories.shared(&group());
+        ensure(&mine, &manifest()).unwrap();
+        ensure(&ours, &manifest()).unwrap();
+
+        start_line(&mine, &quotients(), &source("First thought"), &ana()).unwrap();
+        start_line(&mine, &quotients(), &source("A better question"), &ana()).unwrap();
+
+        bring_line(&ours, &mine, &quotients(), true).unwrap();
+
+        assert_eq!(
+            run(&ours, &["rev-list", "--count", "HEAD"]).unwrap(),
+            "3",
+            "the first commit of the repository, and one for each of hers"
+        );
+
+        let said = run(&ours, &["log", "--format=%an", "-2"]).unwrap();
+        assert!(
+            said.lines().all(|who| who == "Ana"),
+            "her commits stay hers: {said}"
+        );
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     fn manifest() -> Manifest {

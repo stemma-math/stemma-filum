@@ -528,6 +528,7 @@ fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
     html! {
         div class="block" {
             p class="label" { "Lines of work" }
+            p { a href={ "/g/" (group.slug()) "/lines/new" } { "New line" } }
 
             @if nothing {
                 p class="empty" {
