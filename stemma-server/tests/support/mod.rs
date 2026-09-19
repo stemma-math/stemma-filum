@@ -21,6 +21,8 @@ pub struct Harness {
     pub instance: Instance,
     /// The cookie the last answer handed out, if it handed one out.
     pub cookie: Option<String>,
+    /// Where this instance's files are, for as long as the test runs.
+    pub root: PathBuf,
 }
 
 impl Harness {
@@ -34,17 +36,26 @@ impl Harness {
         let mut database = Database::in_memory().expect("a database in memory");
         database.migrate().expect("the schema applies");
 
+        let root = std::env::temp_dir().join(format!(
+            "stemma-harness-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("somewhere to keep the instance's files");
+
         let settings = Settings {
             public_url: PublicUrl::parse(public_url).expect("a valid address"),
             listen: "127.0.0.1:0".parse::<Listen>().expect("a valid address"),
-            paths: Paths::new("/tmp/stemma-test"),
+            paths: Paths::new(&root),
             policy_seed: PolicySeed::default(),
-            source: PathBuf::from("/tmp/stemma-test/server.toml"),
+            source: root.join("server.toml"),
         };
 
         Self {
             instance: Instance::new(settings, database, Key::from_material(b"a test key")),
             cookie: None,
+            root,
         }
     }
 
@@ -138,6 +149,12 @@ impl Harness {
         }
 
         page
+    }
+}
+
+impl Drop for Harness {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
     }
 }
 

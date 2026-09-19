@@ -10,7 +10,9 @@ use axum::response::{IntoResponse, Redirect, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
 use stemma_core::access::GroupRole;
+use stemma_core::artefact::{Nodes, Scope};
 use stemma_core::id::{InvitationId, Slug};
+use stemma_core::repository::Side;
 
 use super::layout::{Chrome, page, signature};
 use super::visitor::SignedIn;
@@ -250,10 +252,11 @@ pub async fn space(
         super::front::instance_name(&instance, &policy),
     )
     .signed_in(signed.user.clone(), signed.maintainer);
+    let work = read_work(&instance, &group, &signed).await?;
 
     Ok(page(
         &chrome,
-        space_body(&signed, &group, role, &members, &invitations, None),
+        space_body(&signed, &group, role, &members, &invitations, &work, None),
     )
     .into_response())
 }
@@ -316,6 +319,7 @@ pub async fn invite(
         .public_url
         .link(&format!("invite/{secret}"));
     let (_, members, live) = read_space(&instance, &group, &signed).await?;
+    let work = read_work(&instance, &group, &signed).await?;
 
     let chrome = Chrome::anonymous(
         group.name.clone(),
@@ -325,7 +329,7 @@ pub async fn invite(
 
     Ok(page(
         &chrome,
-        space_body(&signed, &group, role, &members, &live, Some(&link)),
+        space_body(&signed, &group, role, &members, &live, &work, Some(&link)),
     )
     .into_response())
 }
@@ -405,6 +409,28 @@ async fn read_space(
         .await
 }
 
+/// What has been built for this group, on both sides.
+///
+/// The shared one is the group's; the private one is the reader's own,
+/// and nobody else's is ever read here.
+async fn read_work(
+    instance: &Instance,
+    group: &Group,
+    signed: &SignedIn,
+) -> Result<Vec<(Side, Nodes)>, WebError> {
+    let mut found = Vec::new();
+
+    for side in [Side::Shared, Side::Private] {
+        let scope = Scope::of(side, &signed.user.id);
+
+        if let Some(nodes) = super::lines::read(instance, &group.id, &scope).await? {
+            found.push((side, nodes));
+        }
+    }
+
+    Ok(found)
+}
+
 /// The group space.
 fn space_body(
     signed: &SignedIn,
@@ -412,6 +438,7 @@ fn space_body(
     role: GroupRole,
     members: &[Member],
     invitations: &[Invitation],
+    work: &[(Side, Nodes)],
     fresh_link: Option<&str>,
 ) -> Markup {
     html! {
@@ -419,6 +446,8 @@ fn space_body(
             h1 { (group.name) }
             p class="quiet identifier" { (group.id.to_string()) }
         }
+
+        (lines_block(group, work))
 
         div class="block" {
             p class="label" { "Members · " (members.len()) }
@@ -435,6 +464,54 @@ fn space_body(
 
         @if role.can_invite() {
             (invitations_block(signed, group, role, invitations, fresh_link))
+        }
+    }
+}
+
+/// The lines of work, as the last machine to build them left them.
+fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
+    let nothing = work.iter().all(|(_, nodes)| nodes.lines.is_empty());
+
+    html! {
+        div class="block" {
+            p class="label" { "Lines of work" }
+
+            @if nothing {
+                p class="empty" {
+                    "Nothing has been built for this group yet. A line appears here once "
+                    "somebody writes it on their own machine and sends it up: this "
+                    "instance compiles nothing itself."
+                }
+            }
+
+            @for (side, nodes) in work {
+                @if !nodes.lines.is_empty() {
+                    ul class="register" {
+                        @for line in &nodes.lines {
+                            li {
+                                span class="register__name" {
+                                    a href={ "/g/" (group.slug()) "/" (side) "/" (line.name) } {
+                                        (line.shown_as())
+                                    }
+                                }
+                                span class="quiet" {
+                                    @match side {
+                                        Side::Shared => "shared",
+                                        // A ruled margin means "not
+                                        // shared"; in a list the word
+                                        // does the same work.
+                                        Side::Private => "yours alone",
+                                    }
+                                }
+                                span class="register__aside numeric" {
+                                    (line.line.central().len()) " central · "
+                                    (line.line.nodes.len()) " in all"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

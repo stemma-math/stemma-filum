@@ -120,6 +120,9 @@ pub fn for_commit(
 }
 
 /// The most recent artefact of a kind for one repository.
+///
+/// Two artefacts recorded in the same second are told apart by the order
+/// they arrived in, which is what "most recent" means here.
 pub fn latest(
     connection: &Connection,
     group: &GroupId,
@@ -131,7 +134,7 @@ pub fn latest(
             &format!(
                 "SELECT {COLUMNS} FROM artefacts
                   WHERE group_id = ?1 AND scope = ?2 AND kind = ?3
-                  ORDER BY built_at DESC, id DESC LIMIT 1"
+                  ORDER BY built_at DESC, rowid DESC LIMIT 1"
             ),
             params![group.to_string(), scope.to_string(), kind.as_str()],
             Built::from_row,
@@ -145,7 +148,7 @@ pub fn for_scope(connection: &Connection, group: &GroupId, scope: &Scope) -> Res
     let mut statement = connection.prepare(&format!(
         "SELECT {COLUMNS} FROM artefacts
           WHERE group_id = ?1 AND scope = ?2
-          ORDER BY built_at DESC, id DESC"
+          ORDER BY built_at DESC, rowid DESC"
     ))?;
 
     let built = statement

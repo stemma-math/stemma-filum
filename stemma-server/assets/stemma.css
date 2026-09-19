@@ -505,3 +505,177 @@ th.numeric {
         font-size: var(--step-6);
     }
 }
+
+/* ── The apparatus ─────────────────────────────────────────────────────
+ *
+ * A measured column with functional margins: the document holds the
+ * centre, the gutter on the left carries what the system knows about
+ * each node, and the register on the right carries the blocks. Neither
+ * margin disappears on a narrow screen — both carry information, so they
+ * degrade in position, not in existence.
+ */
+
+.apparatus {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr) 21rem;
+    gap: var(--space-5);
+    align-items: start;
+}
+
+.apparatus__gutter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    font-family: var(--narrow);
+    font-size: var(--step-1);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: right;
+    padding-top: 2px;
+}
+
+.apparatus__gutter .identifier {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.apparatus__document {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    min-width: 0;
+}
+
+.apparatus__register {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    border-left: 1px solid var(--rule);
+    padding-left: var(--space-4);
+}
+
+/* One node in the document. Weight on the left edge says who committed
+ * to it: the heavier rule is a human declaration that the line rests on
+ * this. */
+.node {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: start;
+}
+
+.node__mark {
+    font-family: var(--narrow);
+    font-size: var(--step-1);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: right;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.node__mark .identifier {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--ink-2);
+}
+
+.node__body {
+    border-left: 1px solid var(--rule);
+    padding-left: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.node--central > .node__body {
+    border-left-width: 1.6px;
+    border-left-color: var(--ditto);
+}
+
+.node__name {
+    font-family: var(--serif);
+    font-size: var(--step-4);
+    line-height: 1.3;
+}
+
+.node__uses {
+    font-family: var(--mono);
+    font-size: var(--step-2);
+    color: var(--ink-3);
+}
+
+/* A black box: a declared absence. Hatched, never coloured — a gap is
+ * not a failure and not an alarm. */
+.box {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: start;
+}
+
+.box__band {
+    min-height: 3rem;
+    border: 1px solid var(--rule);
+    padding: var(--space-3) var(--space-4);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--ink-3);
+    font-size: var(--step-2);
+    background-image: repeating-linear-gradient(
+        45deg,
+        transparent,
+        transparent 7px,
+        var(--rule-soft) 7px,
+        var(--rule-soft) 8px
+    );
+}
+
+/* Filled by hand is ordinary content, so it carries no texture. */
+.box--filled .box__band {
+    background-image: none;
+}
+
+.box__count {
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 75rem) {
+    .apparatus {
+        grid-template-columns: 9rem minmax(0, 1fr);
+    }
+
+    .apparatus__register {
+        grid-column: 1 / -1;
+        border-left: 0;
+        border-top: 1px solid var(--rule);
+        padding-left: 0;
+        padding-top: var(--space-5);
+    }
+}
+
+@media (max-width: 56rem) {
+    .apparatus,
+    .node,
+    .box {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+    }
+
+    .apparatus__gutter,
+    .node__mark {
+        text-align: left;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: var(--space-3);
+    }
+}

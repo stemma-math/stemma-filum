@@ -16,6 +16,7 @@ pub mod groups;
 pub mod home;
 pub mod invite;
 pub mod layout;
+pub mod lines;
 pub mod reset;
 pub mod transport;
 pub mod visitor;
@@ -163,6 +164,7 @@ pub fn router() -> Router<Instance> {
             get(groups::request_form).post(groups::request),
         )
         .route("/g/{slug}", get(groups::space))
+        .route("/g/{slug}/{side}/{line}", get(lines::view))
         .route("/g/{slug}/invitations", post(groups::invite))
         .route(
             "/g/{slug}/invitations/{id}/withdraw",
