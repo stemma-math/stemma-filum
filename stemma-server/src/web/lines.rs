@@ -288,6 +288,10 @@ fn drawn(
                     (launchers.at(Task::Refute {
                         statement: node.siglum.clone(),
                     }))
+                } @else if node.siglum.kind.is_statement() {
+                    (launchers.at(Task::Promote {
+                        statement: node.siglum.clone(),
+                    }))
                 }
             }
         }

@@ -17,6 +17,7 @@ type Machine = { label: string; presence: string; agents: Agent[]; jobs: Job[] }
 type Agent = { name: string; called: string; availability: string; reason: string | null };
 type Job = { id: string; state: string; task: string; agent: string; said: string; raw_output: boolean };
 type Offer = { machine: string; label: string; presence: string; agents: Agent[] };
+type Vault = { entries: { id: string; siglum: string; name: string; correspondence: string }[]; bridges: { id: string; left: string; right: string; kind: string; correspondence: string; derived: boolean }[] };
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 let current: OpenLine | null = null;
@@ -28,7 +29,7 @@ app.innerHTML = `<header><span class="wordmark">STEMMA</span><select id="lines">
 <main><aside id="gutter"><p class="label">APPARATUS</p><div id="nodes"></div><pre id="source-diagnostics"></pre></aside>
 <section class="writing"><textarea id="editor" spellcheck="false" disabled></textarea></section>
 <section class="preview"><div id="page"><p class="empty">The composed document will appear here.</p></div></section>
-<aside id="register"><section><p class="label">THIS MACHINE</p><div id="machine">loading…</div></section><section><p class="label">JOBS</p><div id="jobs">—</div></section><section><p class="label">LAUNCH</p><div id="launcher">Choose a line.</div></section></aside></main>`;
+<aside id="register"><section><p class="label">THIS MACHINE</p><div id="machine">loading…</div></section><section><p class="label">VAULT</p><div id="vault">Choose a line.</div></section><section><p class="label">JOBS</p><div id="jobs">—</div></section><section><p class="label">LAUNCH</p><div id="launcher">Choose a line.</div></section></aside></main>`;
 
 const select = document.querySelector<HTMLSelectElement>("#lines")!;
 const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
@@ -48,8 +49,22 @@ async function open(path: string) {
     editor.value = current.source; editor.disabled = false; saved.textContent = "saved";
     document.querySelector("#gutter")!.classList.toggle("private", current.entry.side === "private");
     choices = await invoke<Offer[]>("offers", { group: current.entry.group });
+    await drawVault(current.entry.group);
     drawNodes(current); drawLauncher(); await render();
   } catch (error) { problem(error); }
+}
+
+async function drawVault(group: string) {
+  const target = document.querySelector<HTMLDivElement>("#vault")!;
+  try {
+    const vault = await invoke<Vault>("vault", { group });
+    const names = new Map(vault.entries.map((entry) => [entry.id, entry.name]));
+    const entries = vault.entries.filter((entry) => entry.correspondence !== "audit_withdrawn")
+      .map((entry) => `<div class="job"><strong>${escape(entry.name)}</strong><code>${escape(entry.siglum)}</code><span>${escape(entry.correspondence)}</span></div>`).join("");
+    const substitutes = vault.bridges.filter((bridge) => bridge.correspondence === "audited")
+      .map((bridge) => `<div class="job"><span>${escape(names.get(bridge.left) ?? bridge.left)} ↔ ${escape(names.get(bridge.right) ?? bridge.right)}</span><code>${escape(bridge.kind)}${bridge.derived ? " · derived" : ""}</code></div>`).join("");
+    target.innerHTML = entries + (substitutes ? `<p class="label">AVAILABLE SUBSTITUTIONS</p>${substitutes}` : "");
+  } catch (error) { target.textContent = String(error); }
 }
 
 function changed() {
@@ -78,7 +93,7 @@ async function render() {
 
 function drawNodes(opened: OpenLine) {
   const verified = new Set(opened.lean?.compiled ? opened.lean.statements : []);
-  const nodes = (opened.line?.nodes ?? []).map((node) => `<div class="mark ${node.centrality === "central" ? "central" : ""}"><code>${escape(node.siglum)}</code><span>${node.centrality}</span><span>${verified.has(node.siglum) ? "Lean verified" : "not formalized"}</span>${node.centrality === "central" ? `<button data-task="refute@${node.siglum}">counterexample</button><button data-task="formalize@${node.siglum}">formalize in Lean</button>` : ""}</div>`).join("");
+  const nodes = (opened.line?.nodes ?? []).map((node) => `<div class="mark ${node.centrality === "central" ? "central" : ""}"><code>${escape(node.siglum)}</code><span>${node.centrality}</span><span>${verified.has(node.siglum) ? "Lean verified" : "not formalized"}</span>${node.centrality === "central" ? `<button data-task="refute@${node.siglum}">counterexample</button><button data-task="formalize@${node.siglum}">formalize in Lean</button>` : `<button data-task="promote@${node.siglum}">promote</button>`}</div>`).join("");
   const boxes = opened.boxes.map((box) => { const boxVerified = box.interior.length > 0 && box.interior.every((statement) => verified.has(statement)); return `<div class="mark boxmark"><span>black box · ${boxVerified ? "verified" : box.state}</span><button data-task="${box.after ? `fill@${box.after}` : "fill"}">fill this box</button>${box.interior.length && !boxVerified ? `<button data-task="${box.after ? `verify@${box.after}` : "verify"}">verify in Lean</button>` : ""}</div>`; }).join("");
   document.querySelector("#nodes")!.innerHTML = nodes + boxes;
   document.querySelector("#source-diagnostics")!.textContent = [...opened.diagnostics, ...(opened.lean && !opened.lean.compiled ? [opened.lean.diagnostic] : [])].join("\n");

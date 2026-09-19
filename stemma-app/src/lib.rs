@@ -273,6 +273,16 @@ fn offers(group: String) -> Result<Vec<Offer>, String> {
 }
 
 #[tauri::command]
+fn vault(group: String) -> Result<stemma::api::Vault, String> {
+    let home = home();
+    let credentials = stemma::session::required(&home).map_err(said)?;
+    stemma::api::Server::at(&credentials.server)
+        .map_err(said)?
+        .vault(&credentials.token, &group)
+        .map_err(said)
+}
+
+#[tauri::command]
 fn launch(
     path: String,
     task: String,
@@ -374,7 +384,7 @@ fn said(error: impl std::fmt::Display) -> String {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            lines, open_line, save_line, preview, machine, job_output, offers, launch
+            lines, open_line, save_line, preview, machine, job_output, offers, vault, launch
         ])
         .run(tauri::generate_context!())
         .expect("the Stemma application could not start");
