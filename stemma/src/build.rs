@@ -129,7 +129,8 @@ pub fn read(clone: &Path) -> Result<Built> {
     let commit = git::head(clone).unwrap_or_else(|_| "unknown".to_owned());
 
     let mut nodes = Nodes::new(manifest.group.clone(), manifest.side, commit);
-    nodes.typst = group_pin(clone, &manifest);
+    let pins = group_pins(clone, &manifest);
+    nodes.typst = pins.typst.clone();
 
     let mut faults = Vec::new();
 
@@ -140,7 +141,7 @@ pub fn read(clone: &Path) -> Result<Built> {
 
         match Line::read(&text) {
             Ok(line) => {
-                let lean = crate::lean::check(clone, &name, &manifest.pins)?;
+                let lean = crate::lean::check(clone, &name, &pins)?;
                 nodes.lines.push(LineDigest {
                     name,
                     title: source::title(&text),
@@ -174,20 +175,33 @@ pub fn read(clone: &Path) -> Result<Built> {
 /// two would not compose to the same thing. So a private clone with no
 /// pin of its own takes the group's, from the shared clone beside it.
 pub fn group_pin(clone: &Path, manifest: &Manifest) -> Option<String> {
-    if let Some(pinned) = &manifest.pins.typst {
-        return Some(pinned.clone());
+    group_pins(clone, manifest).typst
+}
+
+/// Every compiler pin belonging to the group, inherited by its private side.
+pub fn group_pins(clone: &Path, manifest: &Manifest) -> stemma_core::repository::Pins {
+    let mut pins = manifest.pins.clone();
+
+    if manifest.side != repository::Side::Private
+        || (pins.typst.is_some() && pins.lean.is_some() && pins.mathlib.is_some())
+    {
+        return pins;
     }
 
-    if manifest.side != repository::Side::Private {
-        return None;
+    let Some(parent) = clone.parent() else {
+        return pins;
+    };
+    let beside = parent.join(Side::Shared.directory());
+    let Ok(shared) = read_manifest(&beside) else {
+        return pins;
+    };
+
+    if shared.group == manifest.group {
+        pins.typst = pins.typst.or(shared.pins.typst);
+        pins.lean = pins.lean.or(shared.pins.lean);
+        pins.mathlib = pins.mathlib.or(shared.pins.mathlib);
     }
-
-    let beside = clone.parent()?.join(Side::Shared.directory());
-    let shared = read_manifest(&beside).ok()?;
-
-    (shared.group == manifest.group)
-        .then_some(shared.pins.typst)
-        .flatten()
+    pins
 }
 
 /// Reads the file at the root that says what the repository is.

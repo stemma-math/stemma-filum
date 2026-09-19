@@ -192,6 +192,11 @@ fn markers(source: &str) -> Vec<Siglum> {
     found
 }
 
+/// Stable Stemma identifiers a Lean module says its declarations establish.
+pub fn declared_statements(source: &str) -> Vec<Siglum> {
+    markers(source)
+}
+
 fn concise(output: &str) -> String {
     output
         .lines()

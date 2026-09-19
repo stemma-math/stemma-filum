@@ -28,6 +28,7 @@ struct OpenLine {
     line: Option<Line>,
     boxes: Vec<stemma_core::line::BlackBox>,
     diagnostics: Vec<String>,
+    lean: Option<stemma_core::artefact::LeanDigest>,
 }
 
 #[derive(Serialize)]
@@ -132,6 +133,7 @@ fn open_line(path: String) -> Result<OpenLine, String> {
         line,
         boxes,
         diagnostics,
+        lean: lean_status(&path)?,
     })
 }
 
@@ -152,6 +154,7 @@ fn save_line(path: String, source: String) -> Result<OpenLine, String> {
         line,
         boxes,
         diagnostics,
+        lean: lean_status(&path)?,
     })
 }
 
@@ -346,6 +349,21 @@ fn analyse(source: &str) -> (Option<Line>, Vec<stemma_core::line::BlackBox>, Vec
             faults.into_iter().map(|fault| fault.to_string()).collect(),
         ),
     }
+}
+
+fn lean_status(path: &Path) -> Result<Option<stemma_core::artefact::LeanDigest>, String> {
+    let clone = path
+        .ancestors()
+        .nth(3)
+        .ok_or_else(|| "the line has no repository".to_owned())?;
+    let manifest = stemma::build::read_manifest(clone).map_err(said)?;
+    let pins = stemma::build::group_pins(clone, &manifest);
+    let name = path
+        .parent()
+        .and_then(Path::file_name)
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "the line has no name".to_owned())?;
+    stemma::lean::check(clone, &Name::parse(name).map_err(said)?, &pins).map_err(said)
 }
 
 fn said(error: impl std::fmt::Display) -> String {

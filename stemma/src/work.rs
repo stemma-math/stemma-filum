@@ -83,15 +83,44 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
                 let clone = clone_of(home, config, handed)
                     .ok_or_else(|| "this machine has no matching clone".to_owned())?;
                 let manifest = crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
+                let pins = crate::build::group_pins(&clone, &manifest);
                 crate::lean::check_offered(
                     &clone,
-                    &manifest.pins,
+                    &pins,
                     lean_source,
                     &home
                         .cache_dir()
                         .join("lean")
                         .join(format!("{}.lean", handed.job)),
-                )
+                )?;
+                let declared = crate::lean::declared_statements(lean_source);
+                match &task {
+                    Task::Formalize { statement } if !declared.contains(statement) => Err(format!(
+                        "the compiled module does not declare that it verifies `{statement}`"
+                    )),
+                    Task::Verify { after } => {
+                        let black_box = line
+                            .boxes()
+                            .into_iter()
+                            .find(|black_box| &black_box.after == after)
+                            .ok_or_else(|| "the black box is no longer there".to_owned())?;
+                        let missing: Vec<String> = black_box
+                            .interior
+                            .iter()
+                            .filter(|statement| !declared.contains(statement))
+                            .map(ToString::to_string)
+                            .collect();
+                        if missing.is_empty() {
+                            Ok(())
+                        } else {
+                            Err(format!(
+                                "the compiled module does not verify {}",
+                                missing.join(", ")
+                            ))
+                        }
+                    }
+                    _ => Ok(()),
+                }
             });
         if let Err(said) = checked {
             return Completed::only(Outcome::Broke {

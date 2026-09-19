@@ -11,6 +11,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::id::{GroupId, UserId};
+use crate::line::BlackBox;
 use crate::line::Siglum;
 use crate::line::{Line, Name};
 use crate::model::Verification;
@@ -163,6 +164,16 @@ impl LeanDigest {
             true => Verification::Verified,
             false => Verification::Unverified,
         }
+    }
+
+    /// Whether every statement inside a non-empty black box compiled.
+    pub fn verifies_box(&self, black_box: &BlackBox) -> bool {
+        self.compiled
+            && !black_box.interior.is_empty()
+            && black_box
+                .interior
+                .iter()
+                .all(|statement| self.statements.contains(statement))
     }
 }
 

@@ -11,7 +11,8 @@ type Entry = { group: string; side: string; name: string; path: string };
 type Node = { siglum: string; name: string | null; centrality: "central" | "auxiliary"; uses: string[]; proved: boolean; at: number };
 type Line = { nodes: Node[] };
 type Box = { after: string | null; before: string | null; interior: string[]; state: string };
-type OpenLine = { entry: Entry; source: string; line: Line | null; boxes: Box[]; diagnostics: string[] };
+type Lean = { lean: string; mathlib: string; compiled: boolean; statements: string[]; diagnostic: string };
+type OpenLine = { entry: Entry; source: string; line: Line | null; boxes: Box[]; diagnostics: string[]; lean: Lean | null };
 type Machine = { label: string; presence: string; agents: Agent[]; jobs: Job[] };
 type Agent = { name: string; called: string; availability: string; reason: string | null };
 type Job = { id: string; state: string; task: string; agent: string; said: string; raw_output: boolean };
@@ -76,10 +77,11 @@ async function render() {
 }
 
 function drawNodes(opened: OpenLine) {
-  const nodes = (opened.line?.nodes ?? []).map((node) => `<div class="mark ${node.centrality === "central" ? "central" : ""}"><code>${escape(node.siglum)}</code><span>${node.centrality}</span><span>${node.proved ? "proved here" : "not formalized"}</span>${node.centrality === "central" ? `<button data-task="refute@${node.siglum}">counterexample</button>` : ""}</div>`).join("");
-  const boxes = opened.boxes.map((box) => `<div class="mark boxmark"><span>black box · ${box.state}</span><button data-task="${box.after ? `fill@${box.after}` : "fill"}">fill this box</button></div>`).join("");
+  const verified = new Set(opened.lean?.compiled ? opened.lean.statements : []);
+  const nodes = (opened.line?.nodes ?? []).map((node) => `<div class="mark ${node.centrality === "central" ? "central" : ""}"><code>${escape(node.siglum)}</code><span>${node.centrality}</span><span>${verified.has(node.siglum) ? "Lean verified" : "not formalized"}</span>${node.centrality === "central" ? `<button data-task="refute@${node.siglum}">counterexample</button><button data-task="formalize@${node.siglum}">formalize in Lean</button>` : ""}</div>`).join("");
+  const boxes = opened.boxes.map((box) => { const boxVerified = box.interior.length > 0 && box.interior.every((statement) => verified.has(statement)); return `<div class="mark boxmark"><span>black box · ${boxVerified ? "verified" : box.state}</span><button data-task="${box.after ? `fill@${box.after}` : "fill"}">fill this box</button>${box.interior.length && !boxVerified ? `<button data-task="${box.after ? `verify@${box.after}` : "verify"}">verify in Lean</button>` : ""}</div>`; }).join("");
   document.querySelector("#nodes")!.innerHTML = nodes + boxes;
-  document.querySelector("#source-diagnostics")!.textContent = opened.diagnostics.join("\n");
+  document.querySelector("#source-diagnostics")!.textContent = [...opened.diagnostics, ...(opened.lean && !opened.lean.compiled ? [opened.lean.diagnostic] : [])].join("\n");
   document.querySelectorAll<HTMLButtonElement>("#nodes button").forEach((button) => button.onclick = () => drawLauncher(undefined, button.dataset.task));
 }
 

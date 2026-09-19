@@ -141,8 +141,8 @@ pub enum JobCommand {
 /// What a job asks for, and of whom.
 #[derive(Debug, Args)]
 pub struct JobRun {
-    /// What to ask for: `fill`, `fill@thm:main`, `refute@thm:main`
-    /// or `explore`.
+    /// What to ask for: `fill`, `refute@thm:main`, `formalize@thm:main`,
+    /// `verify@thm:main` or `explore`.
     #[arg(long)]
     pub task: String,
 

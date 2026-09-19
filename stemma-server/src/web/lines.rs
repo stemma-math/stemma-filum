@@ -209,10 +209,10 @@ fn body(
                     @match element {
                         Element::Node(siglum) => {
                             @if let Some(node) = digest.line.node(&siglum) {
-                                (drawn(node, launchers))
+                                (drawn(node, digest.lean.as_ref(), launchers))
                             }
                         }
-                        Element::Box(black_box) => (drawn_box(&black_box, launchers)),
+                        Element::Box(black_box) => (drawn_box(&black_box, digest.lean.as_ref(), launchers)),
                     }
                 }
 
@@ -234,8 +234,15 @@ fn body(
 }
 
 /// One node, with what is known about it in the margin.
-fn drawn(node: &stemma_core::line::Node, launchers: &Anchored<'_>) -> Markup {
+fn drawn(
+    node: &stemma_core::line::Node,
+    lean: Option<&stemma_core::artefact::LeanDigest>,
+    launchers: &Anchored<'_>,
+) -> Markup {
     let central = node.is_central();
+    let verified = lean.is_some_and(|result| {
+        result.verification_of(&node.siglum) == stemma_core::model::Verification::Verified
+    });
 
     html! {
         div class=@if central { "node node--central" } @else { "node" } {
@@ -250,6 +257,7 @@ fn drawn(node: &stemma_core::line::Node, launchers: &Anchored<'_>) -> Markup {
                 @if node.proved {
                     span { "proved here" }
                 }
+                @if verified { span { "Lean verified" } }
             }
 
             div class="node__body" {
@@ -274,6 +282,9 @@ fn drawn(node: &stemma_core::line::Node, launchers: &Anchored<'_>) -> Markup {
                 // one thing that may be asked about it is whether it is
                 // false.
                 @if central {
+                    (launchers.at(Task::Formalize {
+                        statement: node.siglum.clone(),
+                    }))
                     (launchers.at(Task::Refute {
                         statement: node.siglum.clone(),
                     }))
@@ -284,17 +295,23 @@ fn drawn(node: &stemma_core::line::Node, launchers: &Anchored<'_>) -> Markup {
 }
 
 /// One box, drawn as the declared absence it is.
-fn drawn_box(black_box: &stemma_core::line::BlackBox, launchers: &Anchored<'_>) -> Markup {
+fn drawn_box(
+    black_box: &stemma_core::line::BlackBox,
+    lean: Option<&stemma_core::artefact::LeanDigest>,
+    launchers: &Anchored<'_>,
+) -> Markup {
     let filled = black_box.state != BoxState::Empty;
+    let verified = lean.is_some_and(|result| result.verifies_box(black_box));
 
     html! {
         div class=@if filled { "box box--filled" } @else { "box" } {
             div class="node__mark" {
                 span { "black box" }
+                @if verified { span { "Lean verified" } }
             }
 
             div class="box__band" {
-                @if filled {
+                @if filled && !verified {
                     span class="box__count" { (black_box.interior.len()) }
                     span {
                         @match black_box.interior.len() {
@@ -313,6 +330,11 @@ fn drawn_box(black_box: &stemma_core::line::BlackBox, launchers: &Anchored<'_>) 
                 (launchers.at(Task::Fill {
                     after: black_box.after.clone(),
                 }))
+                @if filled {
+                    (launchers.at(Task::Verify {
+                        after: black_box.after.clone(),
+                    }))
+                }
             }
         }
     }
