@@ -199,6 +199,21 @@ pub fn version_of(path: &Path) -> Result<u32> {
         .context("cannot read the schema version")
 }
 
+/// The names of every group, read without opening the database for
+/// writing.
+pub fn group_slugs(path: &Path) -> Result<Vec<String>> {
+    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("cannot open the database at {}", path.display()))?;
+
+    let mut statement = connection.prepare("SELECT slug FROM groups ORDER BY slug")?;
+    let slugs = statement
+        .query_map([], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .context("cannot list the groups")?;
+
+    Ok(slugs)
+}
+
 /// Something to name a backup after, so that two of them never collide.
 pub fn stamp() -> String {
     SystemTime::now()

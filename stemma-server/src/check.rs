@@ -199,6 +199,7 @@ pub fn inspect(settings: &Settings, service_user: &str) -> Report {
     inspect_state_directory(&mut report, settings, service_user);
     inspect_keys(&mut report, settings);
     inspect_database(&mut report, settings);
+    inspect_repositories(&mut report, settings);
     inspect_listen(&mut report, &settings.listen);
     inspect_mail(&mut report, settings.policy_seed.mail.as_ref());
 
@@ -311,6 +312,48 @@ fn inspect_database(report: &mut Report, settings: &Settings) {
             ))
             .remedy("this machine is running an older release than the database expects".to_owned()),
         ),
+    }
+}
+
+/// The repositories, against the groups the database knows about.
+///
+/// Git is the source of truth and the database is an index over it, so
+/// the two drifting apart is worth saying out loud — and it is the kind
+/// of thing only a check notices, because neither side fails on its own.
+fn inspect_repositories(report: &mut Report, settings: &Settings) {
+    let database = settings.paths.database();
+
+    if !database.exists() {
+        return;
+    }
+
+    let Ok(known) = db::group_slugs(&database) else {
+        return;
+    };
+
+    let repositories = crate::git::Repositories::new(settings.paths.git_dir());
+    let Ok(on_disk) = repositories.groups_on_disk() else {
+        return;
+    };
+
+    for missing in known.iter().filter(|slug| !on_disk.contains(slug)) {
+        report.push(
+            Finding::warning(format!(
+                "the group `{missing}` has no repository in {}",
+                repositories.root().display()
+            ))
+            .remedy("nobody in it can clone anything until there is one".to_owned()),
+        );
+    }
+
+    for stray in on_disk.iter().filter(|slug| !known.contains(slug)) {
+        report.push(
+            Finding::warning(format!(
+                "{} holds repositories for `{stray}`, which is not a group here",
+                repositories.root().display()
+            ))
+            .remedy("nothing was deleted; they are simply not reachable".to_owned()),
+        );
     }
 }
 

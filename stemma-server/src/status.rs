@@ -36,6 +36,10 @@ pub struct Status {
     pub mail: bool,
     /// How many accounts there are, if the database can be read.
     pub accounts: Option<i64>,
+    /// How many groups there are.
+    pub groups: Option<i64>,
+    /// How many repositories are on disk.
+    pub repositories: usize,
     /// What systemd says, where there is a systemd to ask.
     pub service: Option<String>,
 }
@@ -57,18 +61,45 @@ impl Status {
                 .and_then(|database| database.version().ok()),
             expected_schema: db::expected_version(),
             mail: settings.policy_seed.mail.is_some(),
-            accounts: database.as_ref().and_then(count_accounts),
+            accounts: database
+                .as_ref()
+                .and_then(|database| count(database, "users")),
+            groups: database
+                .as_ref()
+                .and_then(|database| count(database, "groups")),
+            repositories: count_repositories(settings),
             service: service::is_available().then(service::state).flatten(),
         }
     }
 }
 
-/// How many accounts the instance has.
-fn count_accounts(database: &Database) -> Option<i64> {
+/// How many rows a table has.
+fn count(database: &Database, table: &str) -> Option<i64> {
     database
         .connection()
-        .query_one("SELECT count(*) FROM users", [], |row| row.get(0))
+        .query_one(&format!("SELECT count(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
         .ok()
+}
+
+/// How many repositories are on disk, of both kinds.
+fn count_repositories(settings: &Settings) -> usize {
+    let repositories = crate::git::Repositories::new(settings.paths.git_dir());
+
+    repositories
+        .groups_on_disk()
+        .unwrap_or_default()
+        .iter()
+        .map(|group| {
+            let directory = repositories.root().join(group);
+            let personal = std::fs::read_dir(directory.join("personal"))
+                .map(|entries| entries.filter_map(Result::ok).count())
+                .unwrap_or(0);
+
+            personal + usize::from(crate::git::exists(&directory.join("shared.git")))
+        })
+        .sum()
 }
 
 impl fmt::Display for Status {
@@ -108,10 +139,15 @@ impl fmt::Display for Status {
             }
         )?;
 
-        match self.accounts {
-            Some(accounts) => writeln!(f, "accounts   {accounts}")?,
-            None => writeln!(f, "accounts   unknown, the database cannot be read")?,
+        match (self.accounts, self.groups) {
+            (Some(accounts), Some(groups)) => {
+                writeln!(f, "accounts   {accounts}")?;
+                writeln!(f, "groups     {groups}")?;
+            }
+            _ => writeln!(f, "accounts   unknown, the database cannot be read")?,
         }
+
+        writeln!(f, "git        {} repositories", self.repositories)?;
 
         match &self.service {
             Some(state) => write!(f, "service    {state}"),
