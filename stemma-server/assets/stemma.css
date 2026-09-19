@@ -45,6 +45,21 @@
     --space-8: 64px;
 }
 
+.proposal pre {
+  white-space: pre-wrap;
+  font: 0.875rem/1.55 var(--mono);
+  border: 1px solid var(--rule);
+  padding: 1.5rem;
+  background: var(--paper-raise);
+}
+
+.findings {
+  font-family: var(--mono);
+  color: var(--ink-3);
+  list-style: none;
+  padding: 0;
+}
+
 /* The dark theme is selected, not inverted: the same green-biased neutral
  * run cold, with the earned colours re-stepped against the dark ground. */
 @media (prefers-color-scheme: dark) {

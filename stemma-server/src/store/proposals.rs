@@ -1,0 +1,190 @@
+//! Proposed source and the human decision it awaits.
+
+use anyhow::{Context, Result};
+use rusqlite::{Connection, OptionalExtension, params};
+use stemma_core::id::{JobId, ProposalId, UserId};
+use stemma_core::proposal::Offer;
+
+use super::jobs::Job;
+
+#[derive(Debug, Clone)]
+/// One proposed replacement, joined to the job that produced it.
+pub struct Proposal {
+    /// Its identifier.
+    pub id: ProposalId,
+    /// The producing job.
+    pub job: Job,
+    /// Complete proposed source.
+    pub source: String,
+    /// Agent vendor.
+    pub vendor: String,
+    /// Concrete model.
+    pub model: String,
+    /// Prompt contract revision.
+    pub prompt_revision: String,
+    /// Current review state.
+    pub state: String,
+    /// The person who decided, once decided.
+    pub decided_by: Option<UserId>,
+}
+
+/// Keeps a validated proposal once per job.
+pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<ProposalId> {
+    let id = ProposalId::generate();
+    connection
+        .execute(
+            "INSERT INTO proposals (id, job_id, source, vendor, model, prompt_revision)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                id.to_string(),
+                job.id.to_string(),
+                offer.source,
+                offer.vendor,
+                offer.model,
+                offer.prompt_revision
+            ],
+        )
+        .context("cannot keep the proposal")?;
+    Ok(id)
+}
+
+/// Finds one proposal and its job.
+pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal>> {
+    let row = connection
+        .query_row(
+            "SELECT job_id, source, vendor, model, prompt_revision, state, decided_by
+         FROM proposals WHERE id = ?1",
+            params![id.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((job, source, vendor, model, prompt_revision, state, decided_by)) = row else {
+        return Ok(None);
+    };
+    let job: JobId = job
+        .parse()
+        .map_err(|error| anyhow::anyhow!("invalid stored job: {error}"))?;
+    let Some(job) = super::jobs::by_id(connection, &job)? else {
+        return Ok(None);
+    };
+    Ok(Some(Proposal {
+        id: *id,
+        job,
+        source,
+        vendor,
+        model,
+        prompt_revision,
+        state,
+        decided_by: decided_by.and_then(|id| id.parse().ok()),
+    }))
+}
+
+/// Records the launcher's first and only decision.
+pub fn decide(connection: &Connection, id: &ProposalId, by: &UserId, accept: bool) -> Result<bool> {
+    let state = if accept { "accepted" } else { "rejected" };
+    Ok(connection.execute(
+        "UPDATE proposals SET state = ?3, decided_by = ?2, decided_at = datetime('now')
+         WHERE id = ?1 AND state = 'awaiting_review'
+           AND job_id IN (SELECT id FROM jobs WHERE launched_by = ?2)",
+        params![id.to_string(), by.to_string(), state],
+    )? > 0)
+}
+
+/// Proposals this person still has to review.
+pub fn awaiting(connection: &Connection, by: &UserId) -> Result<Vec<Proposal>> {
+    let mut statement = connection.prepare(
+        "SELECT id FROM proposals WHERE state = 'awaiting_review'
+         AND job_id IN (SELECT id FROM jobs WHERE launched_by = ?1) ORDER BY id",
+    )?;
+    let ids = statement
+        .query_map(params![by.to_string()], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    ids.into_iter()
+        .map(|id| {
+            let id = id
+                .parse()
+                .map_err(|error| anyhow::anyhow!("invalid stored proposal: {error}"))?;
+            by_id(connection, &id)?.context("the proposal disappeared")
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::{groups, jobs, test_database, users};
+    use stemma_core::id::Slug;
+    use stemma_core::job::{Choice, Task};
+    use stemma_core::line::Name;
+    use stemma_core::repository::Side;
+
+    #[test]
+    fn accepting_is_a_single_human_decision_and_the_offer_stays_attributed() {
+        let mut database = test_database();
+        let connection = database.connection_mut();
+        let ana = users::create(
+            connection,
+            &Slug::parse("ana").unwrap(),
+            "ana@example.org",
+            "Ana",
+            "hash",
+        )
+        .unwrap()
+        .unwrap();
+        let group = groups::create(
+            connection,
+            &Slug::parse("algebra").unwrap(),
+            "Algebra",
+            &ana.id,
+        )
+        .unwrap();
+        let job = jobs::launch(
+            connection,
+            &jobs::Launch {
+                group: group.id,
+                side: Side::Shared,
+                line: Name::parse("quotients").unwrap(),
+                commit: "0123456789abcdef".to_owned(),
+                task: Task::Explore,
+                agent: Slug::parse("claude").unwrap(),
+                choice: Choice::Anyone,
+                by: ana.id.clone(),
+            },
+        )
+        .unwrap();
+        let id = create(
+            connection,
+            &job,
+            &Offer {
+                source: "= A proposal".to_owned(),
+                vendor: "Anthropic".to_owned(),
+                model: "claude-opus-5".to_owned(),
+                prompt_revision: "1".to_owned(),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(awaiting(connection, &ana.id).unwrap().len(), 1);
+        assert!(decide(connection, &id, &ana.id, true).unwrap());
+        assert!(!decide(connection, &id, &ana.id, false).unwrap());
+        let accepted = by_id(connection, &id).unwrap().unwrap();
+        assert_eq!(accepted.state, "accepted");
+        assert_eq!(accepted.model, "claude-opus-5");
+        assert_eq!(accepted.decided_by, Some(ana.id));
+        assert!(
+            awaiting(connection, accepted.decided_by.as_ref().unwrap())
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

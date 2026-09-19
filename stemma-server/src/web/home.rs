@@ -13,6 +13,7 @@ use super::layout::{Chrome, page};
 use super::visitor::{SignedIn, Visitor};
 use super::{Instance, WebError};
 use crate::store::groups::{self, Membership, Request};
+use crate::store::proposals::{self, Proposal};
 
 /// The page somebody sees when they are signed in.
 pub async fn home(
@@ -27,11 +28,12 @@ pub async fn home(
     let name = super::front::instance_name(&instance, &policy);
 
     let user = signed.user.id.clone();
-    let (memberships, requests) = instance
+    let (memberships, requests, proposals) = instance
         .read(move |connection| {
             Ok((
                 groups::for_user(connection, &user)?,
                 groups::requests_by(connection, &user)?,
+                proposals::awaiting(connection, &user)?,
             ))
         })
         .await?;
@@ -49,6 +51,7 @@ pub async fn home(
             &memberships,
             &requests,
             &machines,
+            &proposals,
             policy.group_requests_open,
         ),
     )
@@ -61,6 +64,7 @@ fn body(
     memberships: &[Membership],
     requests: &[Request],
     machines: &[(crate::store::machines::Machine, usize)],
+    proposals: &[Proposal],
     may_ask: bool,
 ) -> Markup {
     html! {
@@ -100,6 +104,22 @@ fn body(
         }
 
         (super::machines::summary(machines))
+
+        @if !proposals.is_empty() {
+            div class="block" {
+                p class="label" { "Proposals awaiting your review" }
+                ul class="register" {
+                    @for proposal in proposals {
+                        li {
+                            span class="register__name" {
+                                a href={ "/proposals/" (proposal.id) } { (proposal.job.task.asked_for()) }
+                            }
+                            span class="quiet identifier" { (proposal.job.line) " · " (proposal.model) }
+                        }
+                    }
+                }
+            }
+        }
 
         @if !requests.is_empty() {
             div class="block" {

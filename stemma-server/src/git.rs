@@ -182,6 +182,11 @@ pub fn head_commit(path: &Path) -> Option<String> {
     run(path, &["rev-parse", "refs/heads/main"]).ok()
 }
 
+/// Reads one file exactly as it stood at a commit in a bare repository.
+pub fn show(path: &Path, commit: &str, inside: &str) -> Result<String> {
+    run(path, &["show", &format!("{commit}:{inside}")])
+}
+
 /// Runs git inside a repository.
 fn run(repository: &Path, arguments: &[&str]) -> Result<String> {
     run_with(repository, arguments, None)

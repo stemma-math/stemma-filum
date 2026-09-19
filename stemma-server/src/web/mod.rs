@@ -19,6 +19,7 @@ pub mod jobs;
 pub mod layout;
 pub mod lines;
 pub mod machines;
+pub mod proposals;
 pub mod reset;
 pub mod transport;
 pub mod visitor;
@@ -200,6 +201,9 @@ pub fn router() -> Router<Instance> {
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/jobs/{id}/finish", post(jobs::finish))
+        .route("/api/proposals/{id}", get(proposals::accepted))
+        .route("/proposals/{id}", get(proposals::review))
+        .route("/proposals/{id}/decide", post(proposals::decide))
         .route("/api/logout", post(api::sign_out))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))

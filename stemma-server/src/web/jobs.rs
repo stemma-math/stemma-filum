@@ -19,6 +19,30 @@ use stemma_core::id::{GroupId, JobId, MachineId, Slug, UserId};
 use stemma_core::job::{Choice, JobState, Outcome, Task};
 use stemma_core::line::Name;
 use stemma_core::machine::{Detected, Presence};
+use stemma_core::proposal::{self, Completion};
+use stemma_core::repository;
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+/// A completion report, including the phase-five form without a proposal.
+pub enum Report {
+    /// Current atomic report.
+    Complete(Completion),
+    /// Compatible report from a client that predates proposals.
+    Outcome(Outcome),
+}
+
+impl Report {
+    fn complete(self) -> Completion {
+        match self {
+            Self::Complete(completion) => completion,
+            Self::Outcome(outcome) => Completion {
+                outcome,
+                proposal: None,
+            },
+        }
+    }
+}
 use stemma_core::repository::Side;
 
 use super::api::Credential;
@@ -108,16 +132,50 @@ pub async fn finish(
     State(instance): State<Instance>,
     credential: Credential,
     Path(id): Path<String>,
-    Json(outcome): Json<Outcome>,
+    Json(report): Json<Report>,
 ) -> Result<Response, WebError> {
+    let completion = report.complete();
     let machine = super::machines::registered(&instance, &credential).await?;
     let Ok(id) = id.parse::<JobId>() else {
         return Err(WebError::NotFound);
     };
 
+    let found = instance
+        .read(move |c| jobs::by_id(c, &id))
+        .await?
+        .ok_or(WebError::NotFound)?;
+    if found.taken_by.as_ref() != Some(&machine.id) || found.state != JobState::Running {
+        return Err(WebError::BadRequest(
+            "This machine is not running that job.".to_owned(),
+        ));
+    }
+    if let Some(offer) = &completion.proposal {
+        let repository = match found.side {
+            Side::Shared => instance.repositories().shared(&found.group),
+            Side::Private => instance
+                .repositories()
+                .personal(&found.group, &found.launched_by),
+        };
+        let inside = format!("{}/{}/{}", repository::LINES, found.line, repository::ENTRY);
+        let commit = found.commit.clone();
+        let base = instance
+            .on_disk(move || crate::git::show(&repository, &commit, &inside))
+            .await?;
+        proposal::preserves_central_statements(&base, &offer.source)
+            .map_err(|error| WebError::BadRequest(error.to_string()))?;
+    }
+
     let of = machine.id;
     let recorded = instance
-        .write(move |connection| jobs::finish(connection, &id, &of, &outcome))
+        .write(move |connection| {
+            let transaction = connection.transaction()?;
+            let recorded = jobs::finish(&transaction, &id, &of, &completion.outcome)?;
+            if recorded && let Some(offer) = &completion.proposal {
+                crate::store::proposals::create(&transaction, &found, offer)?;
+            }
+            transaction.commit()?;
+            Ok(recorded)
+        })
         .await?;
 
     match recorded {
