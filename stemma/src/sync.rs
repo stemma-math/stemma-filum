@@ -119,6 +119,20 @@ pub fn run(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
         }
     }
 
+    // Where both sides moved, nothing here settles it and nothing here
+    // hides it either: the resolver is a command away, and it speaks
+    // about statements rather than about commits.
+    if reports
+        .iter()
+        .any(|report| matches!(report.outcome, Outcome::Parted(_, _)))
+    {
+        writeln!(
+            out,
+            "\nWhere both sides moved, `stemma conflict list` says which statements \
+             the two versions disagree about."
+        )?;
+    }
+
     // Recording where each group went means a group that was moved keeps
     // being found there next time.
     for group in &listing.groups {

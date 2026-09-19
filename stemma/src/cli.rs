@@ -41,6 +41,20 @@ pub enum Command {
     /// Reads what the sources here declare.
     Build,
 
+    /// Says who is writing a line, and takes it or lets it go.
+    Claim {
+        /// What to do with it.
+        #[command(subcommand)]
+        command: ClaimCommand,
+    },
+
+    /// Works with two versions of a line that have parted.
+    Conflict {
+        /// What to do about them.
+        #[command(subcommand)]
+        command: ConflictCommand,
+    },
+
     /// Offers this machine, or says what the instance makes of it.
     Node {
         /// What to do with it.
@@ -158,6 +172,55 @@ pub enum VaultCommand {
         /// What was checked or why the guarantee is withdrawn.
         #[arg(long)]
         note: String,
+    },
+}
+
+/// What can be done with the claim on a line.
+#[derive(Debug, Subcommand)]
+pub enum ClaimCommand {
+    /// Takes the line for this machine.
+    Take {
+        /// Which line, when it is not the one this is run inside.
+        #[arg(long)]
+        line: Option<String>,
+    },
+
+    /// Asks whichever machine has the line to hand it back.
+    Ask {
+        /// Which line, when it is not the one this is run inside.
+        #[arg(long)]
+        line: Option<String>,
+    },
+
+    /// Lets the line go.
+    Release {
+        /// Which line, when it is not the one this is run inside.
+        #[arg(long)]
+        line: Option<String>,
+    },
+
+    /// Says which lines are being written, and on what.
+    Status,
+}
+
+/// What can be done about two versions that have parted.
+#[derive(Debug, Subcommand)]
+pub enum ConflictCommand {
+    /// Says what the two versions disagree about.
+    List,
+
+    /// Brings them together, keeping one side wherever they disagree.
+    Resolve {
+        /// Which version stands: `here` or `there`.
+        #[arg(long)]
+        keep: String,
+    },
+
+    /// Asks an agent to reconcile them, which comes back as a proposal.
+    Reconcile {
+        /// Which agent is to do it.
+        #[arg(long)]
+        agent: String,
     },
 }
 

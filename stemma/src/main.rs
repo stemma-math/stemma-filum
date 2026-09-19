@@ -7,7 +7,8 @@ use std::process::ExitCode;
 use anyhow::Result;
 use clap::Parser;
 use stemma::cli::{
-    Cli, Command, DaemonCommand, JobCommand, NodeCommand, ProposalCommand, VaultCommand,
+    ClaimCommand, Cli, Command, ConflictCommand, DaemonCommand, JobCommand, NodeCommand,
+    ProposalCommand, VaultCommand,
 };
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
@@ -23,6 +24,15 @@ fn main() -> ExitCode {
             eprintln!("stemma: {error:#}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Which version a person said stands.
+fn which(keep: &str) -> Result<stemma_core::reconcile::Keep> {
+    match keep.trim() {
+        "here" => Ok(stemma_core::reconcile::Keep::Here),
+        "there" => Ok(stemma_core::reconcile::Keep::There),
+        other => anyhow::bail!("`{other}` is not a version: say `here` or `there`"),
     }
 }
 
@@ -67,6 +77,41 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Build => {
             let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
             stemma::build::run(&home, &here, &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Claim { command } => {
+            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
+
+            match command {
+                ClaimCommand::Take { line } => {
+                    stemma::claims::take(&home, &here, line.as_deref(), &mut out)?
+                }
+                ClaimCommand::Ask { line } => {
+                    stemma::claims::ask(&home, &here, line.as_deref(), &mut out)?
+                }
+                ClaimCommand::Release { line } => {
+                    stemma::claims::release(&home, &here, line.as_deref(), &mut out)?
+                }
+                ClaimCommand::Status => stemma::claims::status(&home, &mut out)?,
+            }
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Conflict { command } => {
+            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
+
+            match command {
+                ConflictCommand::List => stemma::conflicts::list(&home, &here, &mut out)?,
+                ConflictCommand::Resolve { keep } => {
+                    stemma::conflicts::resolve(&home, &here, which(&keep)?, &mut out)?
+                }
+                ConflictCommand::Reconcile { agent } => {
+                    stemma::conflicts::reconcile(&home, &here, &agent, &mut out)?
+                }
+            }
 
             Ok(ExitCode::SUCCESS)
         }

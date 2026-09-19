@@ -8,8 +8,10 @@
 pub mod agents;
 pub mod api;
 pub mod build;
+pub mod claims;
 pub mod cli;
 pub mod config;
+pub mod conflicts;
 pub mod credential;
 pub mod credentials;
 pub mod daemon;

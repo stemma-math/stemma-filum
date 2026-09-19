@@ -190,6 +190,95 @@ pub fn show(repository: &Path, commit: &str, path: &str) -> Result<String> {
     run(repository, &["show", &format!("{commit}:{path}")])
 }
 
+/// What the instance's side of the branch points at.
+pub fn upstream(repository: &Path) -> Result<String> {
+    Ok(
+        run(repository, &["rev-parse", &format!("{REMOTE}/{BRANCH}")])?
+            .trim()
+            .to_owned(),
+    )
+}
+
+/// The last commit the two sides shared.
+pub fn common(repository: &Path) -> Result<String> {
+    Ok(run(
+        repository,
+        &["merge-base", "HEAD", &format!("{REMOTE}/{BRANCH}")],
+    )?
+    .trim()
+    .to_owned())
+}
+
+/// Every file one commit holds, as paths inside the repository.
+pub fn files(repository: &Path, commit: &str) -> Result<Vec<String>> {
+    Ok(run(repository, &["ls-tree", "-r", "--name-only", commit])?
+        .lines()
+        .map(str::to_owned)
+        .collect())
+}
+
+/// Starts a merge without committing it, so the result can be looked at.
+///
+/// Git is left to do the ordinary work: files only one side touched,
+/// files nobody touched, and everything that is not mathematics. What
+/// it cannot do is decide between two versions of a statement, and this
+/// says which files it could not settle.
+pub fn merge_without_committing(repository: &Path) -> Result<Vec<String>> {
+    let merging = run(
+        repository,
+        &[
+            "merge",
+            "--no-commit",
+            "--no-ff",
+            "--quiet",
+            &format!("{REMOTE}/{BRANCH}"),
+        ],
+    );
+
+    match merging {
+        Ok(_) => Ok(Vec::new()),
+        // A merge that stops on a conflict is the ordinary case here,
+        // not a failure: what it could not settle is the answer.
+        Err(_) => unsettled(repository),
+    }
+}
+
+/// The paths a merge in progress could not settle.
+pub fn unsettled(repository: &Path) -> Result<Vec<String>> {
+    Ok(
+        run(repository, &["diff", "--name-only", "--diff-filter=U"])?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
+/// Puts a merge down and leaves the clone exactly as it was.
+pub fn abandon_merge(repository: &Path) -> Result<()> {
+    run(repository, &["merge", "--abort"])?;
+
+    Ok(())
+}
+
+/// Marks a path as settled.
+pub fn settle(repository: &Path, inside: &str) -> Result<()> {
+    run(repository, &["add", "--", inside])?;
+
+    Ok(())
+}
+
+/// Commits whatever the index holds, which is how a merge is finished.
+pub fn commit_index(repository: &Path, message: &str) -> Result<()> {
+    run(repository, &["commit", "-m", message])?;
+
+    Ok(())
+}
+
+/// Whether a merge is half done here.
+pub fn merging(repository: &Path) -> bool {
+    repository.join(".git").join("MERGE_HEAD").exists()
+}
+
 /// Whether a commit is one this clone holds.
 pub fn holds(repository: &Path, commit: &str) -> bool {
     run(

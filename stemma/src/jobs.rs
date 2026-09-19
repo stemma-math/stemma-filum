@@ -70,6 +70,7 @@ pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Res
             side: manifest.side.as_str().to_owned(),
             line: line.as_str().to_owned(),
             commit: commit.clone(),
+            against: None,
             task: task.to_string(),
             agent: wanted.agent.clone(),
             machine: machine.clone(),
@@ -151,7 +152,7 @@ pub fn output(home: &Home, job: &str, out: &mut impl Write) -> Result<()> {
 /// Run from inside one, it is that one. Run from anywhere else in the
 /// clone, it has to be named: guessing which of a group's lines somebody
 /// meant is the kind of help that starts work on the wrong thing.
-fn line_of(clone: &Path, at: &Path, named: Option<&str>) -> Result<Name> {
+pub(crate) fn line_of(clone: &Path, at: &Path, named: Option<&str>) -> Result<Name> {
     if let Some(named) = named {
         return Name::parse(named.trim()).context("that is not the name of a line");
     }
@@ -200,7 +201,7 @@ fn available(clone: &Path) -> String {
 /// commit that has not been pushed is work nothing can reach — and
 /// finding that out as a failed job hours later is the worst way to
 /// learn it.
-fn ensure_reachable(clone: &Path, commit: &str) -> Result<()> {
+pub(crate) fn ensure_reachable(clone: &Path, commit: &str) -> Result<()> {
     if git::is_dirty(clone).unwrap_or(false) {
         bail!(
             "there is uncommitted work here, so {} is not what you are looking at",
@@ -219,7 +220,7 @@ fn ensure_reachable(clone: &Path, commit: &str) -> Result<()> {
 }
 
 /// This machine's identifier on the instance.
-fn this_machine(server: &Server, credentials: &Credentials) -> Result<String> {
+pub(crate) fn this_machine(server: &Server, credentials: &Credentials) -> Result<String> {
     let node = server
         .node(&credentials.token)?
         .context("this machine is not offered for work: run `stemma node init`")?;

@@ -228,12 +228,74 @@ pub struct Asking {
     pub line: String,
     /// The commit to work against.
     pub commit: String,
+    /// The other version, for a job that brings two of them together.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub against: Option<String>,
     /// What is being asked.
     pub task: String,
     /// Which agent.
     pub agent: String,
     /// Which machine, where one was chosen.
     pub machine: Option<String>,
+}
+
+/// Which line a machine is talking to the instance about.
+#[derive(Debug, Clone, Serialize)]
+pub struct About {
+    /// The group's short name.
+    pub group: String,
+    /// Which of its repositories.
+    pub side: String,
+    /// Which line of work.
+    pub line: String,
+}
+
+/// What the instance says about the claim on a line.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Claimed {
+    /// `writing`, `waiting` or `open`.
+    pub standing: String,
+    /// The machine that has it, when one does.
+    #[serde(default)]
+    pub machine: Option<String>,
+    /// What that machine calls itself.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// How long the claim has left.
+    #[serde(default)]
+    pub left: Option<u64>,
+    /// Whether it has been asked for.
+    #[serde(default)]
+    pub asked: bool,
+    /// The whole of it, in the words the instance uses.
+    #[serde(default)]
+    pub said: Option<String>,
+}
+
+impl Claimed {
+    /// Whether this machine may write the line.
+    pub fn may_write(&self) -> bool {
+        self.standing == "writing" || self.standing == "open"
+    }
+}
+
+/// One line a machine is writing.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Writing {
+    /// The group's short name.
+    pub group: String,
+    /// Which of its repositories.
+    pub side: String,
+    /// Which line of work.
+    pub line: String,
+    /// What the machine holding it calls itself.
+    pub label: String,
+    /// Whether the machine holding it is this one.
+    pub mine: bool,
+    /// How long the claim has left.
+    pub left: u64,
+    /// Whether it has been asked for.
+    pub asked: bool,
 }
 
 /// Who a credential acts for.
@@ -533,6 +595,55 @@ impl Server {
             .as_str()
             .map(str::to_owned)
             .context("the instance did not say which job it made")
+    }
+
+    /// Takes a line for this machine, unless another one has it.
+    pub fn take_claim(&self, token: &str, about: &About) -> Result<Claimed> {
+        self.ask(token, "/api/claims", about)
+    }
+
+    /// Says this machine is still writing.
+    pub fn renew_claim(&self, token: &str, about: &About) -> Result<Claimed> {
+        self.ask(token, "/api/claims/renew", about)
+    }
+
+    /// Lets a line go.
+    pub fn release_claim(&self, token: &str, about: &About) -> Result<Claimed> {
+        self.ask(token, "/api/claims/release", about)
+    }
+
+    /// Asks the machine writing a line to hand it back.
+    pub fn ask_for_claim(&self, token: &str, about: &About) -> Result<Claimed> {
+        self.ask(token, "/api/claims/ask", about)
+    }
+
+    /// Every line being written where this machine works.
+    pub fn claims(&self, token: &str) -> Result<Vec<Writing>> {
+        let answer: serde_json::Value = self.read(token, "/api/claims")?;
+
+        serde_json::from_value(answer["claims"].clone())
+            .context("the instance answered with something this build does not understand")
+    }
+
+    /// Reads something the instance offers to a machine.
+    fn read<T: serde::de::DeserializeOwned>(&self, token: &str, path: &str) -> Result<T> {
+        let mut response = self
+            .agent
+            .get(self.url(path))
+            .header("authorization", format!("Bearer {token}"))
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        if response.status() != 200 {
+            bail!("{} answered with {}", self.address, response.status());
+        }
+
+        response
+            .body_mut()
+            .read_json()
+            .context("the instance answered with something this build does not understand")
     }
 
     /// What this machine has in the queue.
