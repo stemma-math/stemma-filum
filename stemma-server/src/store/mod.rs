@@ -7,6 +7,7 @@
 //! which acts belong together.
 
 pub mod artefacts;
+pub mod claims;
 pub mod devices;
 pub mod groups;
 pub mod invitations;

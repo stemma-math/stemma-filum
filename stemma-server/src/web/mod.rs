@@ -9,6 +9,7 @@ pub mod api;
 pub mod artefacts;
 pub mod assets;
 pub mod auth;
+pub mod claims;
 pub mod cookies;
 pub mod device;
 pub mod front;
@@ -176,6 +177,10 @@ pub fn router() -> Router<Instance> {
         .route("/audit-obligations/{id}/decide", post(vault::decide))
         .route("/g/{slug}/{side}/{line}", get(lines::view))
         .route("/g/{slug}/{side}/{line}/jobs", post(jobs::launch))
+        .route(
+            "/g/{slug}/{side}/{line}/claim/release",
+            post(claims::hand_back),
+        )
         .route("/g/{slug}/invitations", post(groups::invite))
         .route(
             "/g/{slug}/invitations/{id}/withdraw",
@@ -205,6 +210,10 @@ pub fn router() -> Router<Instance> {
             get(machines::mine).post(machines::register),
         )
         .route("/api/machines/beat", post(machines::beat))
+        .route("/api/claims", get(claims::listing).post(claims::take))
+        .route("/api/claims/renew", post(claims::renew))
+        .route("/api/claims/release", post(claims::release))
+        .route("/api/claims/ask", post(claims::ask))
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/groups/{group}/machines", get(jobs::machine_choices))

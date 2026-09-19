@@ -344,6 +344,8 @@ id_kinds! {
     Job: "job" => JobId as UniqueId,
     /// A change offered for review, by a person or by an agent.
     Proposal: "prp" => ProposalId as UniqueId,
+    /// One machine's hold on a line while it writes it.
+    Claim: "clm" => ClaimId as UniqueId,
     /// A proved finding, such as a contradiction between two statements.
     Finding: "fnd" => FindingId as UniqueId,
     /// An immutable definition admitted to a group's vault.

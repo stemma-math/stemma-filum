@@ -32,6 +32,8 @@ pub struct Job {
     pub line: Name,
     /// The commit it was launched against.
     pub commit: String,
+    /// The other version, when the job is to bring two of them together.
+    pub against: Option<String>,
     /// What it asks for, and where the answer lands.
     pub task: Task,
     /// Which agent was chosen.
@@ -83,6 +85,7 @@ impl Job {
                 .map_err(|_| unreadable("a repository", &side))?,
             line: Name::parse(&line).map_err(|_| unreadable("a line", &line))?,
             commit: row.get("commit_id")?,
+            against: row.get("against")?,
             task: task.parse().map_err(|_| unreadable("a task", &task))?,
             agent: Slug::parse(&agent).map_err(|_| unreadable("an agent", &agent))?,
             choice: match chosen {
@@ -132,9 +135,9 @@ impl Job {
 }
 
 /// The columns every read asks for.
-const COLUMNS: &str = "id, group_id, side, line, commit_id, task, agent, chosen_machine,
-                       launched_by, launched_at, state, taken_by, taken_at, finished_at,
-                       outcome, code, reason, cleared_at";
+const COLUMNS: &str = "id, group_id, side, line, commit_id, against, task, agent,
+                       chosen_machine, launched_by, launched_at, state, taken_by, taken_at,
+                       finished_at, outcome, code, reason, cleared_at";
 
 /// What somebody asked for.
 #[derive(Debug, Clone)]
@@ -147,6 +150,8 @@ pub struct Launch {
     pub line: Name,
     /// The commit to work against.
     pub commit: String,
+    /// The other version, for a job that brings two of them together.
+    pub against: Option<String>,
     /// What is being asked.
     pub task: Task,
     /// Which agent.
@@ -163,15 +168,16 @@ pub fn launch(connection: &Connection, asked: &Launch) -> Result<Job> {
 
     connection
         .execute(
-            "INSERT INTO jobs (id, group_id, side, line, commit_id, task, agent,
+            "INSERT INTO jobs (id, group_id, side, line, commit_id, against, task, agent,
                                chosen_machine, launched_by, state)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'queued')",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'queued')",
             params![
                 id.to_string(),
                 asked.group.to_string(),
                 asked.side.as_str(),
                 asked.line.as_str(),
                 asked.commit,
+                asked.against,
                 asked.task.to_string(),
                 asked.agent.as_str(),
                 asked.choice.machine().map(MachineId::to_string),
@@ -456,6 +462,7 @@ mod tests {
             side: Side::Shared,
             line: Name::parse("quotients").unwrap(),
             commit: "0123456789abcdef".to_owned(),
+            against: None,
             task: Task::Fill { after: None },
             agent: claude(),
             choice,

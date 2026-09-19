@@ -149,6 +149,7 @@ fn handed_over(job: &Job) -> serde_json::Value {
         "side": job.side.as_str(),
         "line": job.line.as_str(),
         "commit": job.commit,
+        "against": job.against,
         "task": job.task.to_string(),
         "agent": job.agent.as_str(),
         "launched_by": job.launched_by.to_string(),
@@ -227,6 +228,9 @@ pub struct Asking {
     pub line: String,
     /// The commit to work against.
     pub commit: String,
+    /// The other version, for a job that brings two of them together.
+    #[serde(default)]
+    pub against: Option<String>,
     /// What is being asked.
     pub task: String,
     /// Which agent.
@@ -331,6 +335,18 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
     let group = GroupId::new(slug);
     let asker = by.clone();
     let commit = asking.commit.trim().to_owned();
+    let against = asking
+        .against
+        .as_deref()
+        .map(str::trim)
+        .filter(|commit| !commit.is_empty())
+        .map(str::to_owned);
+
+    if task == Task::Reconcile && against.is_none() {
+        return Err(refuse(
+            "Bringing two versions together needs the other one named.",
+        ));
+    }
 
     instance
         .write(move |connection| {
@@ -370,6 +386,7 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                     side,
                     line: line.clone(),
                     commit: commit.clone(),
+                    against: against.clone(),
                     task: task.clone(),
                     agent: agent.clone(),
                     choice: match chosen {
@@ -435,6 +452,7 @@ pub async fn launch(
             side: side.clone(),
             line: line.clone(),
             commit: form.commit.clone(),
+            against: None,
             task: form.task.clone(),
             agent: agent.to_owned(),
             machine: match machine {

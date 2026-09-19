@@ -161,6 +161,7 @@ mod tests {
                 side: Side::Shared,
                 line: Name::parse("quotients").unwrap(),
                 commit: "0123456789abcdef".to_owned(),
+                against: None,
                 task: Task::Explore,
                 agent: Slug::parse("claude").unwrap(),
                 choice: Choice::Anyone,

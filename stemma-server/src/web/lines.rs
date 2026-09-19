@@ -20,11 +20,12 @@ use stemma_core::model::BoxState;
 use stemma_core::repository::Side;
 
 use super::jobs::Offer;
-use super::layout::{Chrome, page};
+use super::layout::{Chrome, page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::artefacts::Shelf;
 use crate::store::artefacts as index;
+use crate::store::claims::{self, Claim};
 use crate::store::groups::{self, Group};
 
 /// One line of work.
@@ -48,6 +49,14 @@ pub async fn view(
 
     let policy = instance.policy().await?;
     let offers = super::jobs::offers(&instance, &group.id).await?;
+    let writing = {
+        let id = group.id.clone();
+        let name = name.clone();
+
+        instance
+            .read(move |connection| claims::holder(connection, &id, side, name.as_str()))
+            .await?
+    };
     let chrome = Chrome::anonymous(
         digest.shown_as().to_owned(),
         super::front::instance_name(&instance, &policy),
@@ -63,7 +72,19 @@ pub async fn view(
         offers,
     };
 
-    Ok(page(&chrome, body(&group, side, &digest, &nodes, &launchers)).into_response())
+    Ok(page(
+        &chrome,
+        body(
+            &group,
+            side,
+            &digest,
+            &nodes,
+            &launchers,
+            writing.as_ref(),
+            &signed,
+        ),
+    )
+    .into_response())
 }
 
 /// Which repository was asked for, and whether this reader may have it.
@@ -176,6 +197,8 @@ fn body(
     digest: &LineDigest,
     nodes: &Nodes,
     launchers: &Anchored<'_>,
+    writing: Option<&Claim>,
+    signed: &SignedIn,
 ) -> Markup {
     let boxes = digest.line.boxes();
     let central = digest.line.central();
@@ -227,6 +250,7 @@ fn body(
             }
 
             div class="apparatus__register" {
+                (claim_block(group, side, &digest.name, writing, signed))
                 (register(digest, &central, &boxes, nodes))
             }
         }
@@ -338,6 +362,45 @@ fn drawn_box(
                     (launchers.at(Task::Verify {
                         after: black_box.after.clone(),
                     }))
+                }
+            }
+        }
+    }
+}
+
+/// Who is writing this line, if anybody is.
+///
+/// A claim is a condition and not a task: it says what is true now, it
+/// lapses on its own, and nothing about it is ever counted. The one
+/// action offered is to the person whose machine is holding it.
+fn claim_block(
+    group: &Group,
+    side: Side,
+    line: &Name,
+    writing: Option<&Claim>,
+    signed: &SignedIn,
+) -> Markup {
+    html! {
+        div class="block" {
+            p class="label" { "Claim" }
+
+            @match writing {
+                None => p class="quiet" { "Nobody is writing this line." }
+                Some(claim) => {
+                    p { (claim.label) " is writing it" }
+                    p class="quiet" { (claim.held().lapses_in()) }
+
+                    @if claim.asked {
+                        p class="quiet" { "It has been asked for." }
+                    }
+
+                    @if claim.owner == signed.user.id {
+                        form method="post"
+                             action={ "/g/" (group.slug()) "/" (side) "/" (line) "/claim/release" } {
+                            (signature(signed))
+                            button type="submit" { "Hand it back" }
+                        }
+                    }
                 }
             }
         }

@@ -105,6 +105,7 @@ pub async fn decide(
                         side: proposal.job.side,
                         line: proposal.job.line,
                         commit: proposal.job.commit,
+                        against: None,
                         task: proposal.job.task,
                         agent: proposal.job.agent,
                         choice: proposal.job.choice,

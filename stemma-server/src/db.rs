@@ -59,6 +59,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "audited-vault",
         sql: include_str!("../migrations/0008-vault.sql"),
     },
+    Migration {
+        name: "claims",
+        sql: include_str!("../migrations/0009-claims.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.
