@@ -346,6 +346,14 @@ id_kinds! {
     Proposal: "prp" => ProposalId as UniqueId,
     /// A proved finding, such as a contradiction between two statements.
     Finding: "fnd" => FindingId as UniqueId,
+    /// An immutable definition admitted to a group's vault.
+    VaultEntry: "vlt" => VaultEntryId as UniqueId,
+    /// A proved licence to substitute one vault definition for another.
+    Bridge: "brg" => BridgeId as UniqueId,
+    /// A permanent record of somebody checking prose against formalization.
+    Audit: "aud" => AuditId as UniqueId,
+    /// A person's answer to a downstream audit obligation.
+    Decision: "dcs" => DecisionId as UniqueId,
     /// A build output stored outside git and keyed by commit.
     Artefact: "art" => ArtefactId as UniqueId,
     /// A revocable instance-level permission held by an account.

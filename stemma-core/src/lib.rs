@@ -19,5 +19,6 @@ pub mod proposal;
 pub mod protocol;
 pub mod repository;
 pub mod source;
+pub mod vault;
 
 pub use protocol::{PROTOCOL_HEADER, PROTOCOL_VERSION, ProtocolVersion};
