@@ -143,6 +143,7 @@ pub fn read(clone: &Path) -> Result<Built> {
                 name,
                 title: source::title(&text),
                 line,
+                lean: None,
             }),
             Err(found) => faults.push(Faulty {
                 name,

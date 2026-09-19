@@ -42,6 +42,16 @@ pub enum Task {
         /// The statement to attack.
         statement: Siglum,
     },
+    /// Formalize one statement in Lean.
+    Formalize {
+        /// The statement whose prose is to receive a formal counterpart.
+        statement: Siglum,
+    },
+    /// Verify the Lean argument for one black box.
+    Verify {
+        /// The statement after which the box begins, if any.
+        after: Option<Siglum>,
+    },
     /// Say where the line could go next.
     Explore,
 }
@@ -52,6 +62,8 @@ impl Task {
         match self {
             Self::Fill { .. } => "fill this box",
             Self::Refute { .. } => "look for a counterexample",
+            Self::Formalize { .. } => "formalize in Lean",
+            Self::Verify { .. } => "verify this box in Lean",
             Self::Explore => "say where the line could go next",
         }
     }
@@ -61,6 +73,8 @@ impl Task {
         match self {
             Self::Fill { after } => after.as_ref(),
             Self::Refute { statement } => Some(statement),
+            Self::Formalize { statement } => Some(statement),
+            Self::Verify { after } => after.as_ref(),
             Self::Explore => None,
         }
     }
@@ -70,7 +84,7 @@ impl Task {
     /// A central statement is frozen against agents, so refuting one is
     /// the only thing an agent may aim at it.
     pub fn is_aimed_at_a_central_statement(&self) -> bool {
-        matches!(self, Self::Refute { .. })
+        matches!(self, Self::Refute { .. } | Self::Formalize { .. })
     }
 }
 
@@ -80,6 +94,9 @@ impl fmt::Display for Task {
             Self::Fill { after: None } => f.write_str("fill"),
             Self::Fill { after: Some(node) } => write!(f, "fill@{node}"),
             Self::Refute { statement } => write!(f, "refute@{statement}"),
+            Self::Formalize { statement } => write!(f, "formalize@{statement}"),
+            Self::Verify { after: None } => f.write_str("verify"),
+            Self::Verify { after: Some(node) } => write!(f, "verify@{node}"),
             Self::Explore => f.write_str("explore"),
         }
     }
@@ -116,6 +133,13 @@ impl FromStr for Task {
                 statement: statement.parse()?,
             }),
             ("refute", None) => Err(BadTask::Unanchored(input.to_owned())),
+            ("formalize", Some(statement)) => Ok(Self::Formalize {
+                statement: statement.parse()?,
+            }),
+            ("formalize", None) => Err(BadTask::Unanchored(input.to_owned())),
+            ("verify", after) => Ok(Self::Verify {
+                after: after.map(str::parse).transpose()?,
+            }),
             ("explore", _) => Ok(Self::Explore),
             _ => Err(BadTask::Unknown(verb.to_owned())),
         }
@@ -398,6 +422,13 @@ mod tests {
             Task::Refute {
                 statement: statement(),
             },
+            Task::Formalize {
+                statement: statement(),
+            },
+            Task::Verify {
+                after: Some(statement()),
+            },
+            Task::Verify { after: None },
             Task::Explore,
         ] {
             assert_eq!(task.to_string().parse(), Ok(task.clone()), "for {task}");
@@ -410,6 +441,13 @@ mod tests {
             }
             .to_string(),
             "refute@thm:main"
+        );
+        assert_eq!(
+            Task::Formalize {
+                statement: statement()
+            }
+            .to_string(),
+            "formalize@thm:main"
         );
     }
 

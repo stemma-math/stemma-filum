@@ -24,6 +24,9 @@ pub const LINES: &str = "lines";
 /// The file a line is written in.
 pub const ENTRY: &str = "main.typ";
 
+/// The Lean module that formalizes one line.
+pub const LEAN_ENTRY: &str = "Main.lean";
+
 /// The shape of a repository this build understands.
 pub const FORMAT: u32 = 1;
 
@@ -80,6 +83,10 @@ impl std::str::FromStr for Side {
 pub struct Pins {
     /// The exact Typst release every surface must use.
     pub typst: Option<String>,
+    /// The exact Lean release used to check formalizations.
+    pub lean: Option<String>,
+    /// The exact Mathlib revision used by the group's Lake project.
+    pub mathlib: Option<String>,
 }
 
 /// The file at the root of a repository.
@@ -171,6 +178,11 @@ pub fn line_entry(root: &Path, name: &Name) -> PathBuf {
     line_directory(root, name).join(ENTRY)
 }
 
+/// Where a line's Lean formalization is.
+pub fn line_lean_entry(root: &Path, name: &Name) -> PathBuf {
+    line_directory(root, name).join(LEAN_ENTRY)
+}
+
 /// The name of the line a path is inside, if it is inside one.
 pub fn line_of(root: &Path, path: &Path) -> Option<Name> {
     let inside = path.strip_prefix(root.join(LINES)).ok()?;
@@ -226,6 +238,24 @@ mod tests {
 
         assert_eq!(manifest.pins.typst.as_deref(), Some("0.13.1"));
         assert_eq!(manifest.side, Side::Shared);
+    }
+
+    #[test]
+    fn the_formal_environment_is_pinned_with_the_document_environment() {
+        let text = r#"
+            format = 1
+            group = "grp:algebra"
+            side = "shared"
+
+            [pins]
+            typst = "0.13.1"
+            lean = "4.24.0"
+            mathlib = "v4.24.0"
+        "#;
+        let manifest = Manifest::parse(text).unwrap();
+
+        assert_eq!(manifest.pins.lean.as_deref(), Some("4.24.0"));
+        assert_eq!(manifest.pins.mathlib.as_deref(), Some("v4.24.0"));
     }
 
     #[test]

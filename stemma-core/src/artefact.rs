@@ -11,7 +11,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::id::{GroupId, UserId};
+use crate::line::Siglum;
 use crate::line::{Line, Name};
+use crate::model::Verification;
 use crate::repository::Side;
 
 /// The shape of an artefact this build understands.
@@ -134,6 +136,34 @@ pub struct LineDigest {
     pub title: Option<String>,
     /// What it declares.
     pub line: Line,
+    /// What the pinned Lean environment established for this line.
+    #[serde(default)]
+    pub lean: Option<LeanDigest>,
+}
+
+/// Reconstructible output of checking one line's Lean module.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeanDigest {
+    /// The exact Lean release that ran.
+    pub lean: String,
+    /// The exact Mathlib revision declared by the group.
+    pub mathlib: String,
+    /// Whether the complete module compiled.
+    pub compiled: bool,
+    /// Stable statement identifiers declared by the module as verified.
+    pub statements: Vec<Siglum>,
+    /// A short compiler diagnostic, empty after a clean run.
+    pub diagnostic: String,
+}
+
+impl LeanDigest {
+    /// The verification condition of a statement under this result.
+    pub fn verification_of(&self, statement: &Siglum) -> Verification {
+        match self.compiled && self.statements.contains(statement) {
+            true => Verification::Verified,
+            false => Verification::Unverified,
+        }
+    }
 }
 
 impl LineDigest {
@@ -241,6 +271,7 @@ mod tests {
                 "#,
             )
             .unwrap(),
+            lean: None,
         });
 
         nodes
@@ -268,6 +299,7 @@ mod tests {
             name: Name::parse("untitled").unwrap(),
             title: None,
             line: Line::read("").unwrap(),
+            lean: None,
         };
 
         assert_eq!(digest.shown_as(), "untitled");
