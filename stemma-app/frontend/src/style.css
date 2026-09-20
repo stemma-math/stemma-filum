@@ -1,11 +1,600 @@
-:root { --paper:#edeee8; --raise:#f6f7f3; --sunk:#e2e4dc; --ink:#16191a; --quiet:#636967; --rule:#c5c8c0; --soft:#d7dad2; --ditto:#463a85; --verified:#1d5347; --refuted:#93221b; --sans:"Archivo",sans-serif; --serif:"Libertinus Serif",serif; --mono:"Iosevka",monospace; color:var(--ink); background:var(--paper); font-family:var(--sans); }
-:root[data-theme="dark"] { --paper:#141715; --raise:#1c201d; --sunk:#0f1210; --ink:#e4e6e0; --quiet:#858b85; --rule:#343833; --soft:#242824; --ditto:#a395ee; --verified:#5fae96; --refuted:#e0705f; }
-@media(prefers-color-scheme:dark) { :root:not([data-theme="light"]) { --paper:#141715; --raise:#1c201d; --sunk:#0f1210; --ink:#e4e6e0; --quiet:#858b85; --rule:#343833; --soft:#242824; --ditto:#a395ee; --verified:#5fae96; --refuted:#e0705f; } }
-* { box-sizing:border-box; border-radius:0; } body { margin:0; } header { height:48px; border-bottom:1px solid var(--rule); display:flex; align-items:center; gap:24px; padding:0 16px; } .wordmark,.label { font:600 11px/1 var(--mono); letter-spacing:.14em; } header select { min-width:320px; background:transparent; border:0; } #save { margin-left:auto; color:var(--quiet); font-size:12px; }
-main { display:grid; grid-template-columns:11rem minmax(32rem,1fr) minmax(30rem,1fr) 21rem; height:calc(100vh - 48px); } aside { padding:20px 16px; overflow:auto; } #gutter { border-right:1px solid var(--rule); } #gutter.private { border-right-style:double; border-right-width:3px; } #register { border-left:1px solid var(--rule); } #register section { border-top:1px solid var(--rule); padding:14px 0 20px; }
-.writing,.preview { overflow:auto; padding:32px 24px; } .writing { background:var(--raise); } textarea { width:min(68ch,100%); min-height:100%; display:block; margin:auto; resize:none; border:0; outline:0; background:transparent; color:var(--ink); font:17px/1.65 var(--serif); }
-.preview { background:#353430; } #page { background:white; min-height:100%; border:1px solid #2222; } #page svg { width:100%; height:auto; display:block; border-bottom:1px solid var(--soft); } .diagnostic { white-space:pre-wrap; padding:24px; color:#7d1d1d; }
-.mark { border-left:1px solid var(--rule); padding:7px 0 14px 10px; display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--quiet); } .mark.central { border-left:2px solid var(--ditto); } .boxmark::before { content:"╱ ╱ ╱ ╱"; color:var(--soft); letter-spacing:2px; } code { font-family:var(--mono); font-size:12px; } #machine,.agent,.job { display:flex; flex-direction:column; gap:5px; margin-bottom:12px; font-size:13px; font-variant-numeric:tabular-nums; } .agent.out { color:var(--quiet); } #source-diagnostics,.raw-output { white-space:pre-wrap; font:12px/1.5 var(--mono); color:var(--quiet); } .raw-output { max-height:18rem; overflow:auto; border-left:1px solid var(--rule); padding:8px; color:var(--ink); background:var(--sunk); } select,button { font:12px var(--sans); color:var(--ink); border:1px solid var(--rule); background:var(--raise); padding:8px; margin:0 6px 8px 0; } button:focus,select:focus,textarea:focus { outline:2px solid var(--ditto); outline-offset:2px; }
-@media(max-width:1200px){ main { grid-template-columns:9rem 1fr 1fr; } #register { grid-column:2/4; border-left:0; border-top:1px solid var(--rule); display:grid; grid-template-columns:repeat(3,1fr); gap:24px; } }
-@media(max-width:900px){ main { display:block; overflow:auto; } #gutter,#register,.writing,.preview { border:0; min-height:45vh; } #gutter { min-height:auto; } }
-.version { white-space:pre-wrap; font:12px/1.5 var(--mono); background:var(--sunk); border-left:1px solid var(--rule); padding:8px; margin:0; max-height:10rem; overflow:auto; } button.kept { border-color:var(--ditto); color:var(--ditto); } .quiet { color:var(--quiet); }
+/* The application's own stylesheet.
+ *
+ * The same grammar as the instance's pages: flat ink on flat paper, no
+ * radius, no shadow, separation by hairline and by the three paper
+ * levels. Colour is earned — a human commitment, a machine proof, a
+ * refutation — and nothing else here takes any.
+ */
+
+:root {
+    --paper: #edeee8;
+    --raise: #f6f7f3;
+    --sunk: #e2e4dc;
+    --ink: #16191a;
+    --ink-2: #474d4c;
+    --quiet: #636967;
+    --rule: #c5c8c0;
+    --soft: #d7dad2;
+    --ditto: #463a85;
+    --verified: #1d5347;
+    --refuted: #93221b;
+
+    --sans: "Archivo", sans-serif;
+    --serif: "Libertinus Serif", serif;
+    --mono: "Iosevka", monospace;
+
+    color: var(--ink);
+    background: var(--paper);
+    font-family: var(--sans);
+    font-size: 14px;
+}
+
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) {
+    color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --paper: #141715;
+        --raise: #1c201d;
+        --sunk: #0f1210;
+        --ink: #e4e6e0;
+        --ink-2: #b4b8b1;
+        --quiet: #858b85;
+        --rule: #343833;
+        --soft: #242824;
+        --ditto: #a395ee;
+        --verified: #5fae96;
+        --refuted: #e0705f;
+
+        color-scheme: dark;
+    }
+}
+
+:root[data-theme="dark"] {
+    --paper: #141715;
+    --raise: #1c201d;
+    --sunk: #0f1210;
+    --ink: #e4e6e0;
+    --ink-2: #b4b8b1;
+    --quiet: #858b85;
+    --rule: #343833;
+    --soft: #242824;
+    --ditto: #a395ee;
+    --verified: #5fae96;
+    --refuted: #e0705f;
+}
+
+* {
+    box-sizing: border-box;
+    border-radius: 0;
+}
+
+body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+}
+
+/* ── The shell ─────────────────────────────────────────────────────── */
+
+header {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--raise);
+}
+
+.wordmark,
+.label {
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--quiet);
+    margin: 0 0 8px;
+}
+
+.wordmark {
+    color: var(--ink);
+    margin: 0;
+}
+
+header nav {
+    display: flex;
+    gap: 4px;
+}
+
+.spacer {
+    margin-left: auto;
+}
+
+#said {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--sunk);
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.sheet {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: 28px 24px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+section {
+    display: block;
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.quiet {
+    color: var(--quiet);
+}
+
+.identifier,
+code {
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.problem {
+    border-left: 2px solid var(--refuted);
+    padding-left: 12px;
+}
+
+/* ── Rows ──────────────────────────────────────────────────────────── */
+
+.row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+    border-top: 1px solid var(--soft);
+}
+
+.row p {
+    margin: 0 0 3px;
+}
+
+.row__name {
+    font-size: 15px;
+}
+
+.row__actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.count {
+    font-family: var(--mono);
+    font-size: 11px;
+    border: 1px solid var(--rule);
+    padding: 0 4px;
+}
+
+/* ── Controls ──────────────────────────────────────────────────────── */
+
+button,
+select,
+input,
+textarea {
+    font: 13px var(--sans);
+    color: var(--ink);
+    background: var(--raise);
+    border: 1px solid var(--rule);
+    padding: 7px 10px;
+}
+
+button {
+    cursor: pointer;
+}
+
+button:hover,
+button:focus-visible {
+    border-color: var(--ink);
+}
+
+button.here {
+    border-color: var(--ditto);
+    color: var(--ditto);
+}
+
+button.primary {
+    border-color: var(--ink);
+    background: var(--sunk);
+}
+
+button.kept {
+    border-color: var(--ditto);
+    color: var(--ditto);
+}
+
+button.quiet-button {
+    border-color: transparent;
+    color: var(--quiet);
+}
+
+button:disabled {
+    color: var(--quiet);
+    cursor: not-allowed;
+}
+
+input,
+textarea,
+select {
+    background: var(--sunk);
+    width: min(38rem, 100%);
+}
+
+textarea {
+    font-family: var(--mono);
+    font-size: 12px;
+    resize: vertical;
+}
+
+label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--quiet);
+}
+
+label.choice {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--ink);
+    font-size: 13px;
+}
+
+label.choice input {
+    width: auto;
+    accent-color: var(--ditto);
+}
+
+fieldset {
+    border: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 14px 14px;
+    margin: 0;
+}
+
+legend {
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--quiet);
+    padding: 0 6px;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--ditto);
+    outline-offset: 2px;
+}
+
+/* ── Signing in ────────────────────────────────────────────────────── */
+
+.entrance {
+    max-width: 30rem;
+    margin: 12vh auto;
+    padding: 0 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: flex-start;
+}
+
+.entrance h1 {
+    font-size: 27px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.entrance form {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.code {
+    font: 34px/1 var(--mono);
+    letter-spacing: 0.18em;
+    margin: 8px 0;
+}
+
+/* ── The editor ────────────────────────────────────────────────────── */
+
+.apparatus {
+    display: grid;
+    grid-template-columns: 11rem minmax(28rem, 1fr) minmax(26rem, 1fr) 21rem;
+    height: calc(100vh - 48px);
+}
+
+aside {
+    padding: 20px 16px;
+    overflow: auto;
+}
+
+#gutter {
+    border-right: 1px solid var(--rule);
+}
+
+#gutter.private {
+    border-right-style: double;
+    border-right-width: 3px;
+}
+
+#register {
+    border-left: 1px solid var(--rule);
+}
+
+#register section {
+    border-top: 1px solid var(--rule);
+    padding: 14px 0 20px;
+}
+
+#register section:first-child {
+    border-top: 0;
+    padding-top: 0;
+}
+
+.writing,
+.preview {
+    overflow: auto;
+    padding: 32px 24px;
+}
+
+.writing {
+    background: var(--raise);
+}
+
+textarea#editor {
+    width: min(68ch, 100%);
+    min-height: 100%;
+    display: block;
+    margin: auto;
+    resize: none;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--ink);
+    font: 17px/1.65 var(--serif);
+}
+
+.preview {
+    background: #353430;
+}
+
+#page {
+    background: white;
+    min-height: 100%;
+    border: 1px solid #2222;
+}
+
+#page svg {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-bottom: 1px solid var(--soft);
+}
+
+.diagnostic {
+    white-space: pre-wrap;
+    padding: 24px;
+    color: #7d1d1d;
+}
+
+.mark {
+    border-left: 1px solid var(--rule);
+    padding: 7px 0 14px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--quiet);
+}
+
+.mark.central {
+    border-left: 2px solid var(--ditto);
+}
+
+.boxmark::before {
+    content: "╱ ╱ ╱ ╱";
+    color: var(--soft);
+    letter-spacing: 2px;
+}
+
+.agent,
+.job {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.agent.out {
+    color: var(--quiet);
+}
+
+#source-diagnostics,
+.raw-output {
+    white-space: pre-wrap;
+    font: 12px/1.5 var(--mono);
+    color: var(--quiet);
+}
+
+.raw-output {
+    max-height: 18rem;
+    overflow: auto;
+    border-left: 1px solid var(--rule);
+    padding: 8px;
+    color: var(--ink);
+    background: var(--sunk);
+}
+
+.version {
+    white-space: pre-wrap;
+    font: 12px/1.5 var(--mono);
+    background: var(--sunk);
+    border-left: 1px solid var(--rule);
+    padding: 8px;
+    margin: 0;
+    max-height: 10rem;
+    overflow: auto;
+}
+
+/* ── What changed ──────────────────────────────────────────────────── */
+
+.diff {
+    font: 12px/1.6 var(--mono);
+    background: var(--sunk);
+    border: 1px solid var(--rule);
+    padding: 12px 0;
+    overflow-x: auto;
+}
+
+.diff__row {
+    display: grid;
+    grid-template-columns: 3.5ch 3.5ch 2ch 1fr;
+    gap: 8px;
+    padding: 0 12px;
+    border-left: 2px solid transparent;
+}
+
+.diff__row--added {
+    border-left-color: var(--ink);
+    background: var(--raise);
+}
+
+.diff__row--removed {
+    border-left-color: var(--rule);
+    color: var(--quiet);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
+/* A registration frame: what the guard forbids touching, marked at the
+ * corners of the whole run rather than of each of its lines. */
+
+.diff__row--held {
+    box-shadow:
+        inset 1px 0 0 -0.5px var(--quiet),
+        inset -1px 0 0 -0.5px var(--quiet);
+}
+
+.diff__row--held-first {
+    background-image:
+        linear-gradient(var(--quiet), var(--quiet)),
+        linear-gradient(var(--quiet), var(--quiet));
+    background-size: 7px 1px, 7px 1px;
+    background-position: 0 0, 100% 0;
+    background-repeat: no-repeat;
+}
+
+.diff__row--held-last {
+    background-image:
+        linear-gradient(var(--quiet), var(--quiet)),
+        linear-gradient(var(--quiet), var(--quiet));
+    background-size: 7px 1px, 7px 1px;
+    background-position: 0 100%, 100% 100%;
+    background-repeat: no-repeat;
+}
+
+.starting summary {
+    font: 600 11px/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--quiet);
+    cursor: pointer;
+    padding: 8px 0;
+}
+
+.starting[open] summary {
+    color: var(--ditto);
+}
+
+.diff__at {
+    color: var(--quiet);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.diff__mark {
+    color: var(--quiet);
+}
+
+.diff__text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+}
+
+.findings {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--quiet);
+    list-style: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* ── Narrow ────────────────────────────────────────────────────────── */
+
+@media (max-width: 1200px) {
+    .apparatus {
+        grid-template-columns: 9rem 1fr 1fr;
+    }
+
+    #register {
+        grid-column: 2 / 4;
+        border-left: 0;
+        border-top: 1px solid var(--rule);
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+    }
+}
+
+@media (max-width: 900px) {
+    .apparatus {
+        display: block;
+        overflow: auto;
+    }
+
+    #gutter,
+    #register,
+    .writing,
+    .preview {
+        border: 0;
+        min-height: 45vh;
+    }
+
+    #gutter {
+        min-height: auto;
+    }
+}

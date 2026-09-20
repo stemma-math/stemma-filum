@@ -994,13 +994,31 @@ legend {
     text-decoration-thickness: 1px;
 }
 
-.diff__row--frozen {
-    position: relative;
-    background:
-        linear-gradient(var(--ink-3), var(--ink-3)) 0 0 / 6px 1px no-repeat,
-        linear-gradient(var(--ink-3), var(--ink-3)) 0 0 / 1px 6px no-repeat,
-        linear-gradient(var(--ink-3), var(--ink-3)) 100% 100% / 6px 1px no-repeat,
-        linear-gradient(var(--ink-3), var(--ink-3)) 100% 100% / 1px 6px no-repeat;
+/* A registration frame around what the guard forbids touching: the
+ * corners of the whole run, and the sides between them. */
+
+.diff__row--held {
+    box-shadow:
+        inset 1px 0 0 -0.5px var(--ink-3),
+        inset -1px 0 0 -0.5px var(--ink-3);
+}
+
+.diff__row--held-first {
+    background-image:
+        linear-gradient(var(--ink-3), var(--ink-3)),
+        linear-gradient(var(--ink-3), var(--ink-3));
+    background-size: 7px 1px, 7px 1px;
+    background-position: 0 0, 100% 0;
+    background-repeat: no-repeat;
+}
+
+.diff__row--held-last {
+    background-image:
+        linear-gradient(var(--ink-3), var(--ink-3)),
+        linear-gradient(var(--ink-3), var(--ink-3));
+    background-size: 7px 1px, 7px 1px;
+    background-position: 0 100%, 100% 100%;
+    background-repeat: no-repeat;
 }
 
 .diff__at {

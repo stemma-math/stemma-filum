@@ -158,11 +158,20 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
 }
 
 /// The two versions, line by line.
+///
+/// A statement the guard freezes is framed at the corners of the whole
+/// run rather than of each of its lines: it is one statement, not five.
 fn drawn(rows: &[diff::Row], frozen: &std::collections::BTreeSet<usize>) -> Markup {
+    let held_at = |at: usize| {
+        rows.get(at)
+            .and_then(|row: &diff::Row| row.before)
+            .is_some_and(|line| frozen.contains(&line))
+    };
+
     html! {
         div class="diff" {
-            @for row in rows {
-                @let held = row.before.is_some_and(|at| frozen.contains(&at));
+            @for (at, row) in rows.iter().enumerate() {
+                @let held = held_at(at);
 
                 div class={
                     "diff__row"
@@ -171,7 +180,9 @@ fn drawn(rows: &[diff::Row], frozen: &std::collections::BTreeSet<usize>) -> Mark
                         Change::Removed => " diff__row--removed",
                         Change::Kept => "",
                     }
-                    @if held { " diff__row--frozen" }
+                    @if held { " diff__row--held" }
+                    @if held && (at == 0 || !held_at(at - 1)) { " diff__row--held-first" }
+                    @if held && !held_at(at + 1) { " diff__row--held-last" }
                 } {
                     span class="diff__at" {
                         @match row.before {

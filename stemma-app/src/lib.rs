@@ -5,6 +5,7 @@
 //! remain in `stemma`; the webview owns presentation only.
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::Serialize;
 use stemma::home::{Environment, Home};
@@ -63,6 +64,89 @@ struct Job {
     raw_output: bool,
 }
 
+/// Who this machine acts for, when it acts for anybody.
+#[derive(Serialize)]
+struct Signed {
+    server: String,
+    user: String,
+}
+
+/// A sign-in waiting for somebody to approve it.
+#[derive(Serialize)]
+struct Beginning {
+    code: String,
+    url: String,
+    url_complete: String,
+    interval: u32,
+}
+
+/// The sign-in this window is in the middle of, if it is in one.
+#[derive(Default)]
+struct SigningIn(Mutex<Option<stemma::session::Beginning>>);
+
+/// What one repository did when the machine last brought it into step.
+#[derive(Serialize)]
+struct Stepped {
+    group: String,
+    side: String,
+    outcome: String,
+    parted: bool,
+    dirty: bool,
+}
+
+/// One line as this machine has it on disk.
+#[derive(Serialize)]
+struct Known {
+    group: String,
+    side: String,
+    name: String,
+    title: Option<String>,
+    question: Option<String>,
+    path: String,
+}
+
+/// One proposal waiting to be read.
+#[derive(Serialize)]
+struct Waiting {
+    proposal: String,
+    group: String,
+    line: String,
+    task: String,
+    agent: String,
+    vendor: String,
+    model: String,
+}
+
+/// One line of a proposal's comparison.
+#[derive(Serialize)]
+struct Moved {
+    change: String,
+    text: String,
+    before: Option<usize>,
+    after: Option<usize>,
+    frozen: bool,
+}
+
+/// A proposal, as the review screen needs it.
+#[derive(Serialize)]
+struct Review {
+    proposal: String,
+    group: String,
+    side: String,
+    line: String,
+    task: String,
+    agent: String,
+    vendor: String,
+    model: String,
+    prompt_revision: String,
+    state: String,
+    extent: String,
+    rows: Vec<Moved>,
+    source: String,
+    lean_source: Option<String>,
+    findings: Vec<String>,
+}
+
 #[derive(Serialize)]
 struct Claim {
     standing: String,
@@ -101,8 +185,309 @@ fn home() -> Home {
     Home::locate(&Environment::from_process())
 }
 
+/// Runs one of the client's commands and hands back what it printed.
+fn carried_out(
+    work: impl FnOnce(&Home, &mut Vec<u8>) -> anyhow::Result<()>,
+) -> Result<String, String> {
+    let mut written = Vec::new();
+
+    work(&home(), &mut written).map_err(|error| format!("{error:#}"))?;
+
+    String::from_utf8(written).map_err(said)
+}
+
+/// Who this machine acts for.
 #[tauri::command]
-fn lines() -> Result<Vec<LineEntry>, String> {
+fn whoami() -> Result<Option<Signed>, String> {
+    let home = home();
+    let credentials =
+        stemma::credentials::Credentials::read(&home.credentials_file()).map_err(said)?;
+
+    Ok(credentials.map(|credentials| Signed {
+        server: credentials.server,
+        user: credentials.user,
+    }))
+}
+
+/// Asks an instance to let this machine in.
+#[tauri::command]
+fn sign_in_start(
+    server: String,
+    signing_in: tauri::State<'_, SigningIn>,
+) -> Result<Beginning, String> {
+    let beginning = stemma::session::begin(server.trim()).map_err(|error| format!("{error:#}"))?;
+    let answer = Beginning {
+        code: beginning.sign_in.user_code.clone(),
+        url: beginning.sign_in.verification_uri.clone(),
+        url_complete: beginning.sign_in.verification_uri_complete.clone(),
+        interval: beginning.sign_in.interval.max(1),
+    };
+
+    *signing_in.0.lock().map_err(said)? = Some(beginning);
+
+    Ok(answer)
+}
+
+/// Asks once whether somebody has approved it.
+#[tauri::command]
+fn sign_in_poll(signing_in: tauri::State<'_, SigningIn>) -> Result<String, String> {
+    let beginning = signing_in.0.lock().map_err(said)?.clone();
+    let Some(beginning) = beginning else {
+        return Ok("nothing".to_owned());
+    };
+
+    match stemma::session::collect(&home(), &beginning).map_err(|error| format!("{error:#}"))? {
+        stemma::session::Collected::Waiting => Ok("waiting".to_owned()),
+        stemma::session::Collected::Signed(_) => {
+            *signing_in.0.lock().map_err(said)? = None;
+
+            Ok("signed".to_owned())
+        }
+        stemma::session::Collected::Refused => Ok("refused".to_owned()),
+        stemma::session::Collected::RanOut => Ok("ran_out".to_owned()),
+    }
+}
+
+/// Gives the credential back and forgets it.
+#[tauri::command]
+fn sign_out() -> Result<String, String> {
+    carried_out(stemma::session::log_out)
+}
+
+/// Brings every group this machine can work in into step.
+#[tauri::command]
+fn sync() -> Result<Vec<Stepped>, String> {
+    let mut written = Vec::new();
+    let reports = stemma::sync::run(&home(), &mut written).map_err(|error| format!("{error:#}"))?;
+
+    Ok(reports
+        .into_iter()
+        .map(|report| Stepped {
+            group: report.group,
+            side: report.side.to_string(),
+            outcome: report.outcome.to_string(),
+            parted: matches!(report.outcome, stemma::sync::Outcome::Parted(_, _)),
+            dirty: report.dirty,
+        })
+        .collect())
+}
+
+/// The groups this machine has a repository for.
+#[tauri::command]
+fn groups() -> Result<Vec<String>, String> {
+    let home = home();
+    let config = stemma::config::Config::read(&home.config_file()).map_err(said)?;
+    let workspace = config.workspace_or(home.workspace());
+    let mut found: Vec<String> = config.groups.keys().cloned().collect();
+
+    if let Ok(entries) = std::fs::read_dir(&workspace) {
+        for entry in entries.filter_map(Result::ok) {
+            let name = entry.file_name().to_string_lossy().into_owned();
+
+            if entry.path().is_dir() && !found.contains(&name) {
+                found.push(name);
+            }
+        }
+    }
+
+    found.sort();
+
+    Ok(found)
+}
+
+/// Starts a line.
+#[tauri::command]
+fn new_line(
+    group: String,
+    title: String,
+    question: String,
+    shared: bool,
+) -> Result<String, String> {
+    carried_out(|home, out| stemma::lines::start(home, &group, &title, &question, shared, out))
+}
+
+/// Takes one of this person's own lines out.
+#[tauri::command]
+fn delete_line(path: String) -> Result<String, String> {
+    let path = admitted(&path)?;
+    let at = path
+        .parent()
+        .ok_or_else(|| "the line has no directory".to_owned())?
+        .to_owned();
+
+    carried_out(|home, out| stemma::lines::delete(home, &at, None, out))
+}
+
+/// Moves one of them to the group.
+#[tauri::command]
+fn share_line(path: String, history: bool, mine_to_write: bool) -> Result<String, String> {
+    let path = admitted(&path)?;
+    let at = path
+        .parent()
+        .ok_or_else(|| "the line has no directory".to_owned())?
+        .to_owned();
+
+    carried_out(|home, out| stemma::lines::share(home, &at, None, history, mine_to_write, out))
+}
+
+/// Offers this machine to the instance as one that runs work.
+#[tauri::command]
+fn node_init(groups: Vec<String>) -> Result<String, String> {
+    carried_out(|home, out| stemma::node::init(home, &groups, out).map(|_| ()))
+}
+
+/// Puts the daemon under whatever supervises this machine.
+#[tauri::command]
+fn daemon_install() -> Result<String, String> {
+    carried_out(stemma::daemon::install)
+}
+
+/// Opens a link in whatever the machine uses for links.
+///
+/// Signing in happens in the instance's own pages, in the person's own
+/// browser, where they can see the address they are typing a code into.
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    let opener = match std::env::consts::OS {
+        "macos" => "open",
+        "windows" => "explorer",
+        _ => "xdg-open",
+    };
+
+    std::process::Command::new(opener)
+        .arg(&url)
+        .spawn()
+        .map_err(|error| format!("cannot open {url}: {error}"))?;
+
+    Ok(())
+}
+
+/// What is waiting for this person to read it.
+#[tauri::command]
+fn proposals() -> Result<Vec<Waiting>, String> {
+    let home = home();
+    let credentials = stemma::session::required(&home).map_err(said)?;
+    let server = stemma::api::Server::at(&credentials.server).map_err(said)?;
+
+    Ok(server
+        .proposals(&credentials.token)
+        .map_err(|error| format!("{error:#}"))?
+        .into_iter()
+        .map(|waiting| Waiting {
+            proposal: waiting.proposal,
+            group: waiting.group,
+            line: waiting.line,
+            task: waiting.task,
+            agent: waiting.agent,
+            vendor: waiting.vendor,
+            model: waiting.model,
+        })
+        .collect())
+}
+
+/// One proposal, as what moved.
+#[tauri::command]
+fn proposal(proposal: String) -> Result<Review, String> {
+    let home = home();
+    let credentials = stemma::session::required(&home).map_err(said)?;
+    let server = stemma::api::Server::at(&credentials.server).map_err(said)?;
+    let offered = server
+        .proposal(&credentials.token, &proposal)
+        .map_err(|error| format!("{error:#}"))?;
+
+    let stands = offered.stands.clone().unwrap_or_default();
+    let rows = stemma_core::diff::between(&stands, &offered.source);
+    let frozen = stemma_core::diff::frozen(&stands);
+    let extent = stemma_core::diff::extent(&rows).said();
+
+    Ok(Review {
+        proposal: offered.proposal,
+        group: offered.group,
+        side: offered.side,
+        line: offered.line,
+        task: offered.task,
+        agent: offered.agent,
+        vendor: offered.vendor,
+        model: offered.model,
+        prompt_revision: offered.prompt_revision,
+        state: offered.state,
+        extent,
+        rows: rows
+            .into_iter()
+            .map(|row| Moved {
+                change: match row.change {
+                    stemma_core::diff::Change::Added => "added".to_owned(),
+                    stemma_core::diff::Change::Removed => "removed".to_owned(),
+                    stemma_core::diff::Change::Kept => "kept".to_owned(),
+                },
+                frozen: row.before.is_some_and(|at| frozen.contains(&at)),
+                text: row.text,
+                before: row.before,
+                after: row.after,
+            })
+            .collect(),
+        source: offered.source,
+        lean_source: offered.lean_source,
+        findings: offered.findings,
+    })
+}
+
+/// Records what the person decided about it.
+#[tauri::command]
+fn decide_proposal(proposal: String, decision: String) -> Result<String, String> {
+    carried_out(|home, out| stemma::proposals::decide(home, &proposal, &decision, out))
+}
+
+/// Writes an accepted proposal into this machine's clone.
+#[tauri::command]
+fn apply_proposal(proposal: String) -> Result<String, String> {
+    carried_out(|home, out| stemma::proposals::apply(home, &proposal, out))
+}
+
+/// Admits a definition to the group's vault.
+#[tauri::command]
+fn vault_admit(
+    group: String,
+    siglum: String,
+    name: String,
+    prose: String,
+    lean: String,
+) -> Result<String, String> {
+    carried_out(|home, out| {
+        stemma::vault::admit_text(home, &group, &siglum, &name, &prose, &lean, out)
+    })
+}
+
+/// Admits a proved licence to substitute one definition for another.
+#[tauri::command]
+fn vault_bridge(
+    group: String,
+    left: String,
+    right: String,
+    kind: String,
+    lean: String,
+) -> Result<String, String> {
+    carried_out(|home, out| {
+        stemma::vault::bridge_text(home, &group, &left, &right, &kind, &lean, out)
+    })
+}
+
+/// Attests a correspondence, or withdraws one.
+#[tauri::command]
+fn vault_audit(
+    group: String,
+    target_kind: String,
+    target: String,
+    action: String,
+    note: String,
+) -> Result<String, String> {
+    carried_out(|home, out| {
+        stemma::vault::audit(home, &group, &target_kind, &target, &action, &note, out)
+    })
+}
+
+#[tauri::command]
+fn lines() -> Result<Vec<Known>, String> {
     let home = home();
     let config = stemma::config::Config::read(&home.config_file()).map_err(said)?;
     let workspace = config.workspace_or(home.workspace());
@@ -127,11 +512,16 @@ fn lines() -> Result<Vec<LineEntry>, String> {
                     continue;
                 }
                 let path = entry.path().join(repository::ENTRY);
+
                 if path.is_file() {
-                    found.push(LineEntry {
+                    let source = std::fs::read_to_string(&path).unwrap_or_default();
+
+                    found.push(Known {
                         group: group_name.clone(),
                         side: side.to_owned(),
                         name,
+                        title: stemma_core::source::title(&source),
+                        question: stemma_core::source::question(&source),
                         path: path.display().to_string(),
                     });
                 }
@@ -551,7 +941,27 @@ fn said(error: impl std::fmt::Display) -> String {
 /// Starts the desktop application.
 pub fn run() {
     tauri::Builder::default()
+        .manage(SigningIn::default())
         .invoke_handler(tauri::generate_handler![
+            whoami,
+            sign_in_start,
+            sign_in_poll,
+            sign_out,
+            sync,
+            groups,
+            new_line,
+            delete_line,
+            share_line,
+            node_init,
+            daemon_install,
+            open_link,
+            proposals,
+            proposal,
+            decide_proposal,
+            apply_proposal,
+            vault_admit,
+            vault_bridge,
+            vault_audit,
             lines,
             open_line,
             save_line,

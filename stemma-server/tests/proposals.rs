@@ -132,7 +132,7 @@ async fn the_review_screen_shows_what_moved_and_what_may_not_be_touched() {
     assert!(screen.says("diff__row--added"));
     assert!(screen.says("By induction on the order of the group."));
     assert!(
-        screen.says("diff__row--frozen"),
+        screen.says("diff__row--held-first"),
         "the statement the line rests on is marked where it is"
     );
 
