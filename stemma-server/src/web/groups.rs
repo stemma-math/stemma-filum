@@ -470,8 +470,21 @@ async fn read_work(
 
     for side in [Side::Shared, Side::Private] {
         let scope = Scope::of(side, &signed.user.id);
+        let mut nodes = super::lines::read(instance, &group.id, &scope)
+            .await?
+            .unwrap_or_else(|| Nodes::new(group.id.clone(), side, String::new()));
 
-        if let Some(nodes) = super::lines::read(instance, &group.id, &scope).await? {
+        // A line somebody started a minute ago is in the repository and
+        // in no build yet. It belongs in this list from the moment it
+        // exists, or the screen that made it appears to have done
+        // nothing.
+        for digest in super::lines::unbuilt_in(instance, &group.id, side, signed).await? {
+            if nodes.line(&digest.name).is_none() {
+                nodes.lines.push(digest);
+            }
+        }
+
+        if !nodes.lines.is_empty() {
             found.push((side, nodes));
         }
     }

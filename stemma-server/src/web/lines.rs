@@ -39,12 +39,21 @@ pub async fn view(
         return Err(WebError::NotFound);
     };
 
-    let Some(nodes) = read(&instance, &group.id, &scope).await? else {
-        return Err(WebError::NotFound);
+    let built = read(&instance, &group.id, &scope).await?;
+    let digest = match built.as_ref().and_then(|nodes| nodes.line(&name)).cloned() {
+        Some(digest) => digest,
+        // Nothing has built it yet, which is the ordinary state of a
+        // line somebody started a minute ago. What the source declares
+        // is readable without compiling anything, so the line is here
+        // from the moment it exists — with everything a build adds, and
+        // only that, missing.
+        None => unbuilt(&instance, &group.id, side, &signed, &name)
+            .await?
+            .ok_or(WebError::NotFound)?,
     };
-
-    let Some(digest) = nodes.line(&name).cloned() else {
-        return Err(WebError::NotFound);
+    let nodes = match built {
+        Some(nodes) => nodes,
+        None => Nodes::new(group.id.clone(), side, String::new()),
     };
 
     let policy = instance.policy().await?;
@@ -118,6 +127,93 @@ pub async fn view(
         }),
     )
     .into_response())
+}
+
+/// Every line one repository holds, as its sources declare them.
+pub async fn unbuilt_in(
+    instance: &Instance,
+    group: &GroupId,
+    side: Side,
+    signed: &SignedIn,
+) -> Result<Vec<LineDigest>, WebError> {
+    let repositories = instance.repositories();
+    let path = match side {
+        Side::Shared => repositories.shared(group),
+        Side::Private => repositories.personal(group, &signed.user.id),
+    };
+
+    let names: Vec<Name> = instance
+        .on_disk(move || {
+            let Some(head) = crate::git::head_commit(&path) else {
+                return Ok(Vec::new());
+            };
+
+            Ok(crate::git::lines_at(&path, &head)?
+                .iter()
+                .filter_map(|name| Name::parse(name).ok())
+                .collect())
+        })
+        .await?;
+
+    let mut found = Vec::new();
+
+    for name in names {
+        if let Some(digest) = unbuilt(instance, group, side, signed, &name).await? {
+            found.push(digest);
+        }
+    }
+
+    Ok(found)
+}
+
+/// A line as its source declares it, for one nothing has built yet.
+///
+/// The instance compiles nothing and this does not either: reading the
+/// declarations is the same work the editor does between keystrokes.
+/// What is missing from the answer is everything a build would have
+/// added — the Lean result, the composed document — and the page says
+/// so where it would have shown them.
+async fn unbuilt(
+    instance: &Instance,
+    group: &GroupId,
+    side: Side,
+    signed: &SignedIn,
+    name: &Name,
+) -> Result<Option<LineDigest>, WebError> {
+    let repositories = instance.repositories();
+    let path = match side {
+        Side::Shared => repositories.shared(group),
+        Side::Private => repositories.personal(group, &signed.user.id),
+    };
+    let inside = format!(
+        "{}/{}/{}",
+        stemma_core::repository::LINES,
+        name,
+        stemma_core::repository::ENTRY
+    );
+    let name = name.clone();
+
+    instance
+        .on_disk(move || {
+            let Some(head) = crate::git::head_commit(&path) else {
+                return Ok(None);
+            };
+            let Ok(source) = crate::git::show(&path, &head, &inside) else {
+                return Ok(None);
+            };
+
+            Ok(Some(LineDigest {
+                name,
+                title: stemma_core::source::title(&source),
+                question: stemma_core::source::question(&source),
+                // A source with a fault in it is still a line somebody
+                // is writing; what it declares so far is nothing.
+                line: stemma_core::line::Line::read(&source)
+                    .unwrap_or(stemma_core::line::Line { nodes: Vec::new() }),
+                lean: None,
+            }))
+        })
+        .await
 }
 
 /// Which repository was asked for, and whether this reader may have it.
@@ -323,6 +419,19 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                         p class="quiet" {
                             "Sharing is a move: the group receives the line, and what "
                             "you wrote getting there stays with you."
+                        }
+
+                        form method="post"
+                             action={ "/g/" (group.slug()) "/private/" (digest.name)
+                                      "/delete" } {
+                            (signature(signed))
+                            button class="button button--quiet" type="submit" {
+                                "Take this line out"
+                            }
+                        }
+                        p class="quiet" {
+                            "It stops being in your repository. Every version of it "
+                            "stays in its history."
                         }
                     }
                 }

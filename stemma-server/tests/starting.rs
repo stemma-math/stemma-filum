@@ -502,3 +502,95 @@ async fn publish(harness: &mut Harness, built: &str) {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn a_line_of_your_own_can_be_taken_out_and_its_history_stays() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    start(&mut harness, "Quotient groups", "Does it split?", "me").await;
+
+    let line = harness.get("/g/algebra/private/quotient-groups").await;
+    assert!(line.says("Take this line out"));
+
+    let gone = harness
+        .post(
+            "/g/algebra/private/quotient-groups/delete",
+            &[("form_token", &form_token(&line))],
+        )
+        .await;
+
+    assert_eq!(gone.status, StatusCode::SEE_OTHER);
+    assert_eq!(source(&harness, Some("ana"), "quotient-groups").await, None);
+
+    // The repository still holds every version of it.
+    let kept = harness
+        .instance
+        .read({
+            let repositories = harness.instance.repositories();
+
+            move |connection| {
+                let user = users::by_login(connection, "ana")?.expect("the account");
+                let group = groups::by_slug(connection, &Slug::parse("algebra").unwrap())?
+                    .expect("the group");
+                let path = repositories.personal(&group.id, &user.id);
+                let head = stemma_server::git::head_commit(&path).expect("a branch");
+                let before = format!("{head}~1");
+
+                Ok(stemma_server::git::show(
+                    &path,
+                    &before,
+                    &format!(
+                        "{}/quotient-groups/{}",
+                        repository::LINES,
+                        repository::ENTRY
+                    ),
+                )
+                .is_ok())
+            }
+        })
+        .await
+        .unwrap();
+
+    assert!(kept, "the commit before still has it");
+}
+
+#[tokio::test]
+async fn nobody_takes_out_a_line_the_group_has() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    start(&mut harness, "Quotient groups", "Does it split?", "group").await;
+
+    let token = harness.credential("ana").await;
+    let refused = harness
+        .post_json_with_token("/api/lines/algebra/quotient-groups/delete", &token, "{}")
+        .await;
+
+    assert_eq!(refused.status, StatusCode::NOT_FOUND);
+    assert!(source(&harness, None, "quotient-groups").await.is_some());
+}
+
+#[tokio::test]
+async fn a_line_can_be_read_the_moment_it_exists_and_says_what_is_missing() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    start(
+        &mut harness,
+        "Quotient groups",
+        "Does every finite group split?",
+        "me",
+    )
+    .await;
+
+    // Nothing has built it. It is still there, and the group space
+    // lists it.
+    let space = harness.get("/g/algebra").await;
+    assert!(space.says("Quotient groups"));
+
+    let line = harness.get("/g/algebra/private/quotient-groups").await;
+    assert!(line.status.is_success());
+    assert!(line.says("Does every finite group split?"));
+    assert!(line.says("This line declares nothing yet"));
+}

@@ -479,8 +479,11 @@ pub fn head_commit(path: &Path) -> Option<String> {
 }
 
 /// Reads one file exactly as it stood at a commit in a bare repository.
+///
+/// Exactly: the trailing newline of a text file is part of the file,
+/// and a comparison that lost it would report a change nobody made.
 pub fn show(path: &Path, commit: &str, inside: &str) -> Result<String> {
-    run(path, &["show", &format!("{commit}:{inside}")])
+    whole(path, &["show", &format!("{commit}:{inside}")])
 }
 
 /// Runs git inside a repository.
@@ -493,8 +496,29 @@ fn run_with_input(repository: &Path, arguments: &[&str], input: &str) -> Result<
     run_with(repository, arguments, Some(input), &[])
 }
 
+/// Runs git and hands back exactly what it printed.
+fn whole(repository: &Path, arguments: &[&str]) -> Result<String> {
+    said(repository, arguments, None, &[])
+}
+
 /// Runs git, and turns a failure into something an operator can read.
+///
+/// What git prints is trimmed, because almost everything it is asked
+/// here is one identifier on a line of its own. Reading a file is the
+/// exception and goes through [`whole`].
 fn run_with(
+    repository: &Path,
+    arguments: &[&str],
+    input: Option<&str>,
+    environment: &[(&str, String)],
+) -> Result<String> {
+    Ok(said(repository, arguments, input, environment)?
+        .trim()
+        .to_owned())
+}
+
+/// The whole of what git printed, or what went wrong.
+fn said(
     repository: &Path,
     arguments: &[&str],
     input: Option<&str>,
@@ -540,7 +564,7 @@ fn run_with(
         );
     }
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 #[cfg(test)]

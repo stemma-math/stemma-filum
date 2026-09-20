@@ -11,6 +11,7 @@ pub mod agent;
 pub mod artefact;
 pub mod claim;
 pub mod descent;
+pub mod diff;
 pub mod fact;
 pub mod id;
 pub mod job;

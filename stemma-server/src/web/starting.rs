@@ -336,6 +336,108 @@ async fn moved(
     Ok(())
 }
 
+/// Takes a line of one's own out of the repository.
+pub async fn remove(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path((slug, line)): Path<(String, String)>,
+    axum::Form(form): axum::Form<Removing>,
+) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
+
+    let group = admit(&instance, &signed, &slug).await?;
+    let Ok(name) = Name::parse(&line) else {
+        return Err(WebError::NotFound);
+    };
+
+    gone(&instance, &signed.user, &group, &name).await?;
+
+    Ok(Redirect::to(&format!("/g/{}", group.slug())).into_response())
+}
+
+/// The same, from a machine.
+pub async fn api_remove(
+    State(instance): State<Instance>,
+    credential: super::api::Credential,
+    Path((slug, line)): Path<(String, String)>,
+) -> Result<Response, WebError> {
+    let group = belongs(&instance, &credential.user, &slug).await?;
+    let Ok(name) = Name::parse(&line) else {
+        return Err(WebError::NotFound);
+    };
+
+    gone(&instance, &credential.user, &group, &name).await?;
+
+    Ok(axum::Json(serde_json::json!({
+        "group": group.slug().as_str(),
+        "line": name.as_str(),
+        "gone": true,
+    }))
+    .into_response())
+}
+
+/// What the form that takes a line out sends.
+#[derive(Debug, Default, Deserialize)]
+pub struct Removing {
+    /// The form's own token.
+    #[serde(default)]
+    pub form_token: String,
+}
+
+/// Takes the line out of its author's repository.
+///
+/// Only out of their own: a line the group has is the group's
+/// mathematics, and nothing about it is one person's to remove. Even
+/// here nothing is destroyed — the commit that takes it out is a
+/// commit, and every version of it stays in the history.
+async fn gone(
+    instance: &Instance,
+    who: &crate::store::users::User,
+    group: &Group,
+    name: &Name,
+) -> Result<(), WebError> {
+    let path = instance.repositories().personal(&group.id, &who.id);
+
+    if !crate::git::holds_line(&path, name) {
+        return Err(WebError::NotFound);
+    }
+
+    {
+        let path = path.clone();
+        let name = name.clone();
+        let author_name = who.display_name.clone();
+        let author_email = who.email.clone();
+
+        instance
+            .on_disk(move || {
+                crate::git::drop_line(
+                    &path,
+                    &name,
+                    &crate::git::Author {
+                        name: &author_name,
+                        email: &author_email,
+                    },
+                )?;
+
+                Ok(())
+            })
+            .await?;
+    }
+
+    let id = group.id.clone();
+    let named = name.clone();
+
+    instance
+        .write(move |connection| {
+            lines::forget(connection, &id, Side::Private, &named)?;
+
+            Ok(())
+        })
+        .await?;
+
+    Ok(())
+}
+
 /// The line's source in this person's own repository.
 async fn mine(
     instance: &Instance,

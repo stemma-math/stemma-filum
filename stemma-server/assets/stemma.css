@@ -954,3 +954,67 @@ legend {
     accent-color: var(--ditto);
 }
 
+/* ── What changed ──────────────────────────────────────────────────────
+ *
+ * A proposal arrives whole and is read by what moved. Added and taken
+ * out are told apart by the mark in the margin and by a hairline on the
+ * edge, never by colour: green and red mean a machine proof and a
+ * refutation, and nothing else in the product may borrow them.
+ *
+ * A statement the line rests on carries corner marks, because the guard
+ * forbids touching it and the screen should say so where it is.
+ */
+
+.diff {
+    font: var(--step-2) / 1.6 var(--mono);
+    background: var(--paper-sunk);
+    border: 1px solid var(--rule);
+    padding: var(--space-3) 0;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.diff__row {
+    display: grid;
+    grid-template-columns: 3.5ch 3.5ch 2ch 1fr;
+    gap: var(--space-2);
+    padding: 0 var(--space-3);
+    border-left: 2px solid transparent;
+}
+
+.diff__row--added {
+    border-left-color: var(--ink);
+    background: var(--paper-raise);
+}
+
+.diff__row--removed {
+    border-left-color: var(--rule);
+    color: var(--ink-3);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+}
+
+.diff__row--frozen {
+    position: relative;
+    background:
+        linear-gradient(var(--ink-3), var(--ink-3)) 0 0 / 6px 1px no-repeat,
+        linear-gradient(var(--ink-3), var(--ink-3)) 0 0 / 1px 6px no-repeat,
+        linear-gradient(var(--ink-3), var(--ink-3)) 100% 100% / 6px 1px no-repeat,
+        linear-gradient(var(--ink-3), var(--ink-3)) 100% 100% / 1px 6px no-repeat;
+}
+
+.diff__at {
+    color: var(--ink-3);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.diff__mark {
+    color: var(--ink-3);
+}
+
+.diff__text {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+

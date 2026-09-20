@@ -134,6 +134,21 @@ pub fn share(
     by_name(connection, group, Side::Shared, name)?.context("the line cannot be read back")
 }
 
+/// Forgets a line the repository no longer has.
+///
+/// What the line *was* is in git, which is where it belongs. This row
+/// only ever held who started it and who writes it.
+pub fn forget(connection: &Connection, group: &GroupId, side: Side, name: &Name) -> Result<()> {
+    connection
+        .execute(
+            "DELETE FROM lines WHERE group_id = ?1 AND side = ?2 AND name = ?3",
+            params![group.to_string(), side.as_str(), name.as_str()],
+        )
+        .context("cannot forget the line")?;
+
+    Ok(())
+}
+
 /// One line.
 pub fn by_name(
     connection: &Connection,

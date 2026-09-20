@@ -211,6 +211,7 @@ pub fn router() -> Router<Instance> {
             "/g/{slug}/private/{line}/share",
             get(starting::share_form).post(starting::share),
         )
+        .route("/g/{slug}/private/{line}/delete", post(starting::remove))
         .route("/g/{slug}/vault", get(vault::page_view))
         .route("/g/{slug}/vault/entries", post(vault::admit))
         .route("/g/{slug}/vault/bridges", post(vault::bridge))
@@ -255,6 +256,10 @@ pub fn router() -> Router<Instance> {
         .route("/api/machines/beat", post(machines::beat))
         .route("/api/lines", post(starting::api_start))
         .route("/api/lines/{slug}/{line}/share", post(starting::api_share))
+        .route(
+            "/api/lines/{slug}/{line}/delete",
+            post(starting::api_remove),
+        )
         .route("/api/claims", get(claims::listing).post(claims::take))
         .route("/api/claims/renew", post(claims::renew))
         .route("/api/claims/release", post(claims::release))
@@ -267,7 +272,10 @@ pub fn router() -> Router<Instance> {
         .route("/api/groups/{group}/vault/bridges", post(vault::api_bridge))
         .route("/api/groups/{group}/vault/audits", post(vault::api_audit))
         .route("/api/jobs/{id}/finish", post(jobs::finish))
+        .route("/api/proposals", get(proposals::listing))
         .route("/api/proposals/{id}", get(proposals::accepted))
+        .route("/api/proposals/{id}/review", get(proposals::offered))
+        .route("/api/proposals/{id}/decide", post(proposals::api_decide))
         .route("/proposals/{id}", get(proposals::review))
         .route("/proposals/{id}/decide", post(proposals::decide))
         .route("/api/logout", post(api::sign_out))
