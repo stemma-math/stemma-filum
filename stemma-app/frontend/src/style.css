@@ -174,6 +174,19 @@ code {
     font-size: 15px;
 }
 
+.row:has(.sharing),
+.row:has(.auditing) {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.sharing,
+.auditing {
+    border-left: 1px solid var(--rule);
+    padding: 12px 0 12px 14px;
+    margin-top: 8px;
+}
+
 .row__actions {
     display: flex;
     gap: 6px;

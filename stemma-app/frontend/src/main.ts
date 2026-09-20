@@ -182,11 +182,32 @@ async function drawNewLine() {
   };
 }
 
-async function share(path: string) {
-  const history = window.confirm("Send everything you wrote getting here?\n\nOK sends the whole history. Cancel sends today's state only.");
-  const mine = window.confirm("Keep the writing to yourself?\n\nOK: only you write it, everybody else proposes.\nCancel: anybody in the group, one at a time.");
-  try { tell(await invoke<string>("share_line", { path, history, mineToWrite: mine })); await bringIntoStep(); await go("lines"); }
-  catch (error) { tell(said(error)); }
+/// Sharing is a move, and it asks its two questions where the line is
+/// rather than in a dialogue box that says nothing about them.
+function share(path: string) {
+    const row = document.querySelector<HTMLElement>(`[data-share="${CSS.escape(path)}"]`)?.closest(".row");
+    if (!row || row.querySelector(".sharing")) return;
+    const panel = document.createElement("form");
+    panel.className = "sharing stack";
+    panel.innerHTML = `<p class="quiet">Sharing is a move. The group receives the line; what you wrote getting there stays with you.</p>
+    <fieldset><legend>What the group sees of what you have written</legend>
+      <label class="choice"><input type="radio" name="travels" value="today" checked><span>Today's state only</span></label>
+      <label class="choice"><input type="radio" name="travels" value="everything"><span>Everything from the beginning</span></label>
+    </fieldset>
+    <fieldset><legend>Who can write</legend>
+      <label class="choice"><input type="radio" name="writing" value="author" checked><span>Only me. Everybody else proposes</span></label>
+      <label class="choice"><input type="radio" name="writing" value="anyone"><span>Anybody in the group, one at a time</span></label>
+    </fieldset>
+    <div class="row__actions"><button type="submit">Move it to the group</button><button type="button" class="quiet-button">Not now</button></div>`;
+    row.append(panel);
+    panel.querySelector<HTMLButtonElement>("button.quiet-button")!.onclick = () => panel.remove();
+    panel.onsubmit = async (event) => {
+        event.preventDefault();
+        const history = (panel.querySelector<HTMLInputElement>('input[name="travels"]:checked')!).value === "everything";
+        const mine = (panel.querySelector<HTMLInputElement>('input[name="writing"]:checked')!).value === "author";
+        try { tell(await invoke<string>("share_line", { path, history, mineToWrite: mine })); await bringIntoStep(); await go("lines"); }
+        catch (error) { tell(said(error)); }
+    };
 }
 
 async function takeOut(path: string) {
@@ -529,16 +550,26 @@ async function showVault(group: string) {
     const bridges = vault.bridges.map((bridge) => `<div class="row"><div><p class="row__name">${escape(names.get(bridge.left) ?? bridge.left)} ↔ ${escape(names.get(bridge.right) ?? bridge.right)}</p><p class="quiet identifier">${escape(bridge.kind)}${bridge.derived ? " · derived" : ""} · ${escape(bridge.correspondence)}</p></div>
       <div class="row__actions"><button data-attest-bridge="${escape(bridge.id)}">Attest</button><button data-withdraw-bridge="${escape(bridge.id)}">Withdraw</button></div></div>`).join("");
     target.innerHTML = (entries || `<p class="quiet">Nothing has been admitted yet.</p>`) + (bridges ? `<p class="label">Bridges</p>${bridges}` : "");
-    const audit = async (kind: string, id: string, action: string) => {
-      const note = window.prompt(action === "attest" ? "What did you check?" : "Why is the guarantee withdrawn?");
-      if (note === null) return;
-      try { tell(await invoke<string>("vault_audit", { group, targetKind: kind, target: id, action, note })); await showVault(group); }
-      catch (error) { tell(said(error)); }
+    const audit = (kind: string, id: string, action: string, from: HTMLElement) => {
+      const row = from.closest(".row");
+      if (!row || row.querySelector(".auditing")) return;
+      const panel = document.createElement("form");
+      panel.className = "auditing stack";
+      panel.innerHTML = `<label>${action === "attest" ? "What did you check?" : "Why is the guarantee withdrawn?"}<textarea rows="2" required></textarea></label>
+        <div class="row__actions"><button type="submit">${action === "attest" ? "Attest it" : "Withdraw it"}</button><button type="button" class="quiet-button">Not now</button></div>`;
+      row.append(panel);
+      panel.querySelector<HTMLButtonElement>("button.quiet-button")!.onclick = () => panel.remove();
+      panel.onsubmit = async (event) => {
+        event.preventDefault();
+        const note = panel.querySelector<HTMLTextAreaElement>("textarea")!.value;
+        try { tell(await invoke<string>("vault_audit", { group, targetKind: kind, target: id, action, note })); await showVault(group); }
+        catch (error) { tell(said(error)); }
+      };
     };
-    target.querySelectorAll<HTMLButtonElement>("[data-attest]").forEach((button) => button.onclick = () => audit("entry", button.dataset.attest!, "attest"));
-    target.querySelectorAll<HTMLButtonElement>("[data-withdraw]").forEach((button) => button.onclick = () => audit("entry", button.dataset.withdraw!, "withdraw"));
-    target.querySelectorAll<HTMLButtonElement>("[data-attest-bridge]").forEach((button) => button.onclick = () => audit("bridge", button.dataset.attestBridge!, "attest"));
-    target.querySelectorAll<HTMLButtonElement>("[data-withdraw-bridge]").forEach((button) => button.onclick = () => audit("bridge", button.dataset.withdrawBridge!, "withdraw"));
+    target.querySelectorAll<HTMLButtonElement>("[data-attest]").forEach((button) => button.onclick = () => audit("entry", button.dataset.attest!, "attest", button));
+    target.querySelectorAll<HTMLButtonElement>("[data-withdraw]").forEach((button) => button.onclick = () => audit("entry", button.dataset.withdraw!, "withdraw", button));
+    target.querySelectorAll<HTMLButtonElement>("[data-attest-bridge]").forEach((button) => button.onclick = () => audit("bridge", button.dataset.attestBridge!, "attest", button));
+    target.querySelectorAll<HTMLButtonElement>("[data-withdraw-bridge]").forEach((button) => button.onclick = () => audit("bridge", button.dataset.withdrawBridge!, "withdraw", button));
   } catch (error) { target.textContent = said(error); }
 }
 
