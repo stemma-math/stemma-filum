@@ -125,6 +125,25 @@ pub enum Command {
         settings: SettingsArgs,
     },
 
+    /// Copies everything the instance could not be rebuilt without.
+    Backup {
+        /// Settings given on the command line.
+        #[command(flatten)]
+        settings: SettingsArgs,
+
+        /// The directory to write the archive into.
+        #[arg(long, value_name = "PATH", default_value = ".")]
+        to: PathBuf,
+
+        /// Leave only this many archives in that directory.
+        #[arg(long, value_name = "COUNT")]
+        keep: Option<usize>,
+
+        /// Carry the build outputs too, which the instance can make again.
+        #[arg(long)]
+        with_artefacts: bool,
+    },
+
     /// Brings the database up to the schema this build needs.
     Migrate {
         /// Settings given on the command line.
@@ -315,6 +334,49 @@ mod tests {
         };
 
         assert!(purge && yes);
+    }
+
+    #[test]
+    fn a_backup_goes_to_the_current_directory_unless_told_otherwise() {
+        let Command::Backup {
+            to,
+            keep,
+            with_artefacts,
+            ..
+        } = parse(&["stemma-server", "backup"]).command
+        else {
+            panic!("expected the backup command");
+        };
+
+        assert_eq!(to, PathBuf::from("."));
+        assert!(keep.is_none());
+        assert!(!with_artefacts);
+    }
+
+    #[test]
+    fn a_backup_can_be_told_where_to_go_and_what_to_leave() {
+        let Command::Backup {
+            to,
+            keep,
+            with_artefacts,
+            ..
+        } = parse(&[
+            "stemma-server",
+            "backup",
+            "--to",
+            "/srv/backups",
+            "--keep",
+            "7",
+            "--with-artefacts",
+        ])
+        .command
+        else {
+            panic!("expected the backup command");
+        };
+
+        assert_eq!(to, PathBuf::from("/srv/backups"));
+        assert_eq!(keep, Some(7));
+        assert!(with_artefacts);
     }
 
     #[test]

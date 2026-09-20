@@ -11,7 +11,9 @@ use stemma_server::check::Report;
 use stemma_server::cli::{AdminAction, Cli, Command, UserAction};
 use stemma_server::config::{ConfigFile, Environment, Overrides, Settings};
 use stemma_server::install::{Journal, Options, RemovalOptions};
-use stemma_server::{admin, check, config, db, install, serve, service, setup, status, system};
+use stemma_server::{
+    admin, backup, check, config, db, install, serve, service, setup, status, system,
+};
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
@@ -139,6 +141,24 @@ fn run(cli: Cli) -> Result<ExitCode> {
         Command::Status { settings } => {
             let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
             println!("{}", status::Status::gather(&settings));
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Backup {
+            settings,
+            to,
+            keep,
+            with_artefacts,
+        } => {
+            let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
+            let options = backup::Options {
+                to,
+                keep,
+                artefacts: with_artefacts,
+            };
+
+            println!("{}", backup::take(&settings, &config_path, &options)?);
 
             Ok(ExitCode::SUCCESS)
         }

@@ -7,6 +7,7 @@
 
 pub mod admin;
 pub mod artefacts;
+pub mod backup;
 pub mod check;
 pub mod cli;
 pub mod config;

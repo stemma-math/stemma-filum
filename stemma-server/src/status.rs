@@ -85,21 +85,9 @@ fn count(database: &Database, table: &str) -> Option<i64> {
 
 /// How many repositories are on disk, of both kinds.
 fn count_repositories(settings: &Settings) -> usize {
-    let repositories = crate::git::Repositories::new(settings.paths.git_dir());
-
-    repositories
-        .groups_on_disk()
-        .unwrap_or_default()
-        .iter()
-        .map(|group| {
-            let directory = repositories.root().join(group);
-            let personal = std::fs::read_dir(directory.join("personal"))
-                .map(|entries| entries.filter_map(Result::ok).count())
-                .unwrap_or(0);
-
-            personal + usize::from(crate::git::exists(&directory.join("shared.git")))
-        })
-        .sum()
+    crate::git::Repositories::new(settings.paths.git_dir())
+        .on_disk()
+        .len()
 }
 
 impl fmt::Display for Status {

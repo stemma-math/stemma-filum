@@ -111,6 +111,39 @@ impl Repositories {
 
         Ok(found)
     }
+
+    /// Every repository on disk, in a settled order.
+    ///
+    /// The layout is walked rather than asked of the database, because
+    /// what has to be copied or counted is what is there and not what a
+    /// row says should be.
+    pub fn on_disk(&self) -> Vec<PathBuf> {
+        let mut found = Vec::new();
+
+        for group in self.groups_on_disk().unwrap_or_default() {
+            let directory = self.root.join(&group);
+            let shared = directory.join("shared.git");
+
+            if exists(&shared) {
+                found.push(shared);
+            }
+
+            let Ok(entries) = std::fs::read_dir(directory.join("personal")) else {
+                continue;
+            };
+
+            let mut personal: Vec<PathBuf> = entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| exists(path))
+                .collect();
+
+            personal.sort();
+            found.extend(personal);
+        }
+
+        found
+    }
 }
 
 /// Makes a bare repository, unless it is already there.
@@ -169,6 +202,38 @@ fn seed(path: &Path, manifest: &Manifest) -> Result<()> {
     )?;
 
     run(path, &["update-ref", "refs/heads/main", &commit])?;
+
+    Ok(())
+}
+
+/// Copies a repository, by asking git for it.
+///
+/// A push writes its objects before the reference that names them, so a
+/// copy taken file by file can end up holding a reference to an object
+/// it did not get. Git hands over a set that hangs together or nothing
+/// at all, which is the only kind of copy worth keeping.
+pub fn mirror(from: &Path, to: &Path) -> Result<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("cannot create {}", parent.display()))?;
+    }
+
+    run(
+        Path::new("."),
+        &[
+            "clone",
+            "--quiet",
+            "--mirror",
+            "--no-hardlinks",
+            &from.display().to_string(),
+            &to.display().to_string(),
+        ],
+    )?;
+
+    // A clone remembers where it was made from. A copy that is put back
+    // on a machine has no business fetching from the one it was taken
+    // off, so the remote goes with the rest of the journey.
+    run(to, &["remote", "remove", "origin"])?;
 
     Ok(())
 }
