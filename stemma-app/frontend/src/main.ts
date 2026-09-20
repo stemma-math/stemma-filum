@@ -437,7 +437,10 @@ async function drawMachine() {
   document.querySelector("#offer")!.innerHTML = `<form id="node" class="stack">
     ${where.map((group) => `<label class="choice"><input type="checkbox" name="group" value="${escape(group)}" checked><span>${escape(group)}</span></label>`).join("") || `<p class="quiet">No group on this machine yet.</p>`}
     <div class="row__actions"><button type="submit">Offer this machine</button><button type="button" id="daemon">Install the daemon</button></div>
-    <p class="quiet">The daemon takes work while this machine is on. Nothing runs an agent unless you asked for it.</p></form>`;
+    <p class="quiet">The daemon takes work while this machine is on. Nothing runs an agent unless you asked for it.</p></form>
+    <div class="row"><div><p class="row__name">The command line</p>
+      <p class="quiet">This application carries <code>stemma</code> with it. Everything here can be done from a terminal, and everything a terminal can do is here.</p></div>
+      <div class="row__actions"><button id="install-cli">Install it</button></div></div>`;
   document.querySelector<HTMLFormElement>("#node")!.onsubmit = async (event) => {
     event.preventDefault();
     const groups = [...document.querySelectorAll<HTMLInputElement>('input[name="group"]:checked')].map((box) => box.value);
@@ -445,6 +448,9 @@ async function drawMachine() {
   };
   document.querySelector<HTMLButtonElement>("#daemon")!.onclick = async () => {
     try { tell(await invoke<string>("daemon_install")); } catch (error) { tell(said(error)); }
+  };
+  document.querySelector<HTMLButtonElement>("#install-cli")!.onclick = async () => {
+    try { tell(await invoke<string>("install_cli")); } catch (error) { tell(said(error)); }
   };
   try {
     const panel = await invoke<Machine>("machine");

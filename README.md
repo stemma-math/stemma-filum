@@ -35,6 +35,13 @@ just app
 open target/release/bundle/macos/Stemma.app
 ```
 
+The bundle carries the `stemma` command with it: the application's
+"This machine" panel installs it into `~/.local/bin`, so one install
+gives both surfaces. Everything the application does can be done from
+the command line, and everything the command line does is in the
+application — writing mathematics is the one thing only the application
+offers.
+
 The bundle is suitable for local testing. Its ad-hoc signature has no Apple
 Developer identity, so distribution to another Mac still requires Developer ID
 signing and notarization; those credentials are intentionally not part of this

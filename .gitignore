@@ -7,6 +7,7 @@ AGENTS.override.md
 /stemma-app/frontend/dist
 /stemma-app/frontend/node_modules
 /stemma-app/gen
+/stemma-app/binaries
 .DS_Store
 
 # Local test instances and scratch state.

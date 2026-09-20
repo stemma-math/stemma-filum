@@ -53,13 +53,20 @@ check: format frontend
   cargo test --workspace
 
 [group("app")]
+[doc("Build the command line the application carries with it.")]
+sidecar:
+  cargo build --release -p stemma
+  mkdir -p stemma-app/binaries
+  cp target/release/stemma "stemma-app/binaries/stemma-$(rustc -vV | sed -n 's/^host: //p')"
+
+[group("app")]
 [doc("Run the desktop application with the development frontend.")]
-app-dev:
+app-dev: sidecar
   npm run tauri:dev --prefix {{frontend_dir}}
 
 [group("app")]
 [doc("Build and ad-hoc sign the macOS application.")]
-app:
+app: sidecar
   npm run tauri:build --prefix {{frontend_dir}}
   codesign --force --sign - "{{app_bundle}}"
 
@@ -67,5 +74,6 @@ app:
 [doc("Build and validate the macOS application bundle.")]
 app-smoke: app
   test -x "{{app_bundle}}/Contents/MacOS/stemma-app"
+  test -x "{{app_bundle}}/Contents/MacOS/stemma"
   plutil -lint "{{app_bundle}}/Contents/Info.plist"
   codesign --verify --deep --strict "{{app_bundle}}"

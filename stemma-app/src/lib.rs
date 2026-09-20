@@ -342,6 +342,69 @@ fn daemon_install() -> Result<String, String> {
     carried_out(stemma::daemon::install)
 }
 
+/// Puts the command line where a shell will find it.
+///
+/// The application carries `stemma` with it, so installing one
+/// installs both. The link goes somewhere that needs no privileges:
+/// asking a mathematician for an administrator password to get a
+/// command is asking for the wrong thing.
+#[tauri::command]
+fn install_cli() -> Result<String, String> {
+    let carried = std::env::current_exe()
+        .ok()
+        .and_then(|program| program.parent().map(|beside| beside.join("stemma")))
+        .filter(runnable)
+        .ok_or_else(|| {
+            "this build does not carry the command line: build the application with `just app`"
+                .to_owned()
+        })?;
+
+    let home = std::env::var("HOME").map_err(|_| "there is no home directory".to_owned())?;
+    let directory = PathBuf::from(&home).join(".local").join("bin");
+    let placed = directory.join("stemma");
+
+    std::fs::create_dir_all(&directory).map_err(said)?;
+
+    if placed.exists() || std::fs::symlink_metadata(&placed).is_ok() {
+        std::fs::remove_file(&placed).map_err(said)?;
+    }
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&carried, &placed).map_err(said)?;
+
+    #[cfg(not(unix))]
+    std::fs::copy(&carried, &placed).map_err(said)?;
+
+    let on_path = std::env::var("PATH")
+        .unwrap_or_default()
+        .split(':')
+        .any(|entry| Path::new(entry) == directory);
+
+    Ok(match on_path {
+        true => format!("`stemma` is at {}, and on your path.", placed.display()),
+        false => format!(
+            "`stemma` is at {}. Add that directory to your path: \
+             echo \'export PATH=\"$HOME/.local/bin:$PATH\"\' >> ~/.zshrc",
+            placed.display()
+        ),
+    })
+}
+
+/// Whether a path is something that could be run.
+#[cfg(unix)]
+fn runnable(path: &PathBuf) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(path)
+        .is_ok_and(|about| about.is_file() && about.permissions().mode() & 0o111 != 0)
+}
+
+/// Whether a path is something that could be run.
+#[cfg(not(unix))]
+fn runnable(path: &PathBuf) -> bool {
+    path.is_file()
+}
+
 /// Opens a link in whatever the machine uses for links.
 ///
 /// Signing in happens in the instance's own pages, in the person's own
@@ -954,6 +1017,7 @@ pub fn run() {
             share_line,
             node_init,
             daemon_install,
+            install_cli,
             open_link,
             proposals,
             proposal,
