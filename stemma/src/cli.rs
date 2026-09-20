@@ -48,6 +48,13 @@ pub enum Command {
         command: LineCommand,
     },
 
+    /// Says what machines a group has, and what each of them can run.
+    Machines {
+        /// Which group, when it is not the one this is run inside.
+        #[arg(long)]
+        group: Option<String>,
+    },
+
     /// Says who is writing a line, and takes it or lets it go.
     Claim {
         /// What to do with it.
@@ -111,9 +118,36 @@ pub enum Command {
     },
 }
 
-/// What can be done with a reviewed proposal.
+/// What can be done with a proposal.
 #[derive(Debug, Subcommand)]
 pub enum ProposalCommand {
+    /// Says what is waiting for you to read it.
+    List,
+
+    /// Shows what one proposal would change, and what was checked.
+    Show {
+        /// The proposal to read.
+        proposal: String,
+    },
+
+    /// Signs the words as yours.
+    Accept {
+        /// The proposal to accept.
+        proposal: String,
+    },
+
+    /// Declines them.
+    Reject {
+        /// The proposal to reject.
+        proposal: String,
+    },
+
+    /// Declines them and puts the same question back in the queue.
+    AskAgain {
+        /// The proposal to decline.
+        proposal: String,
+    },
+
     /// Writes and commits an accepted proposal on this machine.
     Apply {
         /// The accepted proposal to write.
@@ -202,6 +236,13 @@ pub enum LineCommand {
         /// Let the whole group see it. Left out, it is yours alone.
         #[arg(long)]
         shared: bool,
+    },
+
+    /// Takes one of yours out of the repository.
+    Delete {
+        /// Which line, when it is not the one this is run inside.
+        #[arg(long)]
+        line: Option<String>,
     },
 
     /// Moves one of yours to the group.
@@ -480,6 +521,64 @@ mod tests {
         assert_eq!(title, "Quotient groups");
         assert_eq!(question, "Does it split?");
         assert!(!shared, "a line is its author's until they say otherwise");
+    }
+
+    #[test]
+    fn a_proposal_is_read_before_it_is_signed() {
+        let Command::Proposal {
+            command: ProposalCommand::Show { proposal },
+        } = Cli::try_parse_from([
+            "stemma",
+            "proposal",
+            "show",
+            "prp:01K5YQ4TQ2VZ8H3M9N0P1R2S3T",
+        ])
+        .unwrap()
+        .command
+        else {
+            panic!("expected a proposal to read");
+        };
+
+        assert_eq!(proposal, "prp:01K5YQ4TQ2VZ8H3M9N0P1R2S3T");
+
+        for answer in ["accept", "reject", "ask-again"] {
+            assert!(
+                Cli::try_parse_from([
+                    "stemma",
+                    "proposal",
+                    answer,
+                    "prp:01K5YQ4TQ2VZ8H3M9N0P1R2S3T"
+                ])
+                .is_ok(),
+                "`{answer}` is one of the three answers"
+            );
+        }
+
+        assert!(
+            Cli::try_parse_from(["stemma", "proposal", "accept"]).is_err(),
+            "accepting says which words are being signed"
+        );
+    }
+
+    #[test]
+    fn the_machines_of_a_group_can_be_asked_for_from_anywhere() {
+        let Command::Machines { group } =
+            Cli::try_parse_from(["stemma", "machines", "--group", "algebra"])
+                .unwrap()
+                .command
+        else {
+            panic!("expected a listing of machines");
+        };
+
+        assert_eq!(group.as_deref(), Some("algebra"));
+
+        let Command::Machines { group } =
+            Cli::try_parse_from(["stemma", "machines"]).unwrap().command
+        else {
+            panic!("expected a listing of machines");
+        };
+
+        assert_eq!(group, None, "inside a clone, it is that group");
     }
 
     #[test]

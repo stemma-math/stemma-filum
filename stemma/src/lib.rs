@@ -20,6 +20,7 @@ pub mod home;
 pub mod jobs;
 pub mod lean;
 pub mod lines;
+pub mod machines;
 pub mod node;
 pub mod pin;
 pub mod proposals;

@@ -50,7 +50,23 @@ pub fn admit(
     out: &mut impl Write,
 ) -> Result<()> {
     let prose = std::fs::read_to_string(prose).context("cannot read the prose")?;
-    let module = checked_module(home, group, lean)?;
+    let module =
+        std::fs::read_to_string(lean).with_context(|| format!("cannot read {}", lean.display()))?;
+
+    admit_text(home, group, siglum, name, &prose, &module, out)
+}
+
+/// The same, from text somebody typed rather than from files.
+pub fn admit_text(
+    home: &Home,
+    group: &str,
+    siglum: &str,
+    name: &str,
+    prose: &str,
+    lean: &str,
+    out: &mut impl Write,
+) -> Result<()> {
+    let module = checked(home, group, lean)?;
     let credentials = session::required(home)?;
     let id = Server::at(&credentials.server)?.admit_vault_entry(
         &credentials.token, group,
@@ -70,7 +86,23 @@ pub fn bridge(
     lean: &Path,
     out: &mut impl Write,
 ) -> Result<()> {
-    let module = checked_module(home, group, lean)?;
+    let module =
+        std::fs::read_to_string(lean).with_context(|| format!("cannot read {}", lean.display()))?;
+
+    bridge_text(home, group, left, right, kind, &module, out)
+}
+
+/// The same, from text somebody typed rather than from a file.
+pub fn bridge_text(
+    home: &Home,
+    group: &str,
+    left: &str,
+    right: &str,
+    kind: &str,
+    lean: &str,
+    out: &mut impl Write,
+) -> Result<()> {
+    let module = checked(home, group, lean)?;
     let credentials = session::required(home)?;
     let id = Server::at(&credentials.server)?.admit_bridge(
         &credentials.token,
@@ -100,9 +132,8 @@ pub fn audit(
     Ok(())
 }
 
-fn checked_module(home: &Home, group: &str, path: &Path) -> Result<String> {
-    let module =
-        std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
+fn checked(home: &Home, group: &str, module: &str) -> Result<String> {
+    let module = module.to_owned();
     let config = Config::read(&home.config_file())?;
     let clone = config
         .group_directory(group, &config.workspace_or(home.workspace()))
@@ -111,5 +142,6 @@ fn checked_module(home: &Home, group: &str, path: &Path) -> Result<String> {
     let pins = build::group_pins(&clone, &manifest);
     let scratch: PathBuf = home.cache_dir().join("lean").join("vault-check.lean");
     crate::lean::check_offered(&clone, &pins, &module, &scratch).map_err(anyhow::Error::msg)?;
+
     Ok(module)
 }

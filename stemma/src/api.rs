@@ -239,6 +239,64 @@ pub struct Asking {
     pub machine: Option<String>,
 }
 
+/// One proposal waiting for a person.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Waiting {
+    /// Its identifier.
+    pub proposal: String,
+    /// The group's short name.
+    pub group: String,
+    /// Which of its repositories.
+    pub side: String,
+    /// Which line of work.
+    pub line: String,
+    /// What was asked for.
+    pub task: String,
+    /// Which agent did it.
+    pub agent: String,
+    /// Who supplied that agent.
+    pub vendor: String,
+    /// The concrete model.
+    pub model: String,
+    /// Where review has got to.
+    pub state: String,
+}
+
+/// One proposal, with the version it would replace.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Offered {
+    /// Its identifier.
+    pub proposal: String,
+    /// The group's short name.
+    pub group: String,
+    /// Which of its repositories.
+    pub side: String,
+    /// Which line of work.
+    pub line: String,
+    /// The commit it was written against.
+    pub commit: String,
+    /// What was asked for.
+    pub task: String,
+    /// Which agent did it.
+    pub agent: String,
+    /// Who supplied that agent.
+    pub vendor: String,
+    /// The concrete model.
+    pub model: String,
+    /// Which prompt contract produced it.
+    pub prompt_revision: String,
+    /// Where review has got to.
+    pub state: String,
+    /// The source it would replace, when the instance still has it.
+    pub stands: Option<String>,
+    /// The source it offers.
+    pub source: String,
+    /// The Lean module beside it, when formal work changed.
+    pub lean_source: Option<String>,
+    /// What the instance checked before a person was asked.
+    pub findings: Vec<String>,
+}
+
 /// What starting a line asks for.
 #[derive(Debug, Clone, Serialize)]
 pub struct Starting {
@@ -628,6 +686,41 @@ impl Server {
             .as_str()
             .map(str::to_owned)
             .context("the instance did not say which job it made")
+    }
+
+    /// What this person still has to review.
+    pub fn proposals(&self, token: &str) -> Result<Vec<Waiting>> {
+        let answer: serde_json::Value = self.read(token, "/api/proposals")?;
+
+        serde_json::from_value(answer["proposals"].clone())
+            .context("the instance answered with something this build does not understand")
+    }
+
+    /// One proposal, with the version it would replace.
+    pub fn proposal(&self, token: &str, proposal: &str) -> Result<Offered> {
+        self.read(token, &format!("/api/proposals/{proposal}/review"))
+    }
+
+    /// Records a decision: `accept`, `reject` or `ask_again`.
+    pub fn decide_proposal(&self, token: &str, proposal: &str, decision: &str) -> Result<()> {
+        let _: serde_json::Value = self.ask(
+            token,
+            &format!("/api/proposals/{proposal}/decide"),
+            &serde_json::json!({ "decision": decision }),
+        )?;
+
+        Ok(())
+    }
+
+    /// Takes a line of one's own out of the repository.
+    pub fn delete_line(&self, token: &str, group: &str, line: &str) -> Result<()> {
+        let _: serde_json::Value = self.ask(
+            token,
+            &format!("/api/lines/{group}/{line}/delete"),
+            &serde_json::json!({}),
+        )?;
+
+        Ok(())
     }
 
     /// Starts a line.

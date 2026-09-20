@@ -52,6 +52,32 @@ pub fn start(
     Ok(())
 }
 
+/// Takes a line of one's own out of the repository.
+pub fn delete(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
+    let credentials = session::required(home)?;
+    let server = Server::at(&credentials.server)?;
+
+    let clone = crate::git::containing(at)
+        .context("this is not inside a clone: run it from a group's repository")?;
+    let manifest = crate::build::read_manifest(&clone)?;
+    let name = crate::jobs::line_of(&clone, at, line)?;
+
+    server.delete_line(
+        &credentials.token,
+        manifest.group.slug().as_str(),
+        name.as_str(),
+    )?;
+
+    writeln!(out, "{name}  taken out")?;
+    writeln!(
+        out,
+        "  every version of it stays in the repository's history"
+    )?;
+    writeln!(out, "  `stemma sync` takes it out of this machine too")?;
+
+    Ok(())
+}
+
 /// Moves a line to the group.
 pub fn share(
     home: &Home,

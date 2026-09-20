@@ -91,6 +91,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     question,
                     shared,
                 } => stemma::lines::start(&home, &group, &title, &question, shared, &mut out)?,
+                LineCommand::Delete { line } => {
+                    stemma::lines::delete(&home, &here, line.as_deref(), &mut out)?
+                }
                 LineCommand::Share {
                     line,
                     history,
@@ -199,12 +202,35 @@ fn run(cli: Cli) -> Result<ExitCode> {
             }
         },
 
-        Command::Proposal { command } => match command {
-            ProposalCommand::Apply { proposal } => {
-                stemma::proposals::apply(&home, &proposal, &mut out)?;
-                Ok(ExitCode::SUCCESS)
+        Command::Machines { group } => {
+            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
+            stemma::machines::list(&home, &here, group.as_deref(), &mut out)?;
+
+            Ok(ExitCode::SUCCESS)
+        }
+
+        Command::Proposal { command } => {
+            match command {
+                ProposalCommand::List => stemma::proposals::list(&home, &mut out)?,
+                ProposalCommand::Show { proposal } => {
+                    stemma::proposals::show(&home, &proposal, &mut out)?
+                }
+                ProposalCommand::Accept { proposal } => {
+                    stemma::proposals::decide(&home, &proposal, "accept", &mut out)?
+                }
+                ProposalCommand::Reject { proposal } => {
+                    stemma::proposals::decide(&home, &proposal, "reject", &mut out)?
+                }
+                ProposalCommand::AskAgain { proposal } => {
+                    stemma::proposals::decide(&home, &proposal, "ask_again", &mut out)?
+                }
+                ProposalCommand::Apply { proposal } => {
+                    stemma::proposals::apply(&home, &proposal, &mut out)?
+                }
             }
-        },
+
+            Ok(ExitCode::SUCCESS)
+        }
 
         Command::Vault { command } => {
             match command {

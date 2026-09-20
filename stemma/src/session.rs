@@ -32,6 +32,67 @@ pub fn machine_label() -> String {
     }
 }
 
+/// A sign-in somebody has to approve before it means anything.
+///
+/// Kept apart from the waiting so that a window can show the code and
+/// stay answerable meanwhile. The command line does the same thing with
+/// a loop around it.
+#[derive(Debug, Clone)]
+pub struct Beginning {
+    /// The instance being signed in to.
+    pub address: String,
+    /// What the instance handed this machine.
+    pub sign_in: crate::api::SignIn,
+}
+
+/// What asking the instance again came back with.
+#[derive(Debug, Clone)]
+pub enum Collected {
+    /// Nobody has answered yet.
+    Waiting,
+    /// Somebody said yes, and the credential is kept.
+    Signed(Credentials),
+    /// Somebody said no.
+    Refused,
+    /// Nobody answered in time.
+    RanOut,
+}
+
+/// Asks an instance to let this machine in.
+pub fn begin(address: &str) -> Result<Beginning> {
+    let server = Server::at(address)?;
+
+    Ok(Beginning {
+        address: server.address().to_owned(),
+        sign_in: server.start_sign_in(&machine_label())?,
+    })
+}
+
+/// Asks once whether somebody has answered, and keeps the credential
+/// when they have.
+pub fn collect(home: &Home, beginning: &Beginning) -> Result<Collected> {
+    let server = Server::at(&beginning.address)?;
+
+    Ok(
+        match server.collect_sign_in(&beginning.sign_in.device_code)? {
+            Answer::Waiting => Collected::Waiting,
+            Answer::Refused => Collected::Refused,
+            Answer::RanOut => Collected::RanOut,
+            Answer::Admitted { token, user } => {
+                let credentials = Credentials {
+                    server: server.address().to_owned(),
+                    user,
+                    token,
+                };
+
+                credentials.write(&home.credentials_file())?;
+
+                Collected::Signed(credentials)
+            }
+        },
+    )
+}
+
 /// Signs this machine in, waiting for somebody to approve it.
 pub fn log_in(home: &Home, address: &str, out: &mut impl Write) -> Result<Credentials> {
     let server = Server::at(address)?;
