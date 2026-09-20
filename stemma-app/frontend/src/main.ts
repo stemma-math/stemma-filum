@@ -3,6 +3,7 @@ import "@fontsource/archivo/latin-600.css";
 import "@fontsource/iosevka/latin-400.css";
 import "@fontsource/libertinus-serif/latin-400.css";
 import "./style.css";
+import { draw } from "../../../assets/descent.js";
 
 declare global { interface Window { __TAURI__: { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } } } }
 const invoke = window.__TAURI__.core.invoke;
@@ -45,6 +46,9 @@ let writing = false;
 let decisions = new Map<string, "here" | "there">();
 let saveTimer = 0;
 let previewTimer = 0;
+let spans: string[][] = [];
+let descent: unknown = null;
+let showing: "document" | "descent" = "document";
 
 function escape(text: string) { const node = document.createElement("span"); node.textContent = text; return node.innerHTML; }
 function said(error: unknown) { return String(error).replace(/^Error:\s*/, ""); }
@@ -231,7 +235,9 @@ async function bringIntoStep() {
 async function open(path: string) {
   try {
     current = await invoke<OpenLine>("open_line", { path });
+    descent = null;
     choices = await invoke<Offer[]>("offers", { group: current.entry.group }).catch(() => []);
+    spans = await audited(current.entry.group);
     await go("editor");
     await takeClaim();
     await drawParted();
@@ -241,6 +247,18 @@ async function open(path: string) {
   } catch (error) { tell(said(error)); }
 }
 
+/// The pairs of definitions an audited substitution joins.
+async function audited(group: string): Promise<string[][]> {
+  try {
+    const vault = await invoke<Vault>("vault", { group });
+    const sigla = new Map(vault.entries.map((entry) => [entry.id, entry.siglum]));
+    return vault.bridges
+      .filter((bridge) => bridge.correspondence === "audited")
+      .map((bridge) => [sigla.get(bridge.left), sigla.get(bridge.right)])
+      .filter((pair): pair is string[] => pair.every((siglum) => typeof siglum === "string"));
+  } catch { return []; }
+}
+
 function drawEditor() {
   if (!current) { go("lines"); return; }
   body().innerHTML = `<main class="apparatus">
@@ -248,7 +266,11 @@ function drawEditor() {
       <p class="label">APPARATUS</p><div id="nodes"></div><pre id="source-diagnostics"></pre>
     </aside>
     <section class="writing"><textarea id="editor" spellcheck="false"></textarea></section>
-    <section class="preview"><div id="page"><p class="empty">The composed document will appear here.</p></div></section>
+    <section class="preview">
+      <div class="tabs"><button data-pane="document" class="here">Document</button><button data-pane="descent">Descent</button></div>
+      <div id="page"><p class="empty">The composed document will appear here.</p></div>
+      <figure class="descent" hidden><canvas class="descent__canvas" role="img" aria-label="The descent of this line"></canvas></figure>
+    </section>
     <aside id="register">
       <section><p class="label">LINE</p><p class="row__name">${escape(current.entry.name)}</p><p class="quiet identifier">${escape(current.entry.group)} · ${escape(current.entry.side)}</p><span id="save" class="quiet">saved</span></section>
       <section><p class="label">CLAIM</p><div id="claim">—</div></section>
@@ -260,17 +282,47 @@ function drawEditor() {
   const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
   editor.value = current.source;
   editor.oninput = changed;
+  body().querySelectorAll<HTMLButtonElement>(".tabs button").forEach((button) => button.onclick = () => showPane(button.dataset.pane as "document" | "descent"));
+  showPane(showing);
   refreshJobs();
 }
 
 function editor() { return document.querySelector<HTMLTextAreaElement>("#editor")!; }
+
+/// The composed document, or the shape of the line. Both are of what
+/// is in the editor right now, not of the last thing a machine built.
+function showPane(pane: "document" | "descent") {
+  showing = pane;
+  const page = document.querySelector<HTMLElement>("#page");
+  const figure = document.querySelector<HTMLElement>(".descent");
+  if (!page || !figure) return;
+  page.hidden = pane !== "document";
+  figure.hidden = pane !== "descent";
+  document.querySelectorAll<HTMLButtonElement>(".tabs button").forEach((button) => button.classList.toggle("here", button.dataset.pane === pane));
+  if (pane === "descent") drawDescent();
+}
+
+/// Draws the descent of what is in the editor.
+async function drawDescent() {
+  const figure = document.querySelector<HTMLElement>(".descent");
+  if (!figure || !current) return;
+  const verified = current.lean?.compiled ? current.lean.statements : [];
+  try {
+    const next = await invoke<unknown>("descent", { source: editor().value, verified, bridges: spans });
+    // Handing the previous one over is what lets the drawing part a
+    // box when a lemma has just been promoted out of it.
+    draw(figure, next, descent);
+    descent = next;
+  } catch (error) { tell(said(error)); }
+}
 function saved(state: string) { const mark = document.querySelector("#save"); if (mark) mark.textContent = state; }
 
 function changed() {
   if (!current || !writing) return;
   saved("saving");
   window.clearTimeout(saveTimer); window.clearTimeout(previewTimer);
-  saveTimer = window.setTimeout(save, 450); previewTimer = window.setTimeout(render, 650);
+  saveTimer = window.setTimeout(save, 450);
+  previewTimer = window.setTimeout(() => { if (showing === "descent") drawDescent(); else render(); }, 650);
 }
 
 async function save() {

@@ -28,8 +28,10 @@ const STYLESHEET: &str = include_str!("../../assets/stemma.css");
 ///
 /// Everything else is rendered here; this draws the one thing a server
 /// cannot render as text without lying about it, and the page it is on
-/// keeps the list it would otherwise have shown.
-const DESCENT: &str = include_str!("../../assets/descent.js");
+/// keeps the list it would otherwise have shown. The application draws
+/// its graph with the same file, so that one change to the trace
+/// changes both.
+const DESCENT: &str = include_str!("../../../assets/descent.js");
 
 /// The faces the design names, subset to the Latin these pages set.
 ///

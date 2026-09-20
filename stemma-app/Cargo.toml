@@ -19,6 +19,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 stemma = { path = "../stemma" }
 stemma-core.workspace = true
 tauri = { version = "2.11", features = [] }

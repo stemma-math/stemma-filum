@@ -92,7 +92,7 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 title { (chrome.title) " — " (chrome.instance) }
                 link rel="stylesheet" href=(STYLESHEET_PATH);
                 @if chrome.draws {
-                    script src=(DESCENT_PATH) defer {}
+                    script src=(DESCENT_PATH) type="module" {}
                 }
             }
             body {

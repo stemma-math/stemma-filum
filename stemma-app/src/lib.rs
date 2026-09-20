@@ -342,6 +342,34 @@ fn daemon_install() -> Result<String, String> {
     carried_out(stemma::daemon::install)
 }
 
+/// Where everything in this line sits, as a stemma codicum.
+///
+/// Worked out from what is in the editor rather than from the last
+/// thing a machine built, so the graph moves while somebody writes.
+/// The instance draws the same placement with the same file.
+#[tauri::command]
+fn descent(
+    source: String,
+    verified: Vec<String>,
+    bridges: Vec<Vec<String>>,
+) -> Result<serde_json::Value, String> {
+    let Ok(line) = Line::read(&source) else {
+        return Ok(serde_json::Value::Null);
+    };
+
+    let verified: Vec<stemma_core::line::Siglum> =
+        verified.iter().filter_map(|at| at.parse().ok()).collect();
+    let spanned: Vec<(stemma_core::line::Siglum, stemma_core::line::Siglum)> = bridges
+        .iter()
+        .filter_map(|pair| match pair.as_slice() {
+            [left, right] => Some((left.parse().ok()?, right.parse().ok()?)),
+            _ => None,
+        })
+        .collect();
+
+    serde_json::to_value(stemma_core::descent::of(&line, &verified, &spanned)).map_err(said)
+}
+
 /// Puts the command line where a shell will find it.
 ///
 /// The application carries `stemma` with it, so installing one
@@ -1017,6 +1045,7 @@ pub fn run() {
             share_line,
             node_init,
             daemon_install,
+            descent,
             install_cli,
             open_link,
             proposals,

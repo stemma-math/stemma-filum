@@ -399,6 +399,24 @@ textarea#editor {
     background: #353430;
 }
 
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+}
+
+.descent {
+    margin: 0;
+    overflow: auto;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    padding: 16px;
+}
+
+.descent__canvas {
+    display: block;
+}
+
 #page {
     background: white;
     min-height: 100%;

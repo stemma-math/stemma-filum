@@ -4807,6 +4807,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "serde",
+ "serde_json",
  "stemma",
  "stemma-core",
  "tauri",

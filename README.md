@@ -54,6 +54,14 @@ command. Set `STEMMA_HOME` to an absolute directory to isolate a test account:
 STEMMA_HOME="$PWD/.test-state/client" just app-dev
 ```
 
+## Shared assets
+
+`assets/` holds what both surfaces draw with. The descent — the line as a
+stemma codicum — is drawn by one file there: the server serves it to the
+browser, and the desktop application imports the same file. Two drawings
+of the same graph would start to differ the first time either was
+touched.
+
 ## Typefaces
 
 The server carries the four faces the interface is set in — Libertinus Serif,
