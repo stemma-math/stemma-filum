@@ -21,6 +21,7 @@ alias fmt := format
 [group("test")]
 [doc("Type-check and build the frontend.")]
 frontend:
+  npm test --prefix {{frontend_dir}}
   npm run check --prefix {{frontend_dir}}
   npm run build --prefix {{frontend_dir}}
 
@@ -32,6 +33,7 @@ test:
 [group("test")]
 [doc("Test the desktop shell and frontend.")]
 test-app:
+  npm test --prefix {{frontend_dir}}
   cargo test -p stemma-app
   npm run check --prefix {{frontend_dir}}
   npm run build --prefix {{frontend_dir}}

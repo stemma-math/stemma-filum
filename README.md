@@ -8,7 +8,7 @@ model, and the Tauri desktop application.
 
 - macOS 12 or newer to build the macOS application
 - Rust from `rust-toolchain.toml`
-- Node.js and npm
+- Node.js 22.12 or newer and npm
 - Just
 - Xcode Command Line Tools
 - Git
@@ -79,10 +79,11 @@ The normal pre-commit suite is:
 just check
 ```
 
-It checks formatting, runs Clippy with warnings denied, type-checks and builds
-the frontend, and runs the complete Rust workspace test suite. The repository
-transport integration tests bind a loopback TCP port; run them directly if a
-sandbox blocks network binding:
+It checks formatting, runs Clippy with warnings denied, tests, type-checks and
+builds the frontend, and runs the complete Rust workspace test suite. The
+client HTTP tests and repository transport integration tests bind loopback TCP
+ports. Run the suite with local network permission if a sandbox blocks binding.
+The repository transport tests can also be run separately:
 
 ```sh
 just test-repositories
