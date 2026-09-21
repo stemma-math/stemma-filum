@@ -381,9 +381,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             div class="apparatus__document" {
                 @if digest.line.nodes.is_empty() {
                     p class="empty" {
-                        "This line declares nothing yet. What appears here is what its "
-                        "source says: the definitions, the statements the line rests on, "
-                        "and the boxes between them."
+                        "This line does not contain any declarations yet."
                     }
                 }
 
@@ -418,8 +416,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                             }
                         }
                         p class="quiet" {
-                            "Sharing is a move: the group receives the line, and what "
-                            "you wrote getting there stays with you."
+                            "The current line moves to the shared group repository."
                         }
 
                         form method="post"
@@ -431,8 +428,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                             }
                         }
                         p class="quiet" {
-                            "It stops being in your repository. Every version of it "
-                            "stays in its history."
+                            "The line is removed from your repository, but its history is preserved."
                         }
                     }
                 }
@@ -537,7 +533,7 @@ fn drawn_box(
                 } @else {
                     // Nothing known and nothing attempted look the same
                     // here, because in both cases nothing is known.
-                    span { "nothing here yet" }
+                    span { "Not completed" }
                 }
             }
 
@@ -572,13 +568,13 @@ fn claim_block(
             p class="label" { "Claim" }
 
             @match writing {
-                None => p class="quiet" { "Nobody is writing this line." }
+                None => p class="quiet" { "This line is available to edit." }
                 Some(claim) => {
                     p { (claim.label) " is writing it" }
                     p class="quiet" { (claim.held().lapses_in()) }
 
                     @if claim.asked {
-                        p class="quiet" { "It has been asked for." }
+                        p class="quiet" { "Another contributor has requested access." }
                     }
 
                     @if claim.owner == signed.user.id {
@@ -608,10 +604,10 @@ fn register(
 
     html! {
         div class="block" {
-            p class="label" { "What the line rests on" }
+            p class="label" { "Central statements" }
 
             @if central.is_empty() {
-                p class="empty" { "Nothing is declared central yet." }
+                p class="empty" { "No central statements have been declared." }
             } @else {
                 ul class="register" {
                     @for node in central {
@@ -632,7 +628,7 @@ fn register(
         div class="block" {
             p class="label" { "Boxes" }
             p class="numeric" {
-                (boxes.len()) " in all, " (empty) " with nothing in them"
+                (boxes.len()) " total, " (empty) " incomplete"
             }
         }
 
@@ -641,7 +637,7 @@ fn register(
             p class="quiet identifier" { (nodes.commit) }
             @match &nodes.typst {
                 Some(pinned) => p class="quiet" { "typst " (pinned) " is pinned" }
-                None => p class="quiet" { "nothing is pinned yet" }
+                None => p class="quiet" { "No Typst version is pinned." }
             }
             p class="quiet" {
                 (digest.line.nodes.len()) " statements, "

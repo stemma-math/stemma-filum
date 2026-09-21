@@ -197,7 +197,7 @@ async fn a_line_one_machine_is_writing_is_not_taken_by_the_other() {
     assert_eq!(parsed(&asked)["asked"].as_bool(), Some(true));
 
     let line = harness.get(&format!("/g/algebra/shared/{LINE}")).await;
-    assert!(line.says("It has been asked for."));
+    assert!(line.says("Another contributor has requested access."));
 }
 
 #[tokio::test]
@@ -247,7 +247,7 @@ async fn the_owner_can_hand_back_a_line_their_own_machine_is_holding() {
     assert_eq!(handed.status, StatusCode::SEE_OTHER);
 
     let after = harness.get(&format!("/g/algebra/shared/{LINE}")).await;
-    assert!(after.says("Nobody is writing this line."));
+    assert!(after.says("This line is available to edit."));
 }
 
 #[tokio::test]

@@ -116,8 +116,8 @@ async fn a_group_with_nothing_built_says_where_a_line_would_come_from() {
 
     let page = harness.get("/g/algebra").await;
 
-    assert!(page.says("Nothing has been built for this group yet"));
-    assert!(page.says("this instance compiles nothing itself"));
+    assert!(page.says("No lines have been published for this group yet"));
+    assert!(page.says("Create one from a connected machine"));
 }
 
 #[tokio::test]
@@ -153,12 +153,9 @@ async fn a_box_between_two_central_statements_is_drawn_as_one() {
     let line = harness.get("/g/algebra/shared/quotient-groups").await;
 
     assert!(line.says("black box"));
-    assert!(
-        line.says("nothing here yet"),
-        "an empty box says so plainly"
-    );
+    assert!(line.says("Not completed"), "an empty box says so plainly");
     assert!(line.says("statements between the two it rests between"));
-    assert!(line.says("3 in all, 2 with nothing in them"));
+    assert!(line.says("3 total, 2 incomplete"));
 
     // A gap is hatched, never coloured: it is a declared absence, not a
     // failure and not an alarm.

@@ -81,9 +81,7 @@ fn body(
 
             @if memberships.is_empty() {
                 p class="empty" {
-                    "You are not in any group yet. A group is joined by invitation: "
-                    "somebody already in one sends you a link, and it puts you in with "
-                    "the role they chose."
+                    "You have not joined a research group yet. Use an invitation or request a new group."
                 }
             } @else {
                 ul class="register" {
@@ -102,7 +100,7 @@ fn body(
             }
 
             @if may_ask {
-                p { a href="/groups/new" { "Ask for a group" } }
+                p { a href="/groups/new" { "Request a research group" } }
             }
         }
 
@@ -146,7 +144,7 @@ fn body(
 
         @if !requests.is_empty() {
             div class="block" {
-                p class="label" { "What you have asked for" }
+                p class="label" { "Your group requests" }
                 ul class="register" {
                     @for request in requests {
                         (crate::web::groups::own_request(request))

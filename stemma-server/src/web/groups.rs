@@ -86,7 +86,7 @@ pub async fn request(
     }
     if asked.reason.trim().is_empty() {
         return Ok(refuse(
-            "Say what the group is for. A maintainer reads this.".to_owned(),
+            "Describe the purpose of the research group.".to_owned(),
             &asked,
         ));
     }
@@ -123,7 +123,7 @@ fn chrome(
     signed: &SignedIn,
 ) -> Chrome {
     Chrome::anonymous(
-        "Ask for a group",
+        "Request a research group",
         super::front::instance_name(instance, policy),
     )
     .signed_in(signed.user.clone(), signed.maintainer)
@@ -135,10 +135,9 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
 
     html! {
         div class="sheet--narrow stack" {
-            h1 { "Ask for a group" }
+            h1 { "Request a research group" }
             p class="quiet" {
-                "A maintainer of this instance reads the request. If they approve it, "
-                "the group exists and you are its owner."
+                "Submit a group creation request. A platform maintainer will review it."
             }
 
             @if let Some(problem) = problem {
@@ -159,13 +158,12 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
                     input type="text" id="slug" name="slug" value=(value(|asked| &asked.slug))
                           required;
                     span class="field__hint" {
-                        "Lowercase letters, digits and hyphens. The group's repositories are "
-                        "reached through it, so people will type it and pass it around."
+                        "Use lowercase letters, numbers and hyphens."
                     }
                 }
 
                 div class="field" {
-                    label for="reason" { "What is it for?" }
+                    label for="reason" { "Purpose" }
                     textarea id="reason" name="reason" required { (value(|asked| &asked.reason)) }
                 }
 
@@ -179,9 +177,9 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
 fn closed() -> Markup {
     html! {
         div class="sheet--narrow stack" {
-            h1 { "Groups are not requested here" }
+            h1 { "Group requests are closed" }
             p {
-                "On this instance a maintainer creates groups. Ask whoever runs it."
+                "Contact a platform maintainer to create a research group."
             }
             p { a href="/" { "Back to your home" } }
         }
@@ -572,9 +570,7 @@ fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
 
             @if nothing {
                 p class="empty" {
-                    "Nothing has been built for this group yet. A line appears here once "
-                    "somebody writes it on their own machine and sends it up: this "
-                    "instance compiles nothing itself."
+                    "No lines have been published for this group yet. Create one from a connected machine."
                 }
             }
 
@@ -631,7 +627,7 @@ fn invitations_block(
                     @match delivered {
                         Some(said) => p { (said) }
                         None => p {
-                            "Send this link to the person you are inviting. It is shown once."
+                            "Copy and share this invitation link now. It will not be shown again."
                         }
                     }
                     p class="secret" { (link) }
@@ -639,7 +635,7 @@ fn invitations_block(
             }
 
             @if invitations.is_empty() {
-                p class="empty" { "No invitation is out at the moment." }
+                p class="empty" { "There are no active invitations." }
             } @else {
                 ul class="register" {
                     @for invitation in invitations {
@@ -671,28 +667,27 @@ fn invitations_block(
                 (signature(signed))
 
                 div class="field" {
-                    label for="email" { "Their email address, if you know it" }
+                    label for="email" { "Email address (optional)" }
                     input type="email" id="email" name="email";
                     span class="field__hint" {
-                        "Only used to label the invitation, and to send the link where "
-                        "this instance can send mail."
+                        "Used to identify the invitation and send the link when email is configured."
                     }
                 }
 
                 div class="field" {
-                    label for="role" { "What they will be able to do" }
+                    label for="role" { "Role" }
                     select id="role" name="role" {
-                        option value="member" { "Member — reads and writes the mathematics" }
+                        option value="member" { "Member: reads and writes mathematics" }
                         @if role.is_at_least(GroupRole::Admin) {
-                            option value="admin" { "Admin — also invites and manages the group" }
+                            option value="admin" { "Admin: invites members and manages the group" }
                         }
                         @if role.is_at_least(GroupRole::Owner) {
-                            option value="owner" { "Owner — also transfers or dissolves it" }
+                            option value="owner" { "Owner: can transfer or dissolve the group" }
                         }
                     }
                 }
 
-                button class="button" type="submit" { "Make an invitation" }
+                button class="button" type="submit" { "Create invitation" }
             }
         }
     }

@@ -55,7 +55,7 @@ async fn somebody_asks_for_a_group_and_a_maintainer_makes_it() {
     register(&mut harness, "ana").await;
 
     let form = harness.get("/groups/new").await;
-    assert!(form.says("Ask for a group"));
+    assert!(form.says("Request a research group"));
 
     let asked = harness
         .post(
@@ -72,7 +72,7 @@ async fn somebody_asks_for_a_group_and_a_maintainer_makes_it() {
     assert_eq!(asked.status, StatusCode::SEE_OTHER);
 
     let home = harness.get("/").await;
-    assert!(home.says("What you have asked for"));
+    assert!(home.says("Your group requests"));
     assert!(home.says("waiting for a maintainer"));
 
     // A second person, who operates the instance, answers it.
@@ -98,7 +98,12 @@ async fn somebody_asks_for_a_group_and_a_maintainer_makes_it() {
         .await;
 
     assert_eq!(approved.status, StatusCode::SEE_OTHER);
-    assert!(harness.get("/admin").await.says("Nobody is waiting"));
+    assert!(
+        harness
+            .get("/admin")
+            .await
+            .says("There are no pending group requests")
+    );
 
     // The group belongs to whoever asked for it, not to whoever approved.
     harness.post("/logout", &[]).await;
@@ -323,7 +328,7 @@ async fn a_maintainer_names_the_instance_and_the_front_door_says_so() {
     let door = harness.get("/").await;
 
     assert!(door.says("Àlgebra UV"));
-    assert!(door.says("Run by Departament d'Àlgebra."));
+    assert!(door.says("Managed by Departament d'Àlgebra"));
     assert!(door.says("algebra@uv.es"));
 }
 
@@ -341,6 +346,6 @@ async fn an_instance_that_does_not_take_requests_says_so_rather_than_hiding_the_
     let page = harness.get("/groups/new").await;
 
     assert_eq!(page.status, StatusCode::OK);
-    assert!(page.says("Groups are not requested here"));
-    assert!(!harness.get("/").await.says("Ask for a group"));
+    assert!(page.says("Group requests are closed"));
+    assert!(!harness.get("/").await.says("Request a research group"));
 }

@@ -102,23 +102,20 @@ fn ask(sends_mail: bool, sent_to: Option<&str>) -> Markup {
 
             @if !sends_mail {
                 p {
-                    "This instance does not send mail, so a link cannot be posted to you. "
-                    "Ask whoever runs it for one: they make it on the machine, with "
+                    "Email delivery is not configured. Ask a platform maintainer to create "
+                    "a reset link with "
                     code { "stemma-server user reset-password" } "."
                 }
             } @else if let Some(address) = sent_to {
                 p {
-                    "If " (address) " has an account here, a link to set a password is "
-                    "on its way. It works once, and for a couple of hours."
+                    "If an account exists for " (address) ", a password reset link has been sent."
                 }
                 p class="quiet" {
-                    "Nothing about the account has changed, and nothing changes until "
-                    "the link is used."
+                    "The link can be used once and expires in a few hours."
                 }
             } @else {
                 p {
-                    "Give the address the account uses, and a link to set a password "
-                    "goes to it."
+                    "Enter your email address to receive a password reset link."
                 }
 
                 form method="post" action="/forgotten" class="stack" {
@@ -237,7 +234,7 @@ fn body(secret: &str, problem: Option<&str>) -> Markup {
             }
 
             p class="quiet" {
-                "Every session this account holds ends when the password changes."
+                "Changing the password will sign this account out on every device."
             }
         }
     }
@@ -249,8 +246,7 @@ fn spent() -> Markup {
         div class="sheet--narrow stack" {
             h1 { "This link no longer works" }
             p {
-                "A reset link works once, and for a couple of hours. Ask whoever runs "
-                "this instance for another one."
+                "This reset link has expired or has already been used. Request a new one."
             }
             p { a href="/" { "Go to the front page" } }
         }

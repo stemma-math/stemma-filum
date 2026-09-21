@@ -747,12 +747,10 @@ select:focus {
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: .11;
-    background-image:
-        radial-gradient(circle at 25% 25%, #fff 0 .35px, transparent .7px),
-        radial-gradient(circle at 70% 70%, #fff 0 .3px, transparent .65px);
-    background-size: 4px 4px, 5px 5px;
-    mix-blend-mode: overlay;
+    opacity: .065;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='4' seed='17' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.72'/%3E%3C/svg%3E");
+    background-size: 220px 220px;
+    mix-blend-mode: soft-light;
 }
 
 .app-sidebar > * { position: relative; z-index: 1; }
@@ -774,6 +772,21 @@ select:focus {
     color: #b6d5ff;
     filter: drop-shadow(0 0 8px rgb(105 167 255 / 54%));
 }
+
+.brand-mark__edge {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.brand-mark__node { fill: currentColor; }
+.brand-mark__edge--left,
+.brand-mark__node--top { color: #f3f9ff; }
+.brand-mark__edge--base,
+.brand-mark__node--left { color: #a9ceff; }
+.brand-mark__edge--right,
+.brand-mark__node--right { color: #72aaf2; }
 
 .instance-name {
     min-height: 34px;
@@ -847,15 +860,6 @@ select:focus {
     border-radius: 999px;
     color: #06234c;
     background: #a9ceff;
-}
-
-.sidebar-motto {
-    margin: auto 8px 0;
-    padding-top: 16px;
-    border-top: 1px solid rgb(197 220 255 / 12%);
-    color: rgb(196 218 251 / 44%);
-    font-size: 11px;
-    line-height: 1.55;
 }
 
 .app-workspace {
@@ -1100,9 +1104,9 @@ select:focus {
     overflow: hidden;
     padding: 34px;
     background:
-        radial-gradient(ellipse 65% 42% at 0 108%, #ddebff 0, #76a9e8 18%, rgb(35 100 182 / 45%) 45%, transparent 72%),
-        radial-gradient(ellipse 60% 42% at 100% 105%, #f4f8ff 0, #90bdf2 17%, rgb(35 100 182 / 38%) 42%, transparent 70%),
-        radial-gradient(circle at 50% 38%, #073066 0, var(--night-deep) 54%, #010d23 100%);
+        radial-gradient(ellipse 64% 34% at -3% 105%, #f8fbff 0, #c8e0ff 13%, #75a9e7 31%, rgb(27 83 157 / 55%) 53%, transparent 76%),
+        radial-gradient(ellipse 60% 36% at 103% 105%, #fff 0, #d8eaff 12%, #82b0e8 30%, rgb(26 80 151 / 48%) 52%, transparent 76%),
+        radial-gradient(circle at 50% 38%, #07346e 0, #03224d 47%, var(--night-deep) 76%, #000b1d 100%);
 }
 
 .entrance-surface::after { z-index: 1; }

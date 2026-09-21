@@ -106,7 +106,12 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
-                title { (chrome.title) " — " (chrome.instance) }
+                title { (chrome.title) " | " (chrome.instance) }
+                script {
+                    (PreEscaped(
+                        "try{if(sessionStorage.getItem('stemma-surface-transition'))document.documentElement.classList.add('surface-pending')}catch(_){}"
+                    ))
+                }
                 link rel="stylesheet" href=(STYLESHEET_PATH);
                 @if chrome.draws {
                     script src=(DESCENT_PATH) type="module" {}
@@ -114,6 +119,7 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 script src=(SURFACE_PATH) type="module" {}
             }
             body class=(body_class) {
+                div class="surface-transition" aria-hidden="true" {}
                 @if chrome.visitor.is_some() {
                     div class="product-shell" {
                         (sidebar(chrome))
@@ -143,7 +149,7 @@ fn masthead(chrome: &Chrome) -> Markup {
                     span { "stemma" }
                 }
 
-                nav class="nav" {
+                nav class="nav" hidden[chrome.landing] {
                     @match &chrome.visitor {
                         Some(user) => {
                             (destination("/", "Home", chrome.current))
@@ -186,7 +192,7 @@ fn sidebar(chrome: &Chrome) -> Markup {
                 (destination("/#reviews", "Reviews", chrome.current))
             }
             div class="sidebar__aside" {
-                p { "Ideas, people and proofs — further together." }
+                p { (chrome.instance) }
             }
         }
     }
@@ -251,20 +257,96 @@ pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
     }
 }
 
+/// The centre of the mark's box, in the mark's own units.
+pub const MARK_CENTRE: f64 = 32.0;
+
+/// How far the mark's nodes sit from that centre.
+///
+/// It is also the radius of the ring [`constellation`] draws, which is what
+/// makes the ring the node orbit rather than a circle that resembles it.
+pub const NODE_ORBIT: f64 = 24.0;
+
+/// How far past the orbit the construction rules reach.
+const RULE_REACH: f64 = 1.18;
+
 /// The mark: three nodes held together by one continuous descent.
+///
+/// The nodes sit on a circle of radius [`NODE_ORBIT`] about the centre of
+/// the 64-unit box, a third of a turn apart: twelve o'clock, then four and
+/// eight. Three equal steps around a circle is an equilateral triangle, so
+/// the weight falls evenly however the mark is scaled.
 ///
 /// Written out rather than built element by element, because the elements
 /// of an SVG close themselves and the HTML ones around them do not.
 pub fn mark() -> Markup {
     PreEscaped(
         r#"<svg class="mark" width="32" height="32" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <path d="M32 11 C32 25 28 31 16 38 C9 42 10 51 17 53 C24 55 27 45 32 44 C38 43 42 53 50 53 C58 53 58 43 52 39 C43 33 42 20 32 11Z" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
-            <circle cx="32" cy="10" r="6" fill="currentColor" />
-            <circle cx="14" cy="47" r="6" fill="currentColor" />
-            <circle cx="51" cy="47" r="6" fill="currentColor" />
+            <path class="mark__edge mark__edge--left" d="M32 8 C32 20 28 27 20 32 C15 35.2 11.8 38.5 11.22 44" />
+            <path class="mark__edge mark__edge--base" d="M11.22 44 C20 39.5 26 41.5 32 43.6 C40 46.4 47 46.2 52.78 44" />
+            <path class="mark__edge mark__edge--right" d="M52.78 44 C55.5 30 47 15 32 8" />
+            <circle class="mark__node mark__node--top" cx="32" cy="8" r="6.5" />
+            <circle class="mark__node mark__node--left" cx="11.22" cy="44" r="5.9" />
+            <circle class="mark__node mark__node--right" cx="52.78" cy="44" r="5.9" />
         </svg>"#
             .to_owned(),
     )
+}
+
+/// The construction the front door draws behind the mark.
+///
+/// The same box and the same units as [`mark`], so the ring *is* the node
+/// orbit and the rules *are* the axes the nodes were set out on. Drawn here
+/// rather than in the stylesheet because a ring built out of a border and a
+/// border-radius is a second coordinate system, and two coordinate systems
+/// for one drawing will come apart.
+///
+/// Each rule fades out at both ends rather than stopping, which is what a
+/// drawn construction line does and a border cannot.
+pub fn constellation() -> Markup {
+    let reach = NODE_ORBIT * RULE_REACH;
+    let (near, far) = (MARK_CENTRE - reach, MARK_CENTRE + reach);
+    let top = MARK_CENTRE - NODE_ORBIT;
+
+    // The rule at the top node's height is shorter: it is that node's own
+    // line, not one of the axes.
+    let (top_near, top_far) = (MARK_CENTRE - reach * 0.7, MARK_CENTRE + reach * 0.7);
+
+    let rules = [
+        ("across", (near, MARK_CENTRE), (far, MARK_CENTRE)),
+        ("down", (MARK_CENTRE, near), (MARK_CENTRE, far)),
+        ("top", (top_near, top), (top_far, top)),
+    ];
+
+    let fades: String = rules
+        .iter()
+        .map(|(name, (x1, y1), (x2, y2))| {
+            format!(
+                r#"<linearGradient id="stemma-rule-{name}" gradientUnits="userSpaceOnUse" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">
+                <stop offset="0" stop-color="currentColor" stop-opacity="0" />
+                <stop offset=".2" stop-color="currentColor" stop-opacity="1" />
+                <stop offset=".8" stop-color="currentColor" stop-opacity="1" />
+                <stop offset="1" stop-color="currentColor" stop-opacity="0" />
+            </linearGradient>"#
+            )
+        })
+        .collect();
+
+    let lines: String = rules
+        .iter()
+        .map(|(name, (x1, y1), (x2, y2))| {
+            format!(
+                r#"<line class="construction__rule" stroke="url(#stemma-rule-{name})" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" />"#
+            )
+        })
+        .collect();
+
+    PreEscaped(format!(
+        r#"<svg class="construction" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <defs>{fades}</defs>
+            <circle class="construction__ring" cx="{MARK_CENTRE}" cy="{MARK_CENTRE}" r="{NODE_ORBIT}" />
+            {lines}
+        </svg>"#
+    ))
 }
 
 /// The page shown when a request could not be answered.
@@ -284,4 +366,125 @@ pub fn failure(error: &WebError) -> Markup {
             }
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every node of the mark, as an offset from the centre of its box.
+    fn nodes() -> Vec<(f64, f64)> {
+        mark()
+            .into_string()
+            .split("<circle")
+            .skip(1)
+            .map(|node| {
+                let value = |name: &str| -> f64 {
+                    node.split(&format!("{name}=\""))
+                        .nth(1)
+                        .and_then(|rest| rest.split('"').next())
+                        .and_then(|number| number.parse().ok())
+                        .unwrap_or_else(|| panic!("a node should carry {name}"))
+                };
+
+                (value("cx") - MARK_CENTRE, value("cy") - MARK_CENTRE)
+            })
+            .collect()
+    }
+
+    /// Clockwise from straight up, in degrees.
+    fn bearing((x, y): (f64, f64)) -> f64 {
+        x.atan2(-y).to_degrees()
+    }
+
+    /// The three nodes are the same distance out, and that distance is the
+    /// radius the construction draws its ring at.
+    #[test]
+    fn the_marks_nodes_all_sit_on_one_orbit() {
+        let nodes = nodes();
+        assert_eq!(nodes.len(), 3, "the mark is three nodes");
+
+        for (x, y) in &nodes {
+            let orbit = x.hypot(*y);
+
+            assert!(
+                (orbit - NODE_ORBIT).abs() < 0.01,
+                "the node at ({x}, {y}) is {orbit} out, not {NODE_ORBIT}"
+            );
+        }
+    }
+
+    /// A third of a turn apart, starting from straight up. Three equal
+    /// steps around a circle is what makes the triangle equilateral.
+    #[test]
+    fn the_marks_nodes_are_a_third_of_a_turn_apart() {
+        let [top, left, right] = nodes()[..] else {
+            panic!("the mark is three nodes")
+        };
+
+        assert!(bearing(top).abs() < 0.01, "the first is straight up");
+        assert!(
+            (bearing(left) + 120.0).abs() < 0.01,
+            "the second is a third on"
+        );
+        assert!(
+            (bearing(right) - 120.0).abs() < 0.01,
+            "the third is another"
+        );
+    }
+
+    /// The ring is the orbit, not a circle that looks like it.
+    #[test]
+    fn the_construction_draws_its_ring_on_the_node_orbit() {
+        let drawn = constellation().into_string();
+        let radius = drawn
+            .split("class=\"construction__ring\"")
+            .nth(1)
+            .and_then(|rest| rest.split("r=\"").nth(1))
+            .and_then(|rest| rest.split('"').next())
+            .and_then(|number| number.parse::<f64>().ok())
+            .expect("the ring should carry a radius");
+
+        assert!(
+            (radius - NODE_ORBIT).abs() < f64::EPSILON,
+            "the ring is drawn at {radius}, and the nodes sit at {NODE_ORBIT}"
+        );
+
+        for (x, y) in nodes() {
+            assert!(
+                (x.hypot(y) - radius).abs() < 0.01,
+                "the node at ({x}, {y}) is not on the ring"
+            );
+        }
+    }
+
+    /// Every rule fades at both ends, and every one is the far side of the
+    /// orbit, so the construction reads as drawn rather than cropped.
+    #[test]
+    fn every_construction_rule_fades_out_past_the_ring() {
+        let drawn = constellation().into_string();
+        // The space matters: `<linearGradient` also begins with `<line`.
+        let rules: Vec<&str> = drawn.split("<line ").skip(1).collect();
+
+        assert_eq!(rules.len(), 3, "two axes and the top node's own line");
+
+        for rule in &rules {
+            let name = rule
+                .split("url(#")
+                .nth(1)
+                .and_then(|rest| rest.split(')').next())
+                .expect("a rule should be stroked with its fade");
+
+            assert!(
+                drawn.contains(&format!(r#"id="{name}""#)),
+                "{name} is referenced and never defined"
+            );
+        }
+
+        assert_eq!(
+            drawn.matches("stop-opacity=\"0\"").count(),
+            rules.len() * 2,
+            "each rule should fade at both of its ends"
+        );
+    }
 }

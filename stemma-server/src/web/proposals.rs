@@ -110,8 +110,7 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
                 Some(rows) => (drawn(rows, &frozen)),
                 None => {
                     p class="quiet" {
-                        "The version this was written against is not on this instance "
-                        "any more, so the whole of what is proposed is shown."
+                        "The original version is no longer available. The complete proposal is shown instead."
                     }
                     pre class="diff" { (proposal.source) }
                 }
@@ -146,8 +145,8 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
                 button class="button" name="decision" value="accept" { "Accept" }
             }
             p class="quiet" {
-                "Accepting signs these words as yours, with the model recorded "
-                "beside them. Write them to your machine with "
+                "Accepting records you as the reviewer and preserves the model information. "
+                "Apply the proposal to your machine with "
                 code { "stemma proposal apply " (proposal.id) }
                 ", or from the application."
             }

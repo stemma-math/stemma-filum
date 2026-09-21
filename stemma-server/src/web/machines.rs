@@ -371,8 +371,7 @@ fn body(
         div class="block" id="machines" {
             p class="label" { "Agents" }
             p class="quiet" {
-                "What this machine found when it looked. Stemma holds no key for any "
-                "of them: they are signed in by you, on this machine."
+                "Agents detected on this machine. Their credentials remain on this device."
             }
             (agent_list(agents))
         }
@@ -415,14 +414,13 @@ fn body(
         (job_list(signed, machine, ran, owed))
 
         div class="block" {
-            p class="label" { "Take this machine back" }
+            p class="label" { "Revoke this machine" }
             p class="quiet" {
-                "Its credential stops working and it is offered no more work. You stay "
-                "signed in everywhere else, and what it has already done keeps its name."
+                "Remove access for this machine and stop assigning new work to it."
             }
             form method="post" action={ "/machines/" (machine.id) "/retire" } {
                 (signature(signed))
-                button class="button button--quiet" type="submit" { "Take it back" }
+                button class="button button--quiet" type="submit" { "Revoke access" }
             }
         }
     }
@@ -470,7 +468,7 @@ fn job_list(signed: &SignedIn, machine: &Machine, ran: &[jobs::Job], owed: usize
             }
 
             @if ran.is_empty() {
-                p class="empty" { "Nothing has been asked of this machine yet." }
+                p class="empty" { "No jobs have been assigned to this machine." }
             } @else {
                 ul class="register" {
                     @for job in ran {
@@ -507,8 +505,8 @@ pub fn summary(machines: &[(Machine, usize)]) -> Markup {
 
             @if machines.is_empty() {
                 p class="empty" {
-                    "No machine of yours runs work here yet. Sign one in with "
-                    "`stemma login` and offer it with `stemma node init`."
+                    "No machines are connected. Run " code { "stemma login" }
+                    " and then " code { "stemma node init" } " on a machine to add it."
                 }
             } @else {
                 ul class="register" {

@@ -228,8 +228,8 @@ async fn found(instance: &Instance, code: &str) -> Result<Option<Grant>, WebErro
 }
 
 /// What is said about a code that names nothing.
-const UNKNOWN: &str = "No machine is waiting with that code. It may have run out of time — \
-                       they last a few minutes — so start again on the machine.";
+const UNKNOWN: &str =
+    "The code is invalid or has expired. Start the sign-in process again on the machine.";
 
 /// What is said about a code somebody already answered.
 const ANSWERED: &str = "That sign-in has already been answered.";
@@ -240,8 +240,7 @@ fn ask(signed: &SignedIn, code: &str, problem: Option<&str>) -> Markup {
         div class="sheet--narrow stack" {
             h1 { "Sign a machine in" }
             p class="quiet" {
-                "A program running somewhere else asked to act for you. It showed a "
-                "code; type it here."
+                "Enter the code shown in the desktop app to connect that machine to your account."
             }
 
             @if let Some(problem) = problem {
@@ -277,8 +276,7 @@ fn confirm(signed: &SignedIn, grant: &Grant, code: &str) -> Markup {
                 p class="identifier" { (signed.user.id.to_string()) }
 
                 p class="quiet" {
-                    "It will be able to do what you can do, on every group you are in, "
-                    "until you take the credential back."
+                    "This machine will have access to all of your groups until you revoke it."
                 }
             }
 
@@ -288,9 +286,9 @@ fn confirm(signed: &SignedIn, grant: &Grant, code: &str) -> Markup {
 
                 div class="actions" {
                     button class="button" type="submit" name="approve" value="yes" {
-                        "Let it in"
+                        "Approve"
                     }
-                    button class="button button--quiet" type="submit" { "Refuse" }
+                    button class="button button--quiet" type="submit" { "Deny" }
                 }
             }
         }
@@ -303,14 +301,13 @@ fn answered(grant: &Grant, approved: bool) -> Markup {
         div class="sheet--narrow stack" {
             @if approved {
                 h1 { "Done" }
-                p { (grant.label) " can now act for you." }
-                p class="quiet" { "Go back to it; it has already noticed." }
+                p { (grant.label) " is now connected to your account." }
+                p class="quiet" { "You can return to the desktop app." }
             } @else {
-                h1 { "Refused" }
-                p { (grant.label) " was not let in." }
+                h1 { "Access denied" }
+                p { (grant.label) " was not connected." }
                 p class="quiet" {
-                    "If it was not you who started this, nothing else has changed: a "
-                    "machine cannot ask twice with the same code."
+                    "Access was not granted. You can close this page."
                 }
             }
 

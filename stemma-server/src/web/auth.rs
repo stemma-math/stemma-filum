@@ -116,7 +116,7 @@ pub async fn log_in(
                 login_body(
                     credentials.next.as_deref(),
                     policy.registration_open,
-                    Some("That name or address and password do not go together."),
+                    Some("The login details are incorrect."),
                 ),
             ),
         )
@@ -331,8 +331,7 @@ fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup 
         div class="sheet--narrow stack" {
             h1 { "Create an account" }
             p class="quiet" {
-                "An account belongs to a person, not to a group. You join groups "
-                "afterwards, by invitation."
+                "Create your personal account. You can join research groups after signing up."
             }
 
             @if let Some(problem) = problem {
@@ -351,8 +350,7 @@ fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup 
                     input type="text" id="slug" name="slug" value=(value(|form| &form.slug))
                           autocomplete="username" required;
                     span class="field__hint" {
-                        "Lowercase letters, digits and hyphens. Your identifier will be "
-                        code { "usr:" } "followed by it, and it is how people refer to you."
+                        "Use lowercase letters, numbers and hyphens."
                     }
                 }
 
@@ -367,8 +365,7 @@ fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup 
                     input type="password" id="password" name="password"
                           autocomplete="new-password" required;
                     span class="field__hint" {
-                        "At least " (password::MINIMUM_LENGTH) " characters. Length is the "
-                        "only rule."
+                        "Use at least " (password::MINIMUM_LENGTH) " characters."
                     }
                 }
 
@@ -384,9 +381,7 @@ fn closed() -> Markup {
         div class="sheet--narrow stack" {
             h1 { "Accounts here are by invitation" }
             p {
-                "This instance does not take open registrations. Somebody in a group "
-                "can send you a link, which creates your account and puts you in their "
-                "group in one step."
+                "Open registration is disabled. Ask a group administrator for an invitation."
             }
             p { a href="/login" { "Log in" } }
         }

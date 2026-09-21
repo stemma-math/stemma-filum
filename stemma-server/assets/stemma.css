@@ -174,6 +174,10 @@
     border-radius: 0;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 body {
     margin: 0;
     background: var(--paper);
@@ -300,6 +304,17 @@ code,
 
 .wordmark svg {
     display: block;
+}
+
+.mark__edge {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.mark__node {
+    fill: currentColor;
 }
 
 /* Navigation is words. The active destination takes a rule on the edge it
@@ -1143,6 +1158,12 @@ select:focus {
 /* Public pages */
 
 .auth-page {
+    min-height: 100svh;
+    /* Bar, card, foot. The middle row takes the height that is left over
+     * and never shrinks below the card, so the foot sits on the bottom edge
+     * of a short page and below the content of a long one. */
+    display: grid;
+    grid-template-rows: auto 1fr auto;
     background:
         radial-gradient(circle at 4% 100%, rgb(105 167 255 / 20%), transparent 28rem),
         linear-gradient(145deg, #f9fbfd, #edf3f9);
@@ -1169,7 +1190,7 @@ select:focus {
 
 .auth-page .sheet {
     width: min(100% - 32px, 560px);
-    margin: 5vh auto 10vh;
+    margin: auto;
     padding: clamp(28px, 5vw, 52px);
     background: rgb(255 255 255 / 88%);
     border: 1px solid rgb(204 218 232 / 80%);
@@ -1179,6 +1200,7 @@ select:focus {
 }
 
 .auth-page .foot {
+    width: 100%;
     border: 0;
 }
 
@@ -1186,25 +1208,58 @@ select:focus {
     justify-content: center;
 }
 
-.auth-page::before {
-    content: "";
+.surface-transition {
     position: fixed;
-    z-index: 100;
-    inset: -8%;
+    z-index: 1000;
+    top: -14vh;
+    left: -12vw;
+    width: 124vw;
+    height: 128vh;
     pointer-events: none;
     background:
-        radial-gradient(ellipse at 20% 92%, #8ec1ff 0, #2868c8 26%, transparent 55%),
-        linear-gradient(180deg, var(--night-deep), #0a3971);
-    transform: translateY(115%);
+        radial-gradient(ellipse 42% 18% at 18% 4%, #7ab3fb 0, #225fae 45%, transparent 76%),
+        radial-gradient(ellipse 38% 19% at 78% 3%, #b1d4ff 0, #3675c4 42%, transparent 74%),
+        linear-gradient(180deg, #0b4789 0, #052c61 26%, var(--night-deep) 100%);
+    border-radius: 42% 55% 0 0 / 7% 9% 0 0;
+    box-shadow: 0 -24px 90px rgb(92 159 245 / 28%);
+    transform: translate3d(0, 112%, 0);
+    will-change: transform, opacity;
 }
 
-.auth-page.surface-arriving::before {
-    animation: surface-reveal 620ms cubic-bezier(.72, 0, .2, 1) both;
+.surface-transition::before,
+.surface-transition::after {
+    content: "";
+    position: absolute;
+    top: -6%;
+    width: 54%;
+    height: 18%;
+    border-radius: 50%;
+    background: #0a4382;
+}
+
+.surface-transition::before {
+    left: -2%;
+    transform: rotate(3deg);
+}
+
+.surface-transition::after {
+    right: -4%;
+    transform: rotate(-4deg);
+}
+
+html.surface-pending .auth-page .surface-transition,
+.auth-page.surface-arriving .surface-transition {
+    transform: translate3d(0, 0, 0);
+}
+
+.auth-page.surface-arriving .surface-transition {
+    animation: surface-reveal 430ms cubic-bezier(.4, 0, .2, 1) both;
 }
 
 @keyframes surface-reveal {
-    from { transform: translateY(-6%); }
-    to { transform: translateY(-115%); }
+    0% { transform: translate3d(0, 0, 0); opacity: 1; }
+    78% { opacity: 1; }
+    100% { transform: translate3d(0, -115%, 0); opacity: 0; }
 }
 
 /* Front door */
@@ -1225,29 +1280,30 @@ select:focus {
 
 .landing-page::before {
     z-index: 0;
-    inset: 0;
+    inset: -4%;
     background:
-        radial-gradient(ellipse 70% 33% at 4% 108%, #dcecff 0, #77adf0 18%, rgb(35 100 182 / 58%) 43%, transparent 72%),
-        radial-gradient(ellipse 62% 38% at 98% 105%, #f4f8ff 0, #90bdf2 17%, rgb(35 100 182 / 48%) 42%, transparent 71%),
-        radial-gradient(circle at 50% 43%, #073066 0, var(--night-deep) 48%, #010d23 100%);
-    animation: blue-tide 12s ease-in-out infinite alternate;
+        radial-gradient(ellipse 62% 43% at -2% 108%, #f7fbff 0, #c7e0ff 12%, #75a9e7 30%, rgb(27 83 157 / 58%) 53%, transparent 76%),
+        radial-gradient(ellipse 58% 45% at 102% 109%, #fff 0, #d7e9ff 11%, #81afe7 29%, rgb(26 80 151 / 52%) 52%, transparent 76%),
+        radial-gradient(ellipse 46% 21% at 51% 105%, #8ab8ef 0, rgb(35 96 172 / 50%) 38%, transparent 76%),
+        radial-gradient(circle at 50% 40%, #07346e 0, #03224d 42%, var(--night-deep) 73%, #000b1d 100%);
+    background-position: 0 0, 0 0, 0 0, center;
+    animation: blue-tide 10s ease-in-out infinite alternate;
+    will-change: transform, filter;
 }
 
 .landing-page::after {
     z-index: 1;
     inset: 0;
-    opacity: .18;
-    background-image:
-        radial-gradient(circle at 20% 30%, #fff 0 .45px, transparent .75px),
-        radial-gradient(circle at 70% 65%, #fff 0 .35px, transparent .7px);
-    background-size: 4px 4px, 5px 5px;
-    mix-blend-mode: overlay;
+    opacity: .08;
+    background-image: url("/assets/noise.svg");
+    background-size: 220px 220px;
+    mix-blend-mode: soft-light;
 }
 
 @keyframes blue-tide {
-    0% { transform: scale(1.04) translate3d(-1.2%, 1%, 0); filter: saturate(.9); }
-    50% { transform: scale(1.08) translate3d(1%, -1.3%, 0); filter: saturate(1.08); }
-    100% { transform: scale(1.05) translate3d(-.5%, -2.2%, 0); filter: saturate(.96); }
+    0% { transform: scale(1.02) translate3d(-.8%, .7%, 0); filter: saturate(.94) brightness(.98); }
+    50% { transform: scale(1.045) translate3d(.7%, -.35%, 0); filter: saturate(1.04) brightness(1.02); }
+    100% { transform: scale(1.025) translate3d(-.25%, -.9%, 0); filter: saturate(.98) brightness(1.01); }
 }
 
 .landing-page .masthead {
@@ -1295,47 +1351,62 @@ select:focus {
     text-align: center;
 }
 
+/* The mark and the construction behind it, laid in one grid cell.
+ *
+ * Both are SVGs on the same 64-unit box, so the ring the nodes sit on is
+ * the node orbit itself — see `constellation()` in layout.rs. Nothing here
+ * measures one drawing against another, which is why the box only has to
+ * be square and the right size.
+ */
 .doorway__constellation {
-    position: relative;
-    width: clamp(140px, 18vw, 230px);
-    aspect-ratio: 1;
+    --mark: clamp(140px, 18vw, 230px);
     display: grid;
     place-items: center;
+    width: var(--mark);
+    height: var(--mark);
     margin-bottom: 14px;
-    border: 1px solid rgb(135 183 255 / 16%);
-    border-radius: 50%;
 }
 
-.doorway__constellation::before,
-.doorway__constellation::after {
-    content: "";
-    position: absolute;
-    background: rgb(125 174 243 / 12%);
+.doorway__constellation > * {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
 }
 
-.doorway__constellation::before { width: 150%; height: 1px; }
-.doorway__constellation::after { width: 1px; height: 150%; }
+/* Short dashes with small gaps, the way a construction line is drawn. */
+.doorway__constellation .construction {
+    color: rgb(137 183 247 / 42%);
+    stroke-dasharray: 1.75 1.39;
+    stroke-width: .4;
+}
+
+.doorway__constellation .construction__ring {
+    fill: none;
+    stroke: currentColor;
+    stroke-opacity: .5;
+}
+
+.doorway__constellation .construction__rule {
+    stroke-width: .34;
+}
 
 .doorway__constellation .mark {
-    width: 76%;
-    height: 76%;
-    color: #dcecff;
-    filter: drop-shadow(0 0 12px #76afff) drop-shadow(0 0 34px rgb(63 135 238 / 72%));
+    color: #eff7ff;
+    filter: drop-shadow(0 0 9px rgb(116 176 255 / 58%)) drop-shadow(0 0 25px rgb(45 112 214 / 48%));
 }
+
+.doorway__constellation .mark__edge--left { stroke: #f6fbff; }
+.doorway__constellation .mark__edge--base { stroke: #79b0f5; }
+.doorway__constellation .mark__edge--right { stroke: #96c5ff; }
+.doorway__constellation .mark__node--top { fill: #f9fcff; }
+.doorway__constellation .mark__node--left { fill: #eaf5ff; }
+.doorway__constellation .mark__node--right { fill: #74adf4; }
 
 .doorway__copy {
     display: flex;
     align-items: center;
     flex-direction: column;
     gap: 16px;
-}
-
-.doorway__eyebrow {
-    order: 2;
-    font-size: 11px;
-    letter-spacing: .42em;
-    text-transform: uppercase;
-    color: #b8d4ff;
 }
 
 .doorway__name {
@@ -1348,15 +1419,17 @@ select:focus {
 }
 
 .doorway__lead {
-    order: 3;
-    max-width: 590px;
-    font-size: clamp(16px, 2vw, 20px);
-    color: rgb(224 236 255 / 78%);
+    order: 2;
+    max-width: 680px;
+    font-size: clamp(14px, 1.55vw, 18px);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: rgb(207 225 252 / 76%);
 }
 
 .doorway__actions {
-    order: 4;
-    margin-top: 12px;
+    order: 3;
+    margin-top: 18px;
 }
 
 .doorway__actions .block {
@@ -1369,10 +1442,11 @@ select:focus {
 
 .button--hero,
 .button--glass {
-    min-height: 48px;
-    padding: 0 24px;
+    min-height: 52px;
+    padding: 0 28px;
     border-radius: 999px;
     font-size: 14px;
+    transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
 .button--hero {
@@ -1388,8 +1462,29 @@ select:focus {
     border-color: rgb(190 216 255 / 34%) !important;
 }
 
+.button--hero:hover,
+.button--glass:hover {
+    transform: translateY(-2px);
+}
+
+.button--hero:hover {
+    background: #fff !important;
+    box-shadow: 0 14px 38px rgb(1 12 32 / 45%), 0 0 0 4px rgb(255 255 255 / 9%);
+}
+
+.button--glass:hover {
+    background: rgb(132 184 255 / 20%) !important;
+    border-color: rgb(219 233 255 / 62%) !important;
+    box-shadow: 0 12px 30px rgb(1 12 32 / 24%);
+}
+
+.button--hero:active,
+.button--glass:active {
+    transform: translateY(0) scale(.97);
+}
+
 .doorway__meta {
-    order: 5;
+    order: 4;
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
@@ -1403,8 +1498,8 @@ select:focus {
     display: none;
 }
 
-.landing-page.surface-leaving::before {
-    animation: surface-close 460ms cubic-bezier(.75, 0, .2, 1) both;
+.landing-page.surface-leaving .surface-transition {
+    animation: surface-close 360ms cubic-bezier(.32, 0, .2, 1) both;
 }
 
 .landing-page.surface-leaving .masthead,
@@ -1413,7 +1508,8 @@ select:focus {
 }
 
 @keyframes surface-close {
-    to { transform: scale(1.22) translateY(-18%); filter: brightness(1.25); }
+    0% { transform: translate3d(0, 112%, 0); }
+    100% { transform: translate3d(0, 0, 0); }
 }
 
 @keyframes content-fade {
@@ -1423,7 +1519,10 @@ select:focus {
 /* Signed-in product shell */
 
 .product-page {
-    height: 100vh;
+    /* `dvh`, not `vh`: on a phone `vh` is the height the window has when the
+     * browser's own bars are hidden, so a shell sized in it is taller than
+     * the screen until you scroll. */
+    height: 100dvh;
     overflow: hidden;
 }
 
@@ -1446,16 +1545,23 @@ select:focus {
     user-select: none;
 }
 
-.sidebar::after {
+/* One grain, on every blue surface.
+ *
+ * Turbulence, not a lattice of dots: a pattern that repeats every four
+ * pixels reads as a screen door laid over the panel, and the eye finds the
+ * repeat straight away. This is the same file the front door is grained
+ * with, so every blue surface in the product has the same tooth. */
+.sidebar::after,
+.product-page .sheet > .stack:first-child:not(.sheet--narrow)::after {
     content: "";
     position: absolute;
     inset: 0;
-    opacity: .1;
+    opacity: .15;
     pointer-events: none;
-    background-image:
-        radial-gradient(circle at 30% 20%, #fff 0 .35px, transparent .7px),
-        radial-gradient(circle at 75% 70%, #fff 0 .3px, transparent .65px);
-    background-size: 4px 4px, 5px 5px;
+    border-radius: inherit;
+    background-image: url("/assets/noise.svg");
+    background-size: 200px 200px;
+    mix-blend-mode: soft-light;
 }
 
 .sidebar > * { position: relative; z-index: 1; }
@@ -1472,6 +1578,15 @@ select:focus {
     color: #a9ceff;
     filter: drop-shadow(0 0 9px rgb(105 167 255 / 55%));
 }
+
+.sidebar .mark__edge--left,
+.sidebar .mark__node--top { color: #f1f8ff; }
+
+.sidebar .mark__edge--base,
+.sidebar .mark__node--left { color: #a9ceff; }
+
+.sidebar .mark__edge--right,
+.sidebar .mark__node--right { color: #72aaf2; }
 
 .sidebar__instance {
     margin: 14px 8px 34px;
@@ -1526,17 +1641,20 @@ select:focus {
     line-height: 1.6;
 }
 
+/* Bar, work, foot — the same three rows the public pages are built from.
+ * The middle row is `minmax(0, 1fr)`, so it takes the height that is left
+ * over and the work scrolls inside it; the foot is a row of the workspace
+ * and lands on the bottom edge whether there is one card or fifty. */
 .product-workspace {
     min-width: 0;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     overflow: hidden;
 }
 
 .topbar {
     min-height: 72px;
-    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1618,6 +1736,8 @@ select:focus {
 }
 
 .product-page .sheet > .stack:first-child:not(.sheet--narrow) {
+    position: relative;
+    overflow: hidden;
     color: #eaf2ff;
     border-color: transparent;
     background:
@@ -1636,7 +1756,6 @@ select:focus {
 }
 
 .foot {
-    flex: 0 0 auto;
     border-color: var(--rule-soft);
     background: rgb(255 255 255 / 55%);
 }
@@ -1664,7 +1783,7 @@ select:focus {
 
 @media (prefers-reduced-motion: reduce) {
     .landing-page::before { animation: none; }
-    .landing-page.surface-leaving::before,
+    .landing-page.surface-leaving .surface-transition,
     .landing-page.surface-leaving .masthead,
     .landing-page.surface-leaving .sheet,
     .auth-page.surface-arriving::before { animation-duration: 1ms; }

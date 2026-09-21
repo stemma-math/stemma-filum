@@ -158,8 +158,7 @@ pub async fn area(
         div class="stack" {
             h1 { "Admin" }
             p class="quiet" {
-                "You are operating this instance. Nothing here opens the mathematics of "
-                "a group you are not in."
+                "Manage accounts, group requests and platform settings."
             }
         }
 
@@ -319,8 +318,7 @@ fn authenticate_body(signed: &SignedIn, next: Option<&str>, problem: Option<&str
         div class="sheet--narrow stack" {
             h1 { "Confirm it is you" }
             p class="quiet" {
-                "The admin area asks for your password again, however long you have "
-                "been signed in."
+                "Enter your password again to access the administration panel."
             }
 
             @if let Some(problem) = problem {
@@ -352,7 +350,7 @@ fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Ma
             p class="label" { "Group requests · " (requests.len()) }
 
             @if requests.is_empty() {
-                p class="empty" { "Nobody is waiting for an answer." }
+                p class="empty" { "There are no pending group requests." }
             } @else {
                 ul class="register" {
                     @for (request, requester) in requests {
@@ -378,7 +376,7 @@ fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Ma
                                      action={ "/admin/requests/" (request.id) "/approve" } {
                                     (signature(signed))
                                     div class="field" {
-                                        label for={ "note-" (request.id) } { "A note, if you want one" }
+                                        label for={ "note-" (request.id) } { "Optional note" }
                                         input type="text" id={ "note-" (request.id) } name="note";
                                     }
                                     div class="actions" {
@@ -436,7 +434,7 @@ fn accounts_block(accounts: &[User], maintainers: &[users::HeldGrant]) -> Markup
             }
 
             p class="quiet" {
-                "A maintainer is granted from the machine: "
+                "Grant maintainer access from the server with "
                 code { "stemma-server admin grant <account>" } "."
             }
         }
@@ -453,19 +451,19 @@ fn settings_block(signed: &SignedIn, policy: &Policy) -> Markup {
                 (signature(signed))
 
                 div class="field" {
-                    label for="name" { "What this instance is called" }
+                    label for="name" { "Instance name" }
                     input type="text" id="name" name="name"
                           value=(policy.instance_name.clone().unwrap_or_default());
                 }
 
                 div class="field" {
-                    label for="operator" { "Who runs it" }
+                    label for="operator" { "Operator" }
                     input type="text" id="operator" name="operator"
                           value=(policy.operator.clone().unwrap_or_default());
                 }
 
                 div class="field" {
-                    label for="contact" { "How to reach them" }
+                    label for="contact" { "Contact details" }
                     input type="text" id="contact" name="contact"
                           value=(policy.contact.clone().unwrap_or_default());
                 }
@@ -484,7 +482,7 @@ fn settings_block(signed: &SignedIn, policy: &Policy) -> Markup {
                 }
 
                 div class="field" {
-                    label for="invitation_ttl_days" { "An invitation lasts, in days" }
+                    label for="invitation_ttl_days" { "Invitation validity in days" }
                     input type="text" id="invitation_ttl_days" name="invitation_ttl_days"
                           class="numeric" value=(policy.invitation_ttl_days);
                 }
@@ -496,8 +494,8 @@ fn settings_block(signed: &SignedIn, policy: &Policy) -> Markup {
                 @if policy.sends_mail() {
                     "Mail goes out through " code { (policy.mail_smtp_url.clone().unwrap_or_default()) } "."
                 } @else {
-                    "No mail is configured, so invitations and password resets are links "
-                    "shown to whoever creates them."
+                    "Email delivery is not configured. Invitation and password reset links "
+                    "will be shown on screen."
                 }
             }
         }

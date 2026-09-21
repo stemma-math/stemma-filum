@@ -77,7 +77,7 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
 
     let space = harness.get("/g/algebra").await;
     assert!(space.says("Members · 1"));
-    assert!(space.says("No invitation is out at the moment."));
+    assert!(space.says("There are no active invitations."));
 
     let made = harness
         .post(
@@ -90,7 +90,7 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
         )
         .await;
 
-    assert!(made.says("It is shown once."));
+    assert!(made.says("It will not be shown again."));
     let invitation = path_of(&link(&made));
     assert!(invitation.starts_with("/invite/"));
 
@@ -239,7 +239,7 @@ async fn a_link_with_no_address_cannot_make_an_account_and_says_so() {
     harness.post("/logout", &[]).await;
     let offered = harness.get(&invitation).await;
 
-    assert!(offered.says("Log in to use this invitation"));
+    assert!(offered.says("Log in to accept this invitation"));
     assert!(!offered.says("Create the account and join"));
 }
 
@@ -311,8 +311,8 @@ async fn nobody_may_invite_somebody_to_more_than_they_hold() {
         .unwrap();
 
     let space = harness.get("/g/algebra").await;
-    assert!(space.says("Admin — also invites"));
-    assert!(!space.says("Owner — also transfers"));
+    assert!(space.says("Admin: invites members"));
+    assert!(!space.says("Owner: can transfer"));
 
     let refused = harness
         .post(

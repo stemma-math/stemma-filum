@@ -271,8 +271,7 @@ fn body(
         div class="sheet--narrow stack" {
             h1 { "Join " (group.name) }
             p class="quiet" {
-                "You have been invited as " strong { (invitation.role) } ", by somebody "
-                "already in the group."
+                "You have been invited to join as " strong { (invitation.role) } "."
             }
             p class="quiet identifier" { (group.id.to_string()) }
 
@@ -304,7 +303,7 @@ fn registration_form(invitation: &Invitation, secret: &str) -> Markup {
         @match &invitation.email {
             Some(email) => {
                 form method="post" action={ "/invite/" (secret) "/register" } {
-                    p class="quiet" { "This creates your account, for " (email) "." }
+                    p class="quiet" { "Create an account for " (email) " to accept the invitation." }
 
                     div class="field" {
                         label for="display_name" { "Your name" }
@@ -316,8 +315,7 @@ fn registration_form(invitation: &Invitation, secret: &str) -> Markup {
                         label for="slug" { "Short name" }
                         input type="text" id="slug" name="slug" autocomplete="username" required;
                         span class="field__hint" {
-                            "Lowercase letters, digits and hyphens. Your identifier will be "
-                            code { "usr:" } "followed by it."
+                            "Use lowercase letters, numbers and hyphens."
                         }
                     }
 
@@ -335,8 +333,8 @@ fn registration_form(invitation: &Invitation, secret: &str) -> Markup {
             }
             None => {
                 p {
-                    "Log in to use this invitation. It does not name an address, so it "
-                    "cannot create an account by itself."
+                    "Log in to accept this invitation. A personal invitation is required "
+                    "to create a new account."
                 }
                 p {
                     a class="button" href={ "/login?next=/invite/" (secret) } { "Log in" }
@@ -353,8 +351,7 @@ fn refused(group: &Group, refusal: Refusal) -> Markup {
             h1 { "This link no longer works" }
             p { (refusal.to_string()) "." }
             p class="quiet" {
-                "Ask somebody in " (group.name) " for another one. An invitation is for "
-                "one person and stops working once it is used."
+                "Ask an administrator of " (group.name) " for a new invitation."
             }
         }
     }

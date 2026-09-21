@@ -16,6 +16,20 @@ async fn the_instance_serves_its_own_faces() {
 }
 
 #[tokio::test]
+async fn the_instance_serves_its_own_surface_texture() {
+    let mut instance = Harness::new();
+
+    let texture = instance.get("/assets/noise.svg").await;
+
+    assert!(texture.status.is_success());
+    assert_eq!(
+        texture.content_type.as_deref(),
+        Some("image/svg+xml; charset=utf-8")
+    );
+    assert!(texture.says("feTurbulence"));
+}
+
+#[tokio::test]
 async fn a_face_the_instance_does_not_have_is_not_invented() {
     let mut instance = Harness::new();
 

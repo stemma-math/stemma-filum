@@ -24,6 +24,9 @@ pub const DESCENT_PATH: &str = "/assets/descent.js";
 /// Where the small surface-transition script is served.
 pub const SURFACE_PATH: &str = "/assets/surface.js";
 
+/// Where the subtle surface texture is served.
+pub const NOISE_PATH: &str = "/assets/noise.svg";
+
 /// The stylesheet itself.
 const STYLESHEET: &str = include_str!("../../assets/stemma.css");
 
@@ -38,6 +41,9 @@ const DESCENT: &str = include_str!("../../../assets/descent.js");
 
 /// The front-door transition, kept deliberately independent of page logic.
 const SURFACE: &str = include_str!("../../assets/surface.js");
+
+/// The texture laid over blue product surfaces.
+const NOISE: &str = include_str!("../../assets/noise.svg");
 
 /// The faces the design names, subset to the Latin these pages set.
 ///
@@ -92,6 +98,9 @@ static DESCENT_TAG: LazyLock<String> = LazyLock::new(|| tag_of(DESCENT.as_bytes(
 /// The same, for the surface transition.
 static SURFACE_TAG: LazyLock<String> = LazyLock::new(|| tag_of(SURFACE.as_bytes()));
 
+/// The same, for the surface texture.
+static NOISE_TAG: LazyLock<String> = LazyLock::new(|| tag_of(NOISE.as_bytes()));
+
 /// The same, for each face.
 static FONT_TAGS: LazyLock<Vec<String>> =
     LazyLock::new(|| FONTS.iter().map(|(_, face)| tag_of(face)).collect());
@@ -135,6 +144,16 @@ pub async fn surface(headers: HeaderMap) -> Response {
         SURFACE.as_bytes(),
         "text/javascript; charset=utf-8",
         &SURFACE_TAG,
+    )
+}
+
+/// Serves the surface texture.
+pub async fn noise(headers: HeaderMap) -> Response {
+    serve(
+        &headers,
+        NOISE.as_bytes(),
+        "image/svg+xml; charset=utf-8",
+        &NOISE_TAG,
     )
 }
 

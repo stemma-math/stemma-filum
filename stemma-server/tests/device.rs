@@ -92,7 +92,7 @@ async fn a_machine_waits_for_a_person_and_then_holds_a_credential() {
         )
         .await;
 
-    assert!(answered.says("can now act for you"));
+    assert!(answered.says("is now connected to your account"));
 
     // Back on the machine.
     let collected = harness
@@ -155,7 +155,7 @@ async fn a_refused_machine_is_told_so_rather_than_left_waiting() {
         )
         .await;
 
-    assert!(refused.says("was not let in"));
+    assert!(refused.says("was not connected"));
 
     let told = harness
         .post_json(
@@ -175,7 +175,7 @@ async fn a_code_that_names_nothing_says_what_to_do_about_it() {
     let page = harness.get("/device?code=ABCD-EFGH").await;
 
     assert_eq!(page.status, StatusCode::NOT_FOUND);
-    assert!(page.says("No machine is waiting with that code"));
+    assert!(page.says("The code is invalid or has expired"));
 }
 
 #[tokio::test]

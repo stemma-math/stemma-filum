@@ -25,14 +25,13 @@ fn fields<'a>(given: &'a [(&'static str, String)]) -> Vec<(&'a str, &'a str)> {
 }
 
 #[tokio::test]
-async fn a_fresh_instance_says_it_is_empty_instead_of_offering_a_log_in() {
+async fn the_front_door_is_the_same_door_however_empty_the_instance_is() {
     let mut harness = Harness::new();
     let page = harness.get("/").await;
 
     assert_eq!(page.status, StatusCode::OK);
-    assert!(page.says("Nobody has registered here yet"));
-    assert!(page.says("Create the first account"));
-    assert!(!page.says("Log in</a>"));
+    assert!(page.says("Enter Stemma"));
+    assert!(page.says("Create an account"));
 }
 
 #[tokio::test]
@@ -51,7 +50,7 @@ async fn an_instance_is_called_by_its_host_until_somebody_names_it() {
 
     let page = harness.get("/").await;
     assert!(page.says("Àlgebra UV"));
-    assert!(page.says("Run by Enric Cosme."));
+    assert!(page.says("Managed by Enric Cosme"));
 }
 
 #[tokio::test]
@@ -71,7 +70,7 @@ async fn registering_creates_the_account_and_signs_the_person_in() {
     let home = harness.get("/").await;
     assert!(home.says("Ana Ferrer"));
     assert!(home.says("usr:ana"));
-    assert!(home.says("You are not in any group yet"));
+    assert!(home.says("You have not joined a research group yet"));
 }
 
 #[tokio::test]
@@ -148,6 +147,7 @@ async fn logging_in_needs_the_password_and_says_nothing_about_who_exists() {
 
     assert_eq!(wrong_password.status, StatusCode::UNAUTHORIZED);
     assert_eq!(no_such_account.status, StatusCode::UNAUTHORIZED);
+    assert!(wrong_password.says("The login details are incorrect."));
     assert_eq!(wrong_password.body, no_such_account.body);
 
     let admitted = harness
@@ -281,7 +281,7 @@ async fn the_front_door_of_a_closed_instance_says_how_people_get_in() {
 
     let page = harness.get("/").await;
 
-    assert!(page.says("Accounts here are created by invitation"));
+    assert!(page.says("Registration is by invitation only"));
     assert!(!page.says("/register"));
 }
 
@@ -291,7 +291,7 @@ async fn there_is_nothing_at_an_address_with_nothing_at_it() {
     let page = harness.get("/nowhere").await;
 
     assert_eq!(page.status, StatusCode::NOT_FOUND);
-    assert!(page.says("There is nothing at this address."));
+    assert!(page.says("The requested page could not be found."));
 }
 
 #[tokio::test]
@@ -466,7 +466,7 @@ async fn an_instance_that_cannot_send_mail_says_so_rather_than_pretending() {
     assert!(login.says("Forgotten your password?"));
 
     let asked = harness.get("/forgotten").await;
-    assert!(asked.says("does not send mail"));
+    assert!(asked.says("Email delivery is not configured"));
     assert!(asked.says("stemma-server user reset-password"));
 
     // And it does not quietly claim to have sent anything.
@@ -474,8 +474,8 @@ async fn an_instance_that_cannot_send_mail_says_so_rather_than_pretending() {
         .post("/forgotten", &[("email", "ana@example.org")])
         .await;
 
-    assert!(sent.says("does not send mail"));
-    assert!(!sent.says("on its way"));
+    assert!(sent.says("Email delivery is not configured"));
+    assert!(!sent.says("has been sent"));
 }
 
 #[tokio::test]
@@ -522,8 +522,8 @@ async fn asking_for_a_link_says_the_same_thing_whoever_asks() {
         .post("/forgotten", &[("email", "nobody@example.org")])
         .await;
 
-    assert!(known.says("on its way"));
-    assert!(unknown.says("on its way"));
+    assert!(known.says("a password reset link has been sent"));
+    assert!(unknown.says("a password reset link has been sent"));
     assert_eq!(
         known.body.replace("ana@", "nobody@"),
         unknown.body,

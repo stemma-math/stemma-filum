@@ -592,5 +592,5 @@ async fn a_line_can_be_read_the_moment_it_exists_and_says_what_is_missing() {
     let line = harness.get("/g/algebra/private/quotient-groups").await;
     assert!(line.status.is_success());
     assert!(line.says("Does every finite group split?"));
-    assert!(line.says("This line declares nothing yet"));
+    assert!(line.says("This line does not contain any declarations yet"));
 }

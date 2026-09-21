@@ -293,6 +293,7 @@ pub fn router() -> Router<Instance> {
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
         .route(assets::DESCENT_PATH, get(assets::descent))
         .route(assets::SURFACE_PATH, get(assets::surface))
+        .route(assets::NOISE_PATH, get(assets::noise))
         .route(assets::FONT_PATH, get(assets::font))
         .fallback(get(not_found))
         .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))
@@ -362,11 +363,9 @@ impl WebError {
     /// paths on the machine.
     pub fn explain(&self) -> String {
         match self {
-            Self::NotFound => "There is nothing at this address.".to_owned(),
+            Self::NotFound => "The requested page could not be found.".to_owned(),
             Self::Forbidden(reason) | Self::BadRequest(reason) => reason.clone(),
-            Self::Internal(_) => {
-                "Something in the server went wrong. It has been logged.".to_owned()
-            }
+            Self::Internal(_) => "Something went wrong. Please try again later.".to_owned(),
         }
     }
 }

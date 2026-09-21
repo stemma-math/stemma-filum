@@ -491,8 +491,7 @@ pub fn queue(jobs: &[Job]) -> Markup {
 
             @if jobs.is_empty() {
                 p class="empty" {
-                    "Nothing has been asked of a machine here yet. Work is launched from "
-                    "the line it is about."
+                    "No jobs have been launched for this group."
                 }
             } @else {
                 ul class="register" {
@@ -519,8 +518,8 @@ pub fn machine_list(offers: &[Offer]) -> Markup {
 
             @if offers.is_empty() {
                 p class="empty" {
-                    "No machine works for this group yet. A member offers one with "
-                    "`stemma node init` on it."
+                    "No machines are available for this group. Run " code { "stemma node init" }
+                    " on a connected machine to make it available."
                 }
             } @else {
                 ul class="register" {
@@ -572,7 +571,7 @@ pub fn launcher(
             div class="launcher__panel" {
                 @if offers.is_empty() {
                     p class="empty" {
-                        "No machine works for this group yet, so there is nothing to ask."
+                        "No machines are available for this group."
                     }
                 } @else {
                     form method="post"

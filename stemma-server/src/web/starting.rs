@@ -547,8 +547,7 @@ fn asked(
                     span class="label" { "The question" }
                     textarea name="question" rows="3" required { (question) }
                     span class="field__hint" {
-                        "What this line exists to answer. It is what a listing shows "
-                        "when the title is not enough."
+                        "Describe the research question this line will address."
                     }
                 }
 
@@ -565,8 +564,7 @@ fn asked(
                     }
 
                     p class="field__hint" {
-                        "A line only you can see sits in your own repository, which "
-                        "nobody else can clone. You can move it to the group later."
+                        "Private lines stay in your repository until you share them with the group."
                     }
                 }
 
@@ -606,8 +604,7 @@ fn offered(
             }
             h1 { "Share this line" }
             p class="quiet" {
-                "Sharing is a move. The group receives the line; what you wrote "
-                "getting there stays with you."
+                "Move this line to the shared group repository."
             }
 
             @if let Some(problem) = problem {
@@ -623,7 +620,7 @@ fn offered(
                         }
                     }
                     p class="quiet" {
-                        "Share what it leans on first, or take the reference out."
+                        "Share these dependencies first or remove their references."
                     }
                 }
             }
@@ -671,9 +668,7 @@ fn offered(
                             }
                         }
                         p class="quiet" {
-                            "These move with the line as ordinary definitions. None of "
-                            "them enters the vault by being shared: that is a separate, "
-                            "deliberate act."
+                            "These definitions move with the line. Sharing does not add them to the vault."
                         }
                     }
                 }
