@@ -7,9 +7,31 @@
 use std::path::{Path, PathBuf};
 
 fn main() {
+    refuse_a_window_with_nothing_in_it();
     carry_the_command_line();
 
     tauri_build::build()
+}
+
+/// Stops a release build that would open blank.
+///
+/// Tauri decides at compile time whether the frontend travels inside
+/// the binary or is asked of a development server, and it decides by
+/// the `custom-protocol` feature. A release built without it carries no
+/// frontend: the window opens, asks for a file that is not there, and
+/// shows nothing at all — with no error anywhere to say why. Better to
+/// say it here, where somebody is reading.
+fn refuse_a_window_with_nothing_in_it() {
+    let release = std::env::var("PROFILE").is_ok_and(|profile| profile == "release");
+    let carries_the_frontend = std::env::var("CARGO_FEATURE_CUSTOM_PROTOCOL").is_ok();
+
+    if release && !carries_the_frontend {
+        panic!(
+            "a release build of the application needs the `custom-protocol` \
+             feature, or the window it opens is empty. Build it with `just app`, \
+             or with `cargo build --release -p stemma-app --features custom-protocol`."
+        );
+    }
 }
 
 /// Puts `stemma` where the bundle will pick it up.

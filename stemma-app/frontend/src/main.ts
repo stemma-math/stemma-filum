@@ -5,8 +5,22 @@ import "@fontsource/libertinus-serif/latin-400.css";
 import "./style.css";
 import { draw } from "../../../assets/descent.js";
 
-declare global { interface Window { __TAURI__: { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } } } }
-const invoke = window.__TAURI__.core.invoke;
+declare global { interface Window { __TAURI__?: { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } } } }
+
+// Anything that escapes lands on the page. A window that fails in
+// silence is a window nobody can report: it looks like one that never
+// opened, and there is nowhere to read what happened.
+const complain = (said: string) => { const target = document.querySelector("#app"); if (target) target.textContent = said; };
+window.addEventListener("error", (event) => complain(event.message));
+window.addEventListener("unhandledrejection", (event) => complain(String(event.reason)));
+
+// Read when it is called and not when this file loads, so that a window
+// without the application behind it says so instead of going blank.
+const invoke = <T,>(command: string, args?: Record<string, unknown>): Promise<T> => {
+  const bridge = window.__TAURI__?.core?.invoke;
+  if (!bridge) return Promise.reject(new Error("this window has no application behind it"));
+  return bridge<T>(command, args);
+};
 
 type Signed = { server: string; user: string };
 type Beginning = { code: string; url: string; url_complete: string; interval: number };

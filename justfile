@@ -65,6 +65,11 @@ app-dev: sidecar
   npm run tauri:dev --prefix {{frontend_dir}}
 
 [group("app")]
+[doc("Build the application binary alone, frontend and command line inside it.")]
+app-bin: sidecar frontend
+  cargo build --release -p stemma-app --features custom-protocol
+
+[group("app")]
 [doc("Build and ad-hoc sign the macOS application.")]
 app: sidecar
   npm run tauri:build --prefix {{frontend_dir}}

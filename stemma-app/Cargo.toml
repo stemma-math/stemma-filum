@@ -33,5 +33,12 @@ typst-svg = "=0.14.0"
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }
 
+[features]
+# Whether the frontend is carried inside the binary or asked of a
+# development server. Tauri reads this at compile time and the command
+# line tool sets it for a release; a release without it opens a window
+# with nothing in it, so the build script refuses one.
+custom-protocol = ["tauri/custom-protocol"]
+
 [lints]
 workspace = true
