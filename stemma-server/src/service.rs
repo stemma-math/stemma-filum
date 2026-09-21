@@ -49,8 +49,13 @@ impl UnitSettings {
         // directory and keeps its ownership right. Anywhere else, the
         // installer has already created it and the unit only has to be
         // allowed to write there.
+        //
+        // The mode is named because systemd applies its own on every
+        // start, and its own is 0755. Without this the instance would
+        // loosen the directory it was just installed into and then
+        // refuse to start, having noticed.
         let state = if self.data_dir == Path::new(MANAGED_STATE_DIR) {
-            "StateDirectory=stemma".to_owned()
+            "StateDirectory=stemma\nStateDirectoryMode=0750".to_owned()
         } else {
             format!("ReadWritePaths={}", self.data_dir.display())
         };
@@ -68,7 +73,6 @@ impl UnitSettings {
              Group={user}\n\
              EnvironmentFile=-{env_path}\n\
              {state}\n\
-             ConfigurationDirectory=stemma\n\
              CacheDirectory=stemma\n\
              RuntimeDirectory=stemma\n\
              Restart=on-failure\n\
@@ -181,6 +185,23 @@ mod tests {
 
         assert!(unit.contains("StateDirectory=stemma"));
         assert!(!unit.contains("ReadWritePaths="));
+    }
+
+    #[test]
+    fn systemd_is_told_the_mode_it_would_otherwise_loosen() {
+        let unit = settings(MANAGED_STATE_DIR).render();
+
+        assert!(unit.contains("StateDirectoryMode=0750"));
+    }
+
+    #[test]
+    fn the_configuration_directory_is_left_to_root() {
+        // The service reads it and never writes it, and systemd would
+        // hand it to the service account if it were named here.
+        let unit = settings(MANAGED_STATE_DIR).render();
+
+        assert!(!unit.contains("ConfigurationDirectory="));
+        assert!(unit.contains("--config /etc/stemma/server.toml"));
     }
 
     #[test]
