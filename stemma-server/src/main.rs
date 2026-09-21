@@ -130,6 +130,17 @@ fn run(cli: Cli) -> Result<ExitCode> {
             println!(
                 "{}",
                 match action {
+                    UserAction::Create {
+                        name,
+                        email,
+                        called,
+                    } => admin::create_account(
+                        database.connection(),
+                        &settings,
+                        &name,
+                        &email,
+                        called.as_deref(),
+                    )?,
                     UserAction::ResetPassword { account } =>
                         admin::reset_password(database.connection(), &settings, &account)?,
                 }
@@ -286,6 +297,12 @@ fn announce_next_steps(options: &Options) {
     } else {
         println!("  3. Run `stemma-server serve` under whatever supervises it.");
     }
+
+    // The first account cannot come from the web on an instance whose
+    // registration is closed, and every instance that cannot send mail
+    // keeps it closed.
+    println!("  4. Run `stemma-server user create NAME --email ADDRESS`, then");
+    println!("     `stemma-server admin grant NAME`, for the first maintainer.");
 }
 
 /// Says where everything the uninstall left behind is.

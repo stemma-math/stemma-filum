@@ -214,7 +214,7 @@ pub async fn register(
         Err(error) => return Ok(refuse(error.to_string(), &form)),
     };
 
-    if let Err(error) = check_email(form.email.trim()) {
+    if let Err(error) = crate::address::check(form.email.trim()) {
         return Ok(refuse(error, &form));
     }
     if let Err(error) = password::check(&form.password) {
@@ -273,28 +273,6 @@ fn signed_in(instance: &Instance, cookie: &str, destination: &str) -> Response {
     );
 
     (headers, Redirect::to(destination)).into_response()
-}
-
-/// Whether an address could be one.
-///
-/// The only test that means anything is sending mail to it, and this
-/// instance may have no mail at all, so this rejects what is certainly
-/// wrong and accepts the rest.
-fn check_email(email: &str) -> Result<(), String> {
-    let shape = email.split_once('@');
-
-    match shape {
-        Some((before, after))
-            if !before.is_empty()
-                && after.contains('.')
-                && !after.starts_with('.')
-                && !after.ends_with('.')
-                && !email.contains(char::is_whitespace) =>
-        {
-            Ok(())
-        }
-        _ => Err(format!("`{email}` does not look like an email address.")),
-    }
 }
 
 /// The log-in form's body.
@@ -406,31 +384,6 @@ fn closed() -> Markup {
                 "group in one step."
             }
             p { a href="/login" { "Log in" } }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn an_address_without_a_host_is_refused() {
-        for wrong in [
-            "ana",
-            "ana@",
-            "@example.org",
-            "ana@example",
-            "a b@example.org",
-        ] {
-            assert!(check_email(wrong).is_err(), "took `{wrong}`");
-        }
-    }
-
-    #[test]
-    fn an_ordinary_address_is_accepted() {
-        for right in ["ana@example.org", "ana.ferrer+stemma@uv.es"] {
-            assert!(check_email(right).is_ok(), "refused `{right}`");
         }
     }
 }

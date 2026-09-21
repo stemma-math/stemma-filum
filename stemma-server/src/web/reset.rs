@@ -104,7 +104,7 @@ fn ask(sends_mail: bool, sent_to: Option<&str>) -> Markup {
                 p {
                     "This instance does not send mail, so a link cannot be posted to you. "
                     "Ask whoever runs it for one: they make it on the machine, with "
-                    code { "stemma-server admin reset" } "."
+                    code { "stemma-server user reset-password" } "."
                 }
             } @else if let Some(address) = sent_to {
                 p {

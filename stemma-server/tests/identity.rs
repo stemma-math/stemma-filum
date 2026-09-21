@@ -363,6 +363,102 @@ async fn a_reset_link_sets_a_password_once_and_ends_every_session() {
 }
 
 #[tokio::test]
+async fn the_first_account_is_made_on_the_machine_and_sets_its_own_password() {
+    let mut harness = Harness::new();
+
+    // The key the machine reads is the one the instance already holds:
+    // a link made on the command line has to be worth something to the
+    // process that answers it.
+    std::fs::create_dir_all(harness.instance.settings.paths.keys_dir())
+        .expect("somewhere for the key");
+    std::fs::write(harness.instance.settings.paths.session_key(), "a test key").expect("a key");
+
+    let settings = harness.instance.settings.clone();
+    let said = harness
+        .instance
+        .read(move |connection| {
+            stemma_server::admin::create_account(
+                connection,
+                &settings,
+                "cosme",
+                "cosme@uv.es",
+                Some("Enric Cosme"),
+            )
+        })
+        .await
+        .expect("an account");
+
+    assert!(said.contains("usr:cosme"));
+    assert!(said.contains("Enric Cosme"));
+
+    let secret = said
+        .rsplit("/reset/")
+        .next()
+        .expect("a link")
+        .trim()
+        .to_owned();
+
+    // Until that link is followed the account cannot be logged into at
+    // all, however plausible the guess.
+    let guessed = harness
+        .post("/login", &[("login", "cosme"), ("password", "cosme@uv.es")])
+        .await;
+    assert_eq!(guessed.status, StatusCode::UNAUTHORIZED);
+
+    let set = harness
+        .post(
+            &format!("/reset/{secret}"),
+            &[("password", "a long enough password")],
+        )
+        .await;
+    assert_eq!(set.location.as_deref(), Some("/login"));
+
+    let admitted = harness
+        .post(
+            "/login",
+            &[("login", "cosme"), ("password", "a long enough password")],
+        )
+        .await;
+    assert_eq!(admitted.status, StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn an_account_made_on_the_machine_is_refused_twice() {
+    let harness = Harness::new();
+
+    std::fs::create_dir_all(harness.instance.settings.paths.keys_dir())
+        .expect("somewhere for the key");
+    std::fs::write(harness.instance.settings.paths.session_key(), "a test key").expect("a key");
+
+    let make = |name: &'static str, email: &'static str| {
+        let settings = harness.instance.settings.clone();
+        let instance = harness.instance.clone();
+
+        async move {
+            instance
+                .read(move |connection| {
+                    stemma_server::admin::create_account(connection, &settings, name, email, None)
+                })
+                .await
+        }
+    };
+
+    make("cosme", "cosme@uv.es").await.expect("an account");
+
+    let again = make("cosme", "somebody-else@uv.es").await;
+    assert!(
+        format!("{:#}", again.unwrap_err()).contains("already taken"),
+        "a name was handed out twice"
+    );
+
+    let same_address = make("mario", "cosme@uv.es").await;
+    assert!(
+        format!("{:#}", same_address.unwrap_err()).contains("already an account"),
+        "an address was handed out twice"
+    );
+}
+
+#[tokio::test]
 async fn an_instance_that_cannot_send_mail_says_so_rather_than_pretending() {
     let mut harness = Harness::new();
 
@@ -371,7 +467,7 @@ async fn an_instance_that_cannot_send_mail_says_so_rather_than_pretending() {
 
     let asked = harness.get("/forgotten").await;
     assert!(asked.says("does not send mail"));
-    assert!(asked.says("stemma-server admin reset"));
+    assert!(asked.says("stemma-server user reset-password"));
 
     // And it does not quietly claim to have sent anything.
     let sent = harness

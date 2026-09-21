@@ -1,17 +1,21 @@
 //! What an administrator does from the machine.
 //!
-//! Granting somebody the run of the instance and handing out a reset link
-//! are done here rather than through the web, because both are the answer
-//! to "nobody can get in". A grant takes an account that already exists, so
-//! the bootstrap path is to register through the web like everybody else
-//! and then run `grant` on the machine, which keeps password handling out
-//! of the command line entirely.
+//! Making the first account, granting somebody the run of the instance
+//! and handing out a reset link are done here rather than through the
+//! web, because all three are the answer to "nobody can get in".
+//!
+//! No password is ever typed here. An account is made without one and
+//! handed a link that sets it, so nothing anybody has to keep secret
+//! passes through a command line or is left in a shell's history.
 
 use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
 use stemma_core::access::Grant;
+use stemma_core::id::Slug;
 
 use crate::config::Settings;
+use crate::password;
+use crate::store::users::NotCreated;
 use crate::store::{resets, sessions, users};
 use crate::tokens::Key;
 
@@ -25,6 +29,58 @@ pub fn find(connection: &Connection, named: &str) -> Result<users::User> {
 
     users::by_login(connection, without_prefix)?
         .with_context(|| format!("there is no account `{named}` on this instance"))
+}
+
+/// Makes an account, for somebody who then sets its password.
+///
+/// This is how the first account on an instance comes to exist. Every
+/// other door needs one already: a grant needs somebody to grant to,
+/// and an invitation needs somebody to write it. An instance that
+/// cannot send mail keeps its registration closed, so without this the
+/// only way in would be to open the instance to the world for as long
+/// as it takes to register.
+pub fn create_account(
+    connection: &Connection,
+    settings: &Settings,
+    name: &str,
+    email: &str,
+    called: Option<&str>,
+) -> Result<String> {
+    let key = Key::read(&settings.paths.session_key())?;
+
+    let slug = Slug::parse(name.trim()).context("that is not a name an account can have")?;
+    let email = email.trim();
+
+    if let Err(problem) = crate::address::check(email) {
+        bail!(problem);
+    }
+
+    let display_name = match called.map(str::trim) {
+        Some(given) if !given.is_empty() => given.to_owned(),
+        _ => slug.as_str().to_owned(),
+    };
+
+    let user = match users::create(
+        connection,
+        &slug,
+        email,
+        &display_name,
+        password::NO_PASSWORD,
+    )? {
+        Ok(user) => user,
+        Err(NotCreated::SlugTaken(slug)) => bail!("`{slug}` is already taken on this instance"),
+        Err(NotCreated::EmailTaken(email)) => bail!("there is already an account for {email}"),
+    };
+
+    let secret = resets::create(connection, &key, &user.id)?;
+    let link = settings.public_url.link(&format!("reset/{secret}"));
+
+    Ok(format!(
+        "{} is an account with no password yet.\n\n\
+         Give this to {display_name}. It works once, and for {} hours:\n\n  {link}",
+        user.id,
+        resets::LIFETIME_HOURS
+    ))
 }
 
 /// Gives somebody the run of the instance.

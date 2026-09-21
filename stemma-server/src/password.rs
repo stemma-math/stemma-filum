@@ -25,6 +25,14 @@ pub enum TooWeak {
     Blank,
 }
 
+/// What is stored for an account that has no password yet.
+///
+/// An account made on the machine has none until somebody follows the
+/// link that sets one. This is not a hash and cannot be read as one, so
+/// [`verify`] refuses every password against it — which is exactly what
+/// an account nobody has claimed should do.
+pub const NO_PASSWORD: &str = "!";
+
 /// Checks a password before it is ever hashed.
 pub fn check(password: &str) -> Result<(), TooWeak> {
     if password.trim().is_empty() {
@@ -68,6 +76,13 @@ pub fn accept(password: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nothing_at_all_verifies_against_an_account_with_no_password() {
+        for attempt in ["", "!", "a long enough password"] {
+            assert!(!verify(attempt, NO_PASSWORD), "`{attempt}` got in");
+        }
+    }
 
     #[test]
     fn a_password_verifies_against_its_own_hash() {

@@ -193,6 +193,20 @@ pub enum AdminAction {
 /// What can be done about an account from the machine.
 #[derive(Debug, Subcommand)]
 pub enum UserAction {
+    /// Makes an account and prints a link for setting its password.
+    Create {
+        /// The name it is known by here.
+        name: String,
+
+        /// Where to reach whoever holds it.
+        #[arg(long, value_name = "ADDRESS")]
+        email: String,
+
+        /// What to call them, if not the name itself.
+        #[arg(long, value_name = "NAME")]
+        called: Option<String>,
+    },
+
     /// Prints a single-use link for setting a new password.
     ResetPassword {
         /// A name, an address or a full identifier.
@@ -377,6 +391,34 @@ mod tests {
         assert_eq!(to, PathBuf::from("/srv/backups"));
         assert_eq!(keep, Some(7));
         assert!(with_artefacts);
+    }
+
+    #[test]
+    fn an_account_is_made_with_a_name_and_an_address() {
+        let Command::User {
+            action:
+                UserAction::Create {
+                    name,
+                    email,
+                    called,
+                },
+            ..
+        } = parse(&[
+            "stemma-server",
+            "user",
+            "create",
+            "ana",
+            "--email",
+            "ana@uv.es",
+        ])
+        .command
+        else {
+            panic!("expected the create command");
+        };
+
+        assert_eq!(name, "ana");
+        assert_eq!(email, "ana@uv.es");
+        assert!(called.is_none());
     }
 
     #[test]
