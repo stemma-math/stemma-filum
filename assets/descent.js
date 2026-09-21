@@ -94,7 +94,12 @@ const still = () =>
 
 /// Draws a descent, and parts the band when a lemma has just been
 /// promoted out of it.
+const animations = new WeakMap();
+
 export function draw(figure, descent, previous) {
+    const pending = animations.get(figure);
+    if (pending !== undefined) window.cancelAnimationFrame(pending);
+    animations.delete(figure);
     if (!descent || !descent.placed || !descent.placed.length) {
         const canvas = figure.querySelector(".descent__canvas");
 
@@ -116,16 +121,18 @@ export function draw(figure, descent, previous) {
 
     const began = performance.now();
     const step = (now) => {
+        animations.delete(figure);
+        if (!figure.isConnected) return;
         const through = Math.min(1, (now - began) / SPLIT);
 
         paint(figure, descent, through, split);
 
         if (through < 1) {
-            window.requestAnimationFrame(step);
+            animations.set(figure, window.requestAnimationFrame(step));
         }
     };
 
-    window.requestAnimationFrame(step);
+    animations.set(figure, window.requestAnimationFrame(step));
 }
 
 /// One frame.

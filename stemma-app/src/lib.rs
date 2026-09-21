@@ -447,18 +447,29 @@ fn runnable(path: &PathBuf) -> bool {
 /// browser, where they can see the address they are typing a code into.
 #[tauri::command(async)]
 fn open_link(url: String) -> Result<(), String> {
+    let url = browser_url(&url)?;
     let opener = match std::env::consts::OS {
         "macos" => "open",
         "windows" => "explorer",
         _ => "xdg-open",
     };
 
-    std::process::Command::new(opener)
-        .arg(&url)
-        .spawn()
+    let status = std::process::Command::new(opener)
+        .arg(url.as_str())
+        .status()
         .map_err(|error| format!("cannot open {url}: {error}"))?;
-
+    if !status.success() {
+        return Err(format!("cannot open {url}: {opener} exited with {status}"));
+    }
     Ok(())
+}
+
+fn browser_url(given: &str) -> Result<tauri::Url, String> {
+    let url = tauri::Url::parse(given).map_err(said)?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err("only HTTP and HTTPS browser links can be opened".to_owned());
+    }
+    Ok(url)
 }
 
 /// What is waiting for this person to read it.
@@ -590,7 +601,11 @@ fn lines() -> Result<Vec<Known>, String> {
     let home = home();
     let config = stemma::config::Config::read(&home.config_file()).map_err(said)?;
     let workspace = config.workspace_or(home.workspace());
-    let groups = std::fs::read_dir(&workspace).map_err(said)?;
+    let groups = match std::fs::read_dir(&workspace) {
+        Ok(groups) => groups,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(said(error)),
+    };
     let mut found = Vec::new();
     for group in groups
         .filter_map(Result::ok)
@@ -655,7 +670,7 @@ fn open_line(path: String) -> Result<OpenLine, String> {
 #[tauri::command(async)]
 fn save_line(path: String, source: String) -> Result<OpenLine, String> {
     let path = admitted(&path)?;
-    std::fs::write(&path, &source).map_err(said)?;
+    stemma::storage::replace(&path, &source).map_err(said)?;
     let (group, side, name) = identity(&path)?;
     let (line, boxes, diagnostics) = analyse(&source);
     Ok(OpenLine {
@@ -945,12 +960,14 @@ fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, String>
             siglum: decision.siglum.parse().map_err(said)?,
             part: match decision.part.as_str() {
                 "proof" => stemma_core::reconcile::Part::Proof,
-                _ => stemma_core::reconcile::Part::Statement,
+                "statement" => stemma_core::reconcile::Part::Statement,
+                _ => return Err("unknown disagreement part".to_owned()),
             },
         };
         let keep = match decision.keep.as_str() {
             "there" => stemma_core::reconcile::Keep::There,
-            _ => stemma_core::reconcile::Keep::Here,
+            "here" => stemma_core::reconcile::Keep::Here,
+            _ => return Err("unknown disagreement decision".to_owned()),
         };
 
         decided.insert(mark, keep);
@@ -1021,12 +1038,21 @@ fn admitted(given: &str) -> Result<PathBuf, String> {
         .workspace_or(home.workspace())
         .canonicalize()
         .map_err(said)?;
-    if !path.starts_with(workspace)
-        || path.file_name().and_then(|name| name.to_str()) != Some(repository::ENTRY)
-    {
+    if !is_line_path(&workspace, &path) {
         return Err("that is not a line in this machine's workspace".to_owned());
     }
     Ok(path)
+}
+
+/// Only the exact workspace layout is admitted, after resolving symlinks.
+fn is_line_path(workspace: &Path, path: &Path) -> bool {
+    let Ok(relative) = path.strip_prefix(workspace) else {
+        return false;
+    };
+    let parts: Vec<_> = relative.iter().filter_map(|part| part.to_str()).collect();
+    matches!(parts.as_slice(), [group, "private" | "shared", lines, name, entry]
+        if !group.is_empty() && *lines == repository::LINES
+            && Name::parse(name).is_ok() && *entry == repository::ENTRY)
 }
 
 fn identity(path: &Path) -> Result<(String, String, String), String> {
@@ -1133,7 +1159,41 @@ pub fn run() {
 mod tests {
     use std::path::Path;
 
-    use super::{Source, SourceDiagnostic, analyse, complaint, compose, identity};
+    use super::{
+        Source, SourceDiagnostic, analyse, browser_url, complaint, compose, identity, is_line_path,
+    };
+
+    #[test]
+    fn browser_links_cannot_open_local_files_or_custom_handlers() {
+        assert!(browser_url("https://example.org/approve?code=abc").is_ok());
+        assert!(browser_url("http://localhost:8080/approve").is_ok());
+        for url in [
+            "file:///tmp/program",
+            "javascript:alert(1)",
+            "custom:run",
+            "--help",
+        ] {
+            assert!(browser_url(url).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn only_actual_workspace_lines_are_admitted() {
+        let workspace = Path::new("/workspace");
+        assert!(is_line_path(
+            workspace,
+            Path::new("/workspace/algebra/private/lines/quotients/main.typ")
+        ));
+        for path in [
+            "/workspace/main.typ",
+            "/workspace/algebra/private/other/quotients/main.typ",
+            "/workspace/algebra/arbitrary/lines/quotients/main.typ",
+            "/workspace/algebra/private/lines/quotients/nested/main.typ",
+            "/elsewhere/algebra/private/lines/quotients/main.typ",
+        ] {
+            assert!(!is_line_path(workspace, Path::new(path)), "{path}");
+        }
+    }
 
     #[test]
     fn a_line_identity_comes_from_its_repository_path() {

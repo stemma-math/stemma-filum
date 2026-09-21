@@ -3,14 +3,24 @@ import "@fontsource/archivo/latin-600.css";
 import "@fontsource/iosevka/latin-400.css";
 import "@fontsource/libertinus-serif/latin-400.css";
 import "./style.css";
+import { escapeHtml as escape, serially, latestRequest } from "./lifecycle";
 import { draw } from "../../../assets/descent.js";
 
-declare global { interface Window { __TAURI__?: { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } } } }
+declare global {
+  interface Window {
+    __TAURI__?: {
+      core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> };
+      window?: { getCurrentWindow(): {
+        onCloseRequested(handler: (event: { preventDefault(): void }) => Promise<void>): Promise<() => void>;
+      } };
+    };
+  }
+}
 
 // Anything that escapes lands on the page. A window that fails in
 // silence is a window nobody can report: it looks like one that never
 // opened, and there is nowhere to read what happened.
-const complain = (said: string) => { const target = document.querySelector("#app"); if (target) target.textContent = said; };
+const complain = (said: string) => { const target = document.querySelector("#app"); if (document.querySelector("#said")) tell(said); else if (target) target.textContent = said; };
 window.addEventListener("error", (event) => complain(event.message));
 window.addEventListener("unhandledrejection", (event) => complain(String(event.reason)));
 
@@ -48,6 +58,15 @@ type View = "lines" | "editor" | "review" | "machine" | "vault";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const RENEW = 5 * 60 * 1000;
 
+const enqueueSave = serially();
+const openRequest = latestRequest();
+const previewRequest = latestRequest();
+const descentRequest = latestRequest();
+const signInRequest = latestRequest();
+const reviewRequest = latestRequest();
+const vaultRequest = latestRequest();
+let renewalTimer = 0;
+let signInTimer = 0;
 let signed: Signed | null = null;
 let view: View = "lines";
 let known: Known[] = [];
@@ -59,12 +78,12 @@ let choices: Offer[] = [];
 let writing = false;
 let decisions = new Map<string, "here" | "there">();
 let saveTimer = 0;
+let savesInFlight = 0;
 let previewTimer = 0;
 let spans: string[][] = [];
 let descent: unknown = null;
 let showing: "document" | "descent" = "document";
 
-function escape(text: string) { const node = document.createElement("span"); node.textContent = text; return node.innerHTML; }
 function said(error: unknown) { return String(error).replace(/^Error:\s*/, ""); }
 function tell(message: string) { const bar = document.querySelector<HTMLDivElement>("#said"); if (bar) { bar.textContent = message; bar.hidden = !message; } }
 
@@ -96,12 +115,33 @@ function shell() {
 
   app.querySelectorAll<HTMLButtonElement>("nav button").forEach((button) => button.onclick = () => go(button.dataset.view as View));
   document.querySelector<HTMLButtonElement>("#sync")!.onclick = bringIntoStep;
-  document.querySelector<HTMLButtonElement>("#sign-out")!.onclick = async () => { await invoke("sign_out"); signed = null; boot(); };
+  document.querySelector<HTMLButtonElement>("#sign-out")!.onclick = async () => {
+    try {
+      await flushEdits();
+      await invoke("sign_out");
+      window.clearInterval(renewalTimer);
+      window.clearTimeout(saveTimer);
+      window.clearTimeout(previewTimer);
+      current = null;
+      writing = false;
+      signed = null;
+      await boot();
+    } catch (error) { tell(said(error)); }
+  };
 }
 
 function body() { return document.querySelector<HTMLDivElement>("#body")!; }
 
 async function go(next: View) {
+  if (view === "editor" && next !== "editor") {
+    try { await flushEdits(); } catch (error) { tell(said(error)); return; }
+    window.clearTimeout(saveTimer);
+    window.clearTimeout(previewTimer);
+    writing = false;
+  }
+  openRequest();
+  reviewRequest();
+  vaultRequest();
   view = next;
   shell();
   if (next === "lines") await drawLines();
@@ -114,6 +154,8 @@ async function go(next: View) {
 /* ── Signing in ────────────────────────────────────────────────────── */
 
 function signInScreen(problem?: string) {
+  signInRequest();
+  window.clearTimeout(signInTimer);
   app.innerHTML = `<div class="entrance">
     <span class="wordmark">STEMMA</span>
     <h1>Sign this machine in</h1>
@@ -130,7 +172,9 @@ function signInScreen(problem?: string) {
 }
 
 async function beginSignIn(server: string) {
+  const active = signInRequest();
   const beginning = await invoke<Beginning>("sign_in_start", { server });
+  if (!active()) return;
   app.innerHTML = `<div class="entrance">
     <span class="wordmark">STEMMA</span>
     <h1>Type this code</h1>
@@ -142,14 +186,19 @@ async function beginSignIn(server: string) {
   </div>`;
   document.querySelector<HTMLButtonElement>("#open")!.onclick = () => invoke("open_link", { url: beginning.url_complete }).catch(() => {});
   document.querySelector<HTMLButtonElement>("#give-up")!.onclick = () => signInScreen();
-  const waitingFor = window.setInterval(async () => {
-    let answer = "waiting";
+  const poll = async () => {
+    if (!active()) return;
+    let answer: string;
     try { answer = await invoke<string>("sign_in_poll"); } catch (error) { answer = said(error); }
-    if (answer === "signed") { window.clearInterval(waitingFor); await boot(); return; }
-    if (answer === "waiting" || answer === "nothing") return;
-    window.clearInterval(waitingFor);
+    if (!active()) return;
+    if (answer === "signed") { await boot(); return; }
+    if (answer === "waiting" || answer === "nothing") {
+      signInTimer = window.setTimeout(poll, Math.max(2, beginning.interval) * 1000);
+      return;
+    }
     signInScreen(answer === "refused" ? "That sign-in was refused." : answer === "ran_out" ? "Nobody answered in time." : answer);
-  }, Math.max(2, beginning.interval) * 1000);
+  };
+  signInTimer = window.setTimeout(poll, Math.max(2, beginning.interval) * 1000);
 }
 
 /* ── Lines ─────────────────────────────────────────────────────────── */
@@ -158,7 +207,9 @@ async function drawLines() {
   const target = body();
   target.innerHTML = `<div class="sheet"><section><p class="label">Lines on this machine</p><div id="known">reading…</div></section><section id="new-line"></section></div>`;
   await drawNewLine();
+  if (!target.isConnected) return;
   try { known = await invoke<Known[]>("lines"); } catch (error) { say("#known", said(error)); return; }
+  if (!target.isConnected) return;
   const listing = document.querySelector<HTMLDivElement>("#known");
   if (!listing) return;
   if (!known.length) { listing.innerHTML = `<p class="quiet">Nothing here yet. Start a line above, or sync to bring down what the instance has.</p>`; return; }
@@ -182,6 +233,7 @@ async function drawNewLine() {
   const target = document.querySelector<HTMLElement>("#new-line")!;
   let where: string[] = [];
   try { where = await invoke<string[]>("groups"); } catch { where = []; }
+  if (!target.isConnected) return;
   target.innerHTML = `<details class="starting"><summary>New line</summary>
     ${where.length ? `<form id="start" class="stack">
       <label>Group<select id="group">${where.map((group) => `<option>${escape(group)}</option>`).join("")}</select></label>
@@ -254,15 +306,28 @@ async function bringIntoStep() {
 /* ── The editor ────────────────────────────────────────────────────── */
 
 async function open(path: string) {
+  const active = openRequest();
   try {
-    current = await invoke<OpenLine>("open_line", { path });
+    await save();
+    const opened = await invoke<OpenLine>("open_line", { path });
+    const [offers, bridges] = await Promise.all([
+      invoke<Offer[]>("offers", { group: opened.entry.group }).catch(() => []),
+      audited(opened.entry.group),
+    ]);
+    if (!active()) return;
+    await flushEdits();
+    if (!active()) return;
+    current = opened;
+    writing = false;
     descent = null;
-    choices = await invoke<Offer[]>("offers", { group: current.entry.group }).catch(() => []);
-    spans = await audited(current.entry.group);
+    choices = offers;
+    spans = bridges;
     await go("editor");
     await takeClaim();
+    if (current !== opened || view !== "editor") return;
     await drawParted();
-    drawNodes(current);
+    if (current !== opened || view !== "editor") return;
+    drawNodes(opened);
     drawLauncher();
     await render();
   } catch (error) { tell(said(error)); }
@@ -301,6 +366,7 @@ function drawEditor() {
     </aside>
   </main>`;
   const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
+  editor.disabled = !writing;
   editor.value = current.source;
   editor.oninput = changed;
   body().querySelectorAll<HTMLButtonElement>(".tabs button").forEach((button) => button.onclick = () => showPane(button.dataset.pane as "document" | "descent"));
@@ -327,9 +393,12 @@ function showPane(pane: "document" | "descent") {
 async function drawDescent() {
   const figure = document.querySelector<HTMLElement>(".descent");
   if (!figure || !current) return;
+  const active = descentRequest();
+  const source = editor().value;
   const verified = current.lean?.compiled ? current.lean.statements : [];
   try {
     const next = await invoke<unknown>("descent", { source: editor().value, verified, bridges: spans });
+    if (!active() || !figure.isConnected || editor().value !== source) return;
     // Handing the previous one over is what lets the drawing part a
     // box when a lemma has just been promoted out of it.
     draw(figure, next, descent);
@@ -342,24 +411,47 @@ function changed() {
   if (!current || !writing) return;
   saved("saving");
   window.clearTimeout(saveTimer); window.clearTimeout(previewTimer);
-  saveTimer = window.setTimeout(save, 450);
+  saveTimer = window.setTimeout(() => { void save().catch((error) => tell(said(error))); }, 450);
   previewTimer = window.setTimeout(() => { if (showing === "descent") drawDescent(); else render(); }, 650);
 }
 
 async function save() {
-  if (!current) return;
-  try { current = await invoke<OpenLine>("save_line", { path: current.entry.path, source: editor().value }); drawNodes(current); saved("saved"); }
-  catch (error) { saved("not saved"); tell(said(error)); }
+  const input = document.querySelector<HTMLTextAreaElement>("#editor");
+  if (!current || !input || (input.value === current.source && savesInFlight === 0)) return;
+  const path = current.entry.path;
+  const source = input.value;
+  window.clearTimeout(saveTimer);
+  savesInFlight += 1;
+  try {
+    const opened = await enqueueSave(() => invoke<OpenLine>("save_line", { path, source }));
+    if (!input.isConnected || current?.entry.path !== path) return;
+    current = opened;
+    if (input.value === source) { drawNodes(opened); saved("saved"); }
+  } catch (error) {
+    if (input.isConnected) saved("not saved");
+    throw error;
+  } finally {
+    savesInFlight -= 1;
+  }
+}
+
+/** Navigation must also save edits made while an earlier write was in flight. */
+async function flushEdits() {
+  const input = document.querySelector<HTMLTextAreaElement>("#editor");
+  while (input?.isConnected && current && (input.value !== current.source || savesInFlight > 0)) await save();
 }
 
 async function render() {
   if (!current) return;
   const page = document.querySelector<HTMLDivElement>("#page");
   if (!page) return;
+  const active = previewRequest();
+  const source = editor().value;
   try {
     const preview = await invoke<{ svg: string; diagnostics: string[] }>("preview", { path: current.entry.path, source: editor().value });
+    if (!active() || !page.isConnected || editor().value !== source) return;
     page.innerHTML = preview.svg + (preview.diagnostics.length ? `<pre class="diagnostic">${escape(preview.diagnostics.join("\n"))}</pre>` : "");
-  } catch (error) { page.innerHTML = `<pre class="diagnostic">${escape(said(error))}</pre>`; }
+  } catch (error) { if (!active() || !page.isConnected) return; page.innerHTML = `<pre class="diagnostic">${escape(said(error))}</pre>`; }
 }
 
 function drawNodes(opened: OpenLine) {
@@ -380,17 +472,26 @@ async function askAbout(command: string) {
   const target = document.querySelector<HTMLDivElement>("#claim");
   if (!target) return;
   try {
+    if (command === "let_go") await save();
     const claim = await invoke<Claim>(command, { path: current.entry.path });
-    writing = claim.standing !== "waiting";
+    if (!target.isConnected) return;
+    writing = claim.standing === "writing";
     editor().disabled = !writing;
     const minutes = claim.left === null ? "" : `<span class="quiet">it lapses in ${Math.max(1, Math.ceil(claim.left / 60))} minutes</span>`;
-    const action = writing ? `<button id="let-go">Let it go</button>` : `<button id="ask-for-it"${claim.asked ? " disabled" : ""}>${claim.asked ? "Asked for" : "Ask for it"}</button>`;
+    const action = claim.standing === "open" ? `<button id="take-claim">Write this line</button>` : writing ? `<button id="let-go">Let it go</button>` : `<button id="ask-for-it"${claim.asked ? " disabled" : ""}>${claim.asked ? "Asked for" : "Ask for it"}</button>`;
     target.innerHTML = `<div class="job"><span>${escape(claim.said)}</span>${minutes}${action}</div>`;
+    const take = target.querySelector<HTMLButtonElement>("#take-claim");
+    if (take) take.onclick = takeClaim;
     const go = document.querySelector<HTMLButtonElement>("#let-go");
     if (go) go.onclick = () => askAbout("let_go");
     const ask = document.querySelector<HTMLButtonElement>("#ask-for-it");
     if (ask) ask.onclick = () => askAbout("ask_for_line");
-  } catch (error) { target.textContent = said(error); }
+  } catch (error) {
+    if (!target.isConnected) return;
+    writing = false;
+    editor().disabled = true;
+    target.textContent = said(error);
+  }
 }
 
 async function drawParted() {
@@ -402,6 +503,7 @@ async function drawParted() {
   let found: Disagreement[] = [];
   try { found = await invoke<Disagreement[]>("parted", { path: current.entry.path }); }
   catch (error) { block.hidden = false; target.textContent = said(error); return; }
+  if (!target.isConnected) return;
   block.hidden = found.length === 0;
   if (!found.length) return;
   target.innerHTML = found.map((one) => `<div class="job"><strong>${escape(one.mark)}</strong><span class="quiet">${escape(one.said)}</span>
@@ -430,14 +532,15 @@ function drawLauncher(anchored?: string) {
   const options = choices.flatMap((machine) => machine.agents.map((agent) => ({ machine, agent })));
   if (!options.length) { target.innerHTML = `<p class="quiet">No machine works for this group yet.</p>`; return; }
   target.innerHTML = `<select id="task"><option value="${escape(anchored ?? "explore")}">${escape(anchored ?? "explore")}</option></select>
-    <select id="on">${options.map(({ machine, agent }) => `<option value="${machine.machine}|${agent.name}"${agent.reason ? " disabled" : ""}>${escape(machine.label)} · ${machine.presence} · ${escape(agent.called)}${agent.reason ? ` · ${escape(agent.reason)}` : ""}</option>`).join("")}</select>
-    <button id="ask">Ask</button>`;
+    <select id="on">${options.map(({ machine, agent }) => `<option value="${escape(machine.machine)}|${escape(agent.name)}"${agent.reason ? " disabled" : ""}>${escape(machine.label)} · ${escape(machine.presence)} · ${escape(agent.called)}${agent.reason ? ` · ${escape(agent.reason)}` : ""}</option>`).join("")}</select>
+    <button id="ask"${options.every(({ agent }) => agent.reason) ? " disabled" : ""}>Ask</button>`;
   document.querySelector<HTMLButtonElement>("#ask")!.onclick = async () => {
     try {
-      await save();
+      const path = current!.entry.path;
       const task = document.querySelector<HTMLSelectElement>("#task")!.value;
       const [machine, agent] = document.querySelector<HTMLSelectElement>("#on")!.value.split("|");
-      tell(await invoke<string>("launch", { path: current!.entry.path, task, agent, here: false, machine }));
+      await save();
+      tell(await invoke<string>("launch", { path, task, agent, here: false, machine }));
       await refreshJobs();
     } catch (error) { tell(said(error)); }
   };
@@ -471,6 +574,8 @@ async function drawReview() {
   const target = body();
   target.innerHTML = `<div class="sheet"><section><p class="label">Waiting for you</p><div id="waiting">reading…</div></section><section id="reading"></section></div>`;
   try { waiting = await invoke<Waiting[]>("proposals"); } catch (error) { say("#waiting", said(error)); return; }
+  if (!target.isConnected) return;
+  countWaiting();
   const listing = document.querySelector<HTMLDivElement>("#waiting");
   if (!listing) return;
   if (!waiting.length) { listing.innerHTML = `<p class="quiet">Nothing is waiting for you to read it.</p>`; return; }
@@ -488,7 +593,8 @@ function countWaiting() {
 }
 
 async function read(proposal: string) {
-  try { reading = await invoke<Review>("proposal", { proposal }); } catch (error) { tell(said(error)); return; }
+  const active = reviewRequest();
+  try { const next = await invoke<Review>("proposal", { proposal }); if (!active() || view !== "review") return; reading = next; } catch (error) { tell(said(error)); return; }
   const target = document.querySelector<HTMLElement>("#reading");
   if (!target) return;
   const rows = reading.rows.map((row, at) => {
@@ -530,6 +636,7 @@ async function drawMachine() {
     <section><p class="label">Jobs</p><div id="jobs">—</div></section></div>`;
   let where: string[] = [];
   try { where = await invoke<string[]>("groups"); } catch { where = []; }
+  if (!target.isConnected) return;
   document.querySelector("#offer")!.innerHTML = `<form id="node" class="stack">
     ${where.map((group) => `<label class="choice"><input type="checkbox" name="group" value="${escape(group)}" checked><span>${escape(group)}</span></label>`).join("") || `<p class="quiet">No group on this machine yet.</p>`}
     <div class="row__actions"><button type="submit">Offer this machine</button><button type="button" id="daemon">Install the daemon</button></div>
@@ -550,6 +657,7 @@ async function drawMachine() {
   };
   try {
     const panel = await invoke<Machine>("machine");
+    if (!target.isConnected) return;
     const about = document.querySelector<HTMLDivElement>("#panel");
     const jobs = document.querySelector<HTMLDivElement>("#jobs");
     if (!about || !jobs) return;
@@ -566,6 +674,7 @@ async function drawVault() {
   const target = body();
   let where: string[] = [];
   try { where = await invoke<string[]>("groups"); } catch { where = []; }
+  if (!target.isConnected) return;
   if (!where.length) { target.innerHTML = `<div class="sheet"><p class="quiet">No group on this machine yet.</p></div>`; return; }
   target.innerHTML = `<div class="sheet">
     <label>Group<select id="vault-group">${where.map((group) => `<option>${escape(group)}</option>`).join("")}</select></label>
@@ -617,10 +726,12 @@ async function drawVault() {
 }
 
 async function showVault(group: string) {
+  const active = vaultRequest();
   const target = document.querySelector<HTMLDivElement>("#vault-entries");
   if (!target) return;
   try {
     const vault = await invoke<Vault>("vault", { group });
+    if (!active() || !target.isConnected) return;
     const names = new Map(vault.entries.map((entry) => [entry.id, entry.name]));
     const entries = vault.entries.map((entry) => `<div class="row"><div><p class="row__name">${escape(entry.name)}</p><p class="quiet identifier">${escape(entry.siglum)} · ${escape(entry.correspondence)}</p></div>
       <div class="row__actions"><button data-attest="${escape(entry.id)}">Attest</button><button data-withdraw="${escape(entry.id)}">Withdraw</button></div></div>`).join("");
@@ -661,7 +772,28 @@ async function boot() {
   if (!signed) { signInScreen(); return; }
   try { waiting = await invoke<Waiting[]>("proposals"); } catch { waiting = []; }
   await go("lines");
-  window.setInterval(() => { if (current && writing) invoke("claim", { path: current.entry.path }).catch(() => {}); }, RENEW);
+  window.clearInterval(renewalTimer);
+  renewalTimer = window.setInterval(() => { if (view === "editor" && current && writing) void takeClaim(); }, RENEW);
 }
 
-boot().catch((error) => { app.textContent = said(error); });
+async function start() {
+  let closing = false;
+  await window.__TAURI__?.window?.getCurrentWindow().onCloseRequested(async (event) => {
+    if (closing) { event.preventDefault(); return; }
+    closing = true;
+    const input = document.querySelector<HTMLTextAreaElement>("#editor");
+    if (input) input.readOnly = true;
+    try {
+      await flushEdits();
+    } catch (error) {
+      event.preventDefault();
+      if (input) input.readOnly = false;
+      tell(`The window remains open because your changes could not be saved: ${said(error)}`);
+    } finally {
+      closing = false;
+    }
+  });
+  await boot();
+}
+
+start().catch((error) => { app.textContent = said(error); });
