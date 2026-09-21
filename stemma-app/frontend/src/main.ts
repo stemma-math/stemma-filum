@@ -68,6 +68,12 @@ function escape(text: string) { const node = document.createElement("span"); nod
 function said(error: unknown) { return String(error).replace(/^Error:\s*/, ""); }
 function tell(message: string) { const bar = document.querySelector<HTMLDivElement>("#said"); if (bar) { bar.textContent = message; bar.hidden = !message; } }
 
+// Whatever was being read may come back after the view that asked for
+// it was thrown away: the shell is redrawn whole, and everything in it
+// goes. Nothing is left to write on then, and that is not a failure —
+// it is somebody who moved on — so the answer is dropped in silence.
+function say(selector: string, message: string) { const target = document.querySelector(selector); if (target) target.textContent = message; }
+
 /* ── The shell ─────────────────────────────────────────────────────── */
 
 function shell() {
@@ -152,8 +158,9 @@ async function drawLines() {
   const target = body();
   target.innerHTML = `<div class="sheet"><section><p class="label">Lines on this machine</p><div id="known">reading…</div></section><section id="new-line"></section></div>`;
   await drawNewLine();
-  try { known = await invoke<Known[]>("lines"); } catch (error) { document.querySelector("#known")!.textContent = said(error); return; }
-  const listing = document.querySelector<HTMLDivElement>("#known")!;
+  try { known = await invoke<Known[]>("lines"); } catch (error) { say("#known", said(error)); return; }
+  const listing = document.querySelector<HTMLDivElement>("#known");
+  if (!listing) return;
   if (!known.length) { listing.innerHTML = `<p class="quiet">Nothing here yet. Start a line above, or sync to bring down what the instance has.</p>`; return; }
   listing.innerHTML = known.map((line) => `<div class="row">
     <div>
@@ -362,7 +369,7 @@ function drawNodes(opened: OpenLine) {
   const gutter = document.querySelector("#nodes");
   if (!gutter) return;
   gutter.innerHTML = nodes + boxes;
-  document.querySelector("#source-diagnostics")!.textContent = [...opened.diagnostics, ...(opened.lean && !opened.lean.compiled ? [opened.lean.diagnostic] : [])].join("\n");
+  say("#source-diagnostics", [...opened.diagnostics, ...(opened.lean && !opened.lean.compiled ? [opened.lean.diagnostic] : [])].join("\n"));
   gutter.querySelectorAll<HTMLButtonElement>("button").forEach((button) => button.onclick = () => drawLauncher(button.dataset.task));
 }
 
@@ -463,8 +470,9 @@ function rawOutputs(target: HTMLElement) {
 async function drawReview() {
   const target = body();
   target.innerHTML = `<div class="sheet"><section><p class="label">Waiting for you</p><div id="waiting">reading…</div></section><section id="reading"></section></div>`;
-  try { waiting = await invoke<Waiting[]>("proposals"); } catch (error) { document.querySelector("#waiting")!.textContent = said(error); return; }
-  const listing = document.querySelector<HTMLDivElement>("#waiting")!;
+  try { waiting = await invoke<Waiting[]>("proposals"); } catch (error) { say("#waiting", said(error)); return; }
+  const listing = document.querySelector<HTMLDivElement>("#waiting");
+  if (!listing) return;
   if (!waiting.length) { listing.innerHTML = `<p class="quiet">Nothing is waiting for you to read it.</p>`; return; }
   listing.innerHTML = waiting.map((one) => `<div class="row">
     <div><p class="row__name">${escape(one.line)}</p><p class="quiet">${escape(one.task)} · ${escape(one.agent)} · ${escape(one.vendor)} ${escape(one.model)}</p></div>
@@ -481,7 +489,8 @@ function countWaiting() {
 
 async function read(proposal: string) {
   try { reading = await invoke<Review>("proposal", { proposal }); } catch (error) { tell(said(error)); return; }
-  const target = document.querySelector<HTMLElement>("#reading")!;
+  const target = document.querySelector<HTMLElement>("#reading");
+  if (!target) return;
   const rows = reading.rows.map((row, at) => {
     // The frame goes around the run, not around each of its lines: it
     // is one statement the guard forbids touching, not five.
@@ -541,12 +550,14 @@ async function drawMachine() {
   };
   try {
     const panel = await invoke<Machine>("machine");
-    document.querySelector("#panel")!.innerHTML = `<p class="row__name">${escape(panel.label)}</p><p class="quiet">${escape(panel.presence)}</p>
+    const about = document.querySelector<HTMLDivElement>("#panel");
+    const jobs = document.querySelector<HTMLDivElement>("#jobs");
+    if (!about || !jobs) return;
+    about.innerHTML = `<p class="row__name">${escape(panel.label)}</p><p class="quiet">${escape(panel.presence)}</p>
       ${panel.agents.map((agent) => `<div class="agent ${agent.reason ? "out" : ""}">${escape(agent.called)} <code>${escape(agent.reason ?? agent.availability)}</code></div>`).join("")}`;
-    const jobs = document.querySelector<HTMLDivElement>("#jobs")!;
     jobs.innerHTML = panel.jobs.length ? panel.jobs.map(jobRow).join("") : "Nothing has been asked of this machine.";
     rawOutputs(jobs);
-  } catch (error) { document.querySelector("#panel")!.textContent = said(error); }
+  } catch (error) { say("#panel", said(error)); }
 }
 
 /* ── The vault ─────────────────────────────────────────────────────── */
