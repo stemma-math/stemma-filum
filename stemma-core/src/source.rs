@@ -10,6 +10,7 @@
 //! is Typst's work and happens elsewhere; this has to run on a server
 //! that compiles nothing and in an editor between keystrokes.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Range;
@@ -190,29 +191,37 @@ pub fn question(source: &str) -> Option<String> {
 /// can see may lean on something only its author can.
 pub fn imports(source: &str) -> Vec<String> {
     let mut found = Vec::new();
-
-    for line in source.lines() {
-        let line = line.trim();
-
-        if line.starts_with("//") {
+    let mut scanner = Scanner::new(source);
+    while scanner.at < scanner.bytes.len() {
+        if scanner.skip_literal() {
             continue;
         }
-
-        for keyword in ["#import", "#include"] {
-            let Some(rest) = line.split_once(keyword).map(|(_, rest)| rest) else {
+        if scanner.bytes[scanner.at] == b'#' {
+            let keyword = ["#import", "#include"].into_iter().find(|keyword| {
+                source[scanner.at..].starts_with(keyword)
+                    && scanner
+                        .bytes
+                        .get(scanner.at + keyword.len())
+                        .is_some_and(|byte| {
+                            byte.is_ascii_whitespace() || *byte == b'"' || *byte == b'/'
+                        })
+            });
+            if let Some(keyword) = keyword {
+                scanner.at += keyword.len();
+                scanner.skip_trivia();
+                if scanner.peek(0) == Some(b'"') {
+                    let start = scanner.at;
+                    scanner.skip_string();
+                    if let Some(path) = unquote(&source[start..scanner.at.min(source.len())])
+                        .filter(|path| !path.trim().is_empty())
+                    {
+                        found.push(path);
+                    }
+                }
                 continue;
-            };
-            let Some((_, quoted)) = rest.split_once('"') else {
-                continue;
-            };
-            let Some((path, _)) = quoted.split_once('"') else {
-                continue;
-            };
-
-            if !path.trim().is_empty() {
-                found.push(path.to_owned());
             }
         }
+        scanner.at += 1;
     }
 
     found
@@ -240,10 +249,10 @@ impl<'a> Scanner<'a> {
         let mut found = Vec::new();
 
         while self.at < self.bytes.len() {
+            if self.skip_literal() {
+                continue;
+            }
             match self.bytes[self.at] {
-                b'"' => self.skip_string(),
-                b'/' if self.peek(1) == Some(b'/') => self.skip_to_end_of_line(),
-                b'/' if self.peek(1) == Some(b'*') => self.skip_block_comment(),
                 b'#' => match self.read_declaration()? {
                     Some(declaration) => found.push(declaration),
                     None => self.at += 1,
@@ -258,6 +267,43 @@ impl<'a> Scanner<'a> {
     /// The byte `ahead` positions on, if there is one.
     fn peek(&self, ahead: usize) -> Option<u8> {
         self.bytes.get(self.at + ahead).copied()
+    }
+
+    /// Skips text whose punctuation cannot introduce a declaration or delimiter.
+    fn skip_literal(&mut self) -> bool {
+        match self.peek(0) {
+            Some(b'"') => self.skip_string(),
+            Some(b'/') if self.peek(1) == Some(b'/') => self.skip_to_end_of_line(),
+            Some(b'/') if self.peek(1) == Some(b'*') => self.skip_block_comment(),
+            Some(b'`') => self.skip_raw(),
+            Some(b'\\') => self.at = (self.at + 2).min(self.bytes.len()),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Skips whitespace and comments between a keyword and its argument.
+    fn skip_trivia(&mut self) {
+        loop {
+            match self.peek(0) {
+                Some(byte) if byte.is_ascii_whitespace() => self.at += 1,
+                Some(b'/') if self.peek(1) == Some(b'/') => self.skip_to_end_of_line(),
+                Some(b'/') if self.peek(1) == Some(b'*') => self.skip_block_comment(),
+                _ => return,
+            }
+        }
+    }
+
+    /// Skips a raw example, including fenced blocks containing single backticks.
+    fn skip_raw(&mut self) {
+        let start = self.at;
+        while self.peek(0) == Some(b'`') {
+            self.at += 1;
+        }
+        let fence = &self.source[start..self.at];
+        self.at = self.source[self.at..]
+            .find(fence)
+            .map_or(self.bytes.len(), |offset| self.at + offset + fence.len());
     }
 
     /// Which line the current position is on, counting from one.
@@ -295,14 +341,21 @@ impl<'a> Scanner<'a> {
     /// Steps over a block comment.
     fn skip_block_comment(&mut self) {
         self.at += 2;
+        let mut depth = 1;
 
         while self.at < self.bytes.len() {
-            if self.bytes[self.at] == b'*' && self.peek(1) == Some(b'/') {
+            if self.peek(0) == Some(b'/') && self.peek(1) == Some(b'*') {
+                depth += 1;
                 self.at += 2;
-                return;
+            } else if self.peek(0) == Some(b'*') && self.peek(1) == Some(b'/') {
+                self.at += 2;
+                depth -= 1;
+                if depth == 0 {
+                    return;
+                }
+            } else {
+                self.at += 1;
             }
-
-            self.at += 1;
         }
 
         self.at = self.bytes.len();
@@ -384,15 +437,10 @@ impl<'a> Scanner<'a> {
         let mut depth = 0_u32;
 
         while self.at < self.bytes.len() {
+            if self.skip_literal() {
+                continue;
+            }
             match self.bytes[self.at] {
-                b'"' => {
-                    self.skip_string();
-                    continue;
-                }
-                b'/' if self.peek(1) == Some(b'/') => {
-                    self.skip_to_end_of_line();
-                    continue;
-                }
                 byte if byte == open => depth += 1,
                 byte if byte == close => {
                     depth -= 1;
@@ -404,11 +452,6 @@ impl<'a> Scanner<'a> {
                         return Some(inside..ends);
                     }
                 }
-                // Brackets nest inside a body, and a body is written by
-                // somebody who is thinking about mathematics, not about
-                // this parser.
-                b'[' if close == b']' => depth += 1,
-                b']' if close == b']' => depth -= 1,
                 _ => {}
             }
 
@@ -422,8 +465,9 @@ impl<'a> Scanner<'a> {
 /// Reads the arguments between the parentheses.
 fn parse_arguments(text: &str, line: usize) -> Result<BTreeMap<String, Value>, Problem> {
     let mut arguments = BTreeMap::new();
+    let text = without_comments(text);
 
-    for piece in split_top_level(text) {
+    for piece in split_top_level(&text) {
         let piece = piece.trim();
 
         if piece.is_empty() {
@@ -448,6 +492,32 @@ fn parse_arguments(text: &str, line: usize) -> Result<BTreeMap<String, Value>, P
     }
 
     Ok(arguments)
+}
+
+/// Comments are whitespace in argument lists, including inside a list value.
+fn without_comments(text: &str) -> Cow<'_, str> {
+    let mut scanner = Scanner::new(text);
+    let mut cleaned = String::new();
+    let mut copied = 0;
+    while scanner.at < scanner.bytes.len() {
+        let start = scanner.at;
+        let comment = scanner.peek(0) == Some(b'/') && matches!(scanner.peek(1), Some(b'/' | b'*'));
+        if scanner.skip_literal() {
+            if comment {
+                cleaned.push_str(&text[copied..start]);
+                cleaned.push(' ');
+                copied = scanner.at;
+            }
+        } else {
+            scanner.at += 1;
+        }
+    }
+    if copied == 0 {
+        Cow::Borrowed(text)
+    } else {
+        cleaned.push_str(&text[copied..]);
+        Cow::Owned(cleaned)
+    }
 }
 
 /// Splits on the commas that are not inside anything.
@@ -563,6 +633,65 @@ fn unquote(text: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comments_raw_examples_and_escaped_hashes_declare_nothing() {
+        let source = r#"
+/* outer /* nested */ #theorem(id: "thm:hidden")[Hidden.] */
+`#lemma(id: "lem:example")[Example.]`
+```typ
+#theorem(id: "thm:example")[A `quoted` example.]
+```
+\#theorem(id: "thm:escaped")[Literal.]
+#theorem(id: "thm:real")[Real.]
+"#;
+        let declarations = read(source).unwrap();
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].text("id"), Some("thm:real"));
+    }
+
+    #[test]
+    fn body_delimiters_in_comments_raw_text_and_escapes_are_literal() {
+        let source = r#"#theorem(id: "thm:real")[A \] and `]` /* ] /* ] */ ] */ remain inside.]"#;
+        let declarations = read(source).unwrap();
+        assert_eq!(declarations[0].span, 0..source.len());
+        assert!(source[declarations[0].body.clone().unwrap()].ends_with("remain inside."));
+    }
+
+    #[test]
+    fn arguments_accept_comments_without_reading_their_punctuation() {
+        let source = r#"#theorem(
+            // This comment contains a comma, colon: and parenthesis ).
+            id: /* nested /* ignored */ comment */ "thm:real",
+            central: true, /* ), : */
+            uses: ("def:one", /* punctuation , : ) */ "def:two"),
+            name: "A // literal /* name */",
+        )[Real.]"#;
+        let declarations = read(source).unwrap();
+        assert_eq!(declarations[0].text("id"), Some("thm:real"));
+        assert_eq!(declarations[0].flag("central"), Some(true));
+        assert_eq!(declarations[0].list("uses"), ["def:one", "def:two"]);
+        assert_eq!(
+            declarations[0].text("name"),
+            Some("A // literal /* name */")
+        );
+    }
+
+    #[test]
+    fn imports_are_scanned_in_order_across_lines_and_ignore_examples() {
+        let source = r##"
+/* #include "hidden.typ" */
+`#import "example.typ"`
+"#include \"string.typ\""
+\#include "escaped.typ"
+#important "not-an-import.typ"
+#include dynamic // "not-a-path.typ"
+#include "one.typ"; #import "two.typ": *
+#import /* note */
+    "three.typ": *
+"##;
+        assert_eq!(imports(source), ["one.typ", "two.typ", "three.typ"]);
+    }
 
     #[test]
     fn what_a_source_pulls_in_is_read_as_written() {

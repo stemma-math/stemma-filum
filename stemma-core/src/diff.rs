@@ -16,11 +16,10 @@ use serde::{Deserialize, Serialize};
 use crate::line::{Line, Siglum};
 use crate::source;
 
-/// The most lines this compares before giving up on being clever.
+/// The most changed lines per version this compares using a quadratic table.
 ///
-/// Beyond it the two versions are shown as one replacing the other,
-/// which is honest: a document that changed that much did not change
-/// line by line.
+/// Common prefixes and suffixes are always retained. Beyond this limit, the
+/// remaining section is shown as one replacement to bound time and memory.
 pub const LONGEST: usize = 4_000;
 
 /// What became of one line.
@@ -96,11 +95,24 @@ pub fn between(before: &str, after: &str) -> Vec<Row> {
     let old: Vec<&str> = before.lines().collect();
     let new: Vec<&str> = after.lines().collect();
 
-    if old.len() > LONGEST || new.len() > LONGEST {
-        return wholesale(&old, &new);
+    let prefix = old.iter().zip(&new).take_while(|(a, b)| a == b).count();
+    let suffix = old[prefix..]
+        .iter()
+        .rev()
+        .zip(new[prefix..].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let old_middle = &old[prefix..old.len() - suffix];
+    let new_middle = &new[prefix..new.len() - suffix];
+    let mut common: Vec<_> = (0..prefix).map(|at| (at, at)).collect();
+    if old_middle.len() <= LONGEST && new_middle.len() <= LONGEST {
+        common.extend(
+            longest_common(old_middle, new_middle)
+                .into_iter()
+                .map(|(a, b)| (a + prefix, b + prefix)),
+        );
     }
-
-    let common = longest_common(&old, &new);
+    common.extend((0..suffix).map(|at| (old.len() - suffix + at, new.len() - suffix + at)));
     let mut rows = Vec::new();
     let (mut at_old, mut at_new) = (0, 0);
 
@@ -209,34 +221,20 @@ fn arrived(new: &[&str], at: usize) -> Row {
     }
 }
 
-/// Two documents too long to compare, said as one replacing the other.
-fn wholesale(old: &[&str], new: &[&str]) -> Vec<Row> {
-    old.iter()
-        .enumerate()
-        .map(|(at, text)| Row {
-            change: Change::Removed,
-            text: (*text).to_owned(),
-            before: Some(at + 1),
-            after: None,
-        })
-        .chain(new.iter().enumerate().map(|(at, text)| Row {
-            change: Change::Added,
-            text: (*text).to_owned(),
-            before: None,
-            after: Some(at + 1),
-        }))
-        .collect()
-}
-
 /// The pairs of lines the two versions have in common, in order.
 fn longest_common(old: &[&str], new: &[&str]) -> Vec<(usize, usize)> {
-    let mut table = vec![vec![0usize; new.len() + 1]; old.len() + 1];
+    // Lengths cannot exceed LONGEST, so two bytes per cell suffice. A flat
+    // table also avoids allocating each row separately.
+    debug_assert!(old.len() <= LONGEST && new.len() <= LONGEST);
+    let width = new.len() + 1;
+    let mut table = vec![0u16; (old.len() + 1) * width];
 
     for (at_old, line) in old.iter().enumerate().rev() {
         for (at_new, other) in new.iter().enumerate().rev() {
-            table[at_old][at_new] = match line == other {
-                true => table[at_old + 1][at_new + 1] + 1,
-                false => table[at_old + 1][at_new].max(table[at_old][at_new + 1]),
+            let at = at_old * width + at_new;
+            table[at] = match line == other {
+                true => table[at + width + 1] + 1,
+                false => table[at + width].max(table[at + 1]),
             };
         }
     }
@@ -249,7 +247,7 @@ fn longest_common(old: &[&str], new: &[&str]) -> Vec<(usize, usize)> {
             common.push((at_old, at_new));
             at_old += 1;
             at_new += 1;
-        } else if table[at_old + 1][at_new] >= table[at_old][at_new + 1] {
+        } else if table[(at_old + 1) * width + at_new] >= table[at_old * width + at_new + 1] {
             at_old += 1;
         } else {
             at_new += 1;
@@ -281,6 +279,46 @@ mod tests {
         assert!(rows.iter().all(|row| row.change == Change::Kept));
         assert!(extent(&rows).is_nothing());
         assert_eq!(extent(&rows).said(), "nothing changed");
+    }
+
+    #[test]
+    fn large_unchanged_documents_are_not_reported_as_replacements() {
+        let source = "A line.\n".repeat(LONGEST + 1);
+        assert!(extent(&between(&source, &source)).is_nothing());
+    }
+
+    #[test]
+    fn a_small_edit_in_a_large_document_retains_context_and_line_numbers() {
+        let prefix = "Before.\n".repeat(LONGEST);
+        let before = format!("{prefix}Old.\nAfter.\n");
+        let after = format!("{prefix}New.\nAfter.\n");
+        let rows = between(&before, &after);
+        assert_eq!(
+            extent(&rows),
+            Extent {
+                added: 1,
+                removed: 1
+            }
+        );
+        assert_eq!(rows[LONGEST].before, Some(LONGEST + 1));
+        assert_eq!(rows[LONGEST + 1].after, Some(LONGEST + 1));
+        assert_eq!(rows.last().unwrap().change, Change::Kept);
+    }
+
+    #[test]
+    fn wholesale_fallback_retains_the_common_edges() {
+        let before = format!("Heading\n{}End\n", "Old.\n".repeat(LONGEST + 1));
+        let after = format!("Heading\n{}End\n", "New.\n".repeat(LONGEST + 1));
+        let rows = between(&before, &after);
+        assert_eq!(
+            extent(&rows),
+            Extent {
+                added: LONGEST + 1,
+                removed: LONGEST + 1
+            }
+        );
+        assert_eq!(rows.first().unwrap().change, Change::Kept);
+        assert_eq!(rows.last().unwrap().change, Change::Kept);
     }
 
     #[test]

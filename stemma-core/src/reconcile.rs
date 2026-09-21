@@ -109,6 +109,14 @@ pub enum Trouble {
     /// A piece both machines wrote has no decision.
     #[error("nobody has said which version of {0} to keep")]
     Undecided(Mark),
+    /// Multiple declarations would be collapsed into a single merge decision.
+    #[error("the {which} version declares {mark} more than once")]
+    Duplicate {
+        /// Which version contains the duplicate.
+        which: &'static str,
+        /// The ambiguous statement or proof.
+        mark: Mark,
+    },
 }
 
 /// What the two versions disagree about.
@@ -156,7 +164,7 @@ pub fn merge(
     decisions: &BTreeMap<Mark, Keep>,
 ) -> Result<String, Trouble> {
     let (was, mine, theirs) = read_all(base, here, there)?;
-    let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+    let mut edits = Vec::new();
 
     for mark in marks(&was, &mine, &theirs) {
         let (before, ours, other) = (was.get(&mark), mine.get(&mark), theirs.get(&mark));
@@ -165,7 +173,7 @@ pub fn merge(
             // Either nobody moved it, or only this machine did. What is
             // already in this source is what was decided.
             if text_of(before) == text_of(ours) && text_of(before) != text_of(other) {
-                edits.push(take_theirs(&mark, ours, other, &mine, &theirs));
+                edits.push(take_theirs(&mark, ours, other, &mine, &theirs, here.len()));
             }
 
             continue;
@@ -173,7 +181,9 @@ pub fn merge(
 
         match decisions.get(&mark) {
             Some(Keep::Here) => continue,
-            Some(Keep::There) => edits.push(take_theirs(&mark, ours, other, &mine, &theirs)),
+            Some(Keep::There) => {
+                edits.push(take_theirs(&mark, ours, other, &mine, &theirs, here.len()));
+            }
             None => return Err(Trouble::Undecided(mark)),
         }
     }
@@ -194,25 +204,43 @@ fn text_of(piece: Option<&Piece>) -> Option<&str> {
 }
 
 /// The edit that puts the instance's version of a piece in place.
+struct Edit {
+    range: Range<usize>,
+    replacement: String,
+    order: usize,
+}
+
 fn take_theirs(
     mark: &Mark,
     ours: Option<&Piece>,
     other: Option<&Piece>,
     mine: &Version,
     theirs: &Version,
-) -> (Range<usize>, String) {
-    match (ours, other) {
+    source_len: usize,
+) -> Edit {
+    let (range, replacement) = match (ours, other) {
         // It is in both: their words go where ours are.
         (Some(ours), Some(other)) => (ours.span.clone(), other.text.clone()),
         // They took it out.
         (Some(ours), None) => (ours.span.clone(), String::new()),
         // They wrote it, and it goes after whatever it follows there.
         (None, Some(other)) => {
-            let at = anchor(mark, mine, theirs);
-
-            (at..at, format!("\n\n{}", other.text))
+            let at = anchor(mark, mine, theirs, source_len);
+            let before_first = mine.values().map(|piece| piece.span.start).min() == Some(at);
+            let replacement = if before_first {
+                format!("{}\n\n", other.text)
+            } else {
+                format!("\n\n{}", other.text)
+            };
+            (at..at, replacement)
         }
         (None, None) => (0..0, String::new()),
+    };
+
+    Edit {
+        range,
+        replacement,
+        order: other.map_or(0, |piece| piece.order),
     }
 }
 
@@ -220,9 +248,13 @@ fn take_theirs(
 ///
 /// After the last thing that comes before it there and exists here, so a
 /// statement written between two others arrives between those two.
-fn anchor(mark: &Mark, mine: &Version, theirs: &Version) -> usize {
+fn anchor(mark: &Mark, mine: &Version, theirs: &Version, source_len: usize) -> usize {
     let Some(placed) = theirs.get(mark) else {
-        return mine.values().map(|piece| piece.span.end).max().unwrap_or(0);
+        return mine
+            .values()
+            .map(|piece| piece.span.end)
+            .max()
+            .unwrap_or(source_len);
     };
 
     theirs
@@ -236,17 +268,23 @@ fn anchor(mark: &Mark, mine: &Version, theirs: &Version) -> usize {
             mine.values()
                 .map(|piece| piece.span.start)
                 .min()
-                .unwrap_or(0)
+                .unwrap_or(source_len)
         })
 }
 
 /// Carries out the edits, from the end of the document backwards.
-fn apply(source: &str, mut edits: Vec<(Range<usize>, String)>) -> String {
-    edits.sort_by_key(|(range, _)| std::cmp::Reverse(range.start));
+fn apply(source: &str, mut edits: Vec<Edit>) -> String {
+    // Replacements precede insertions at the same offset. Insertions sharing
+    // an anchor are applied in reverse document order, so their final order
+    // is the instance's, independent of the identifiers' alphabetical order.
+    edits.sort_by_key(|edit| std::cmp::Reverse((edit.range.start, edit.range.end, edit.order)));
 
     let mut written = source.to_owned();
 
-    for (range, replacement) in edits {
+    for Edit {
+        range, replacement, ..
+    } in edits
+    {
         let mut range = range;
 
         // Taking a declaration out takes the blank line it sat on with
@@ -303,8 +341,12 @@ fn pieces(which: &'static str, source: &str) -> Result<Version, Trouble> {
             continue;
         };
 
+        let mark = Mark { siglum, part };
+        if found.contains_key(&mark) {
+            return Err(Trouble::Duplicate { which, mark });
+        }
         found.insert(
-            Mark { siglum, part },
+            mark,
             Piece {
                 text: source[declaration.span.clone()].to_owned(),
                 span: declaration.span,
@@ -462,6 +504,65 @@ mod tests {
         let merged = merge(BASE, &here, &there, &BTreeMap::new()).unwrap();
 
         assert!(merged.contains("= Quotient groups, at last"));
+    }
+
+    #[test]
+    fn additions_at_one_anchor_keep_the_instances_document_order() {
+        let additions = "#lemma(id: \"lem:z\")[First.]\n\n\
+            #lemma(id: \"lem:a\")[Second.]\n\n\
+            #proof(of: \"lem:a\")[Third.]";
+        for (base, there) in [
+            (String::new(), additions.to_owned()),
+            (BASE.to_owned(), format!("{BASE}\n{additions}")),
+            (BASE.to_owned(), format!("{additions}\n\n{BASE}")),
+        ] {
+            let merged = merge(&base, &base, &there, &BTreeMap::new()).unwrap();
+            assert!(
+                merged.contains(additions),
+                "wrong insertion order:\n{merged}"
+            );
+            assert!(crate::line::Line::read(&merged).is_ok());
+        }
+    }
+
+    #[test]
+    fn the_first_statement_arrives_after_the_local_preamble() {
+        let base = "#import \"notation.typ\": *\n\n= A new line\n\n#question[Why?]\n";
+        let there = format!("{base}\n#theorem(id: \"thm:first\")[An answer.]");
+        let here = base.replace("A new line", "The local title");
+        let merged = merge(base, &here, &there, &BTreeMap::new()).unwrap();
+        assert!(merged.starts_with(&here));
+        assert!(merged.ends_with("#theorem(id: \"thm:first\")[An answer.]"));
+    }
+
+    #[test]
+    fn an_insertion_before_a_replaced_or_removed_first_statement_survives() {
+        let base = "#theorem(id: \"thm:main\")[Old.]";
+        let added = "#lemma(id: \"lem:first\")[New.]";
+        for there in [
+            format!("{added}\n\n{}", base.replace("Old.", "Changed.")),
+            added.to_owned(),
+        ] {
+            let merged = merge(base, base, &there, &BTreeMap::new()).unwrap();
+            assert_eq!(merged.trim(), there);
+        }
+    }
+
+    #[test]
+    fn duplicate_statements_and_proofs_are_not_silently_overwritten() {
+        for (declaration, part) in [
+            ("#theorem(id: \"thm:main\")[Duplicated.]", Part::Statement),
+            ("#proof(of: \"thm:main\")[Another proof.]", Part::Proof),
+        ] {
+            let ambiguous = format!("{BASE}\n{declaration}");
+            assert_eq!(
+                merge(BASE, BASE, &ambiguous, &BTreeMap::new()),
+                Err(Trouble::Duplicate {
+                    which: "instance",
+                    mark: mark("thm:main", part),
+                })
+            );
+        }
     }
 
     #[test]
