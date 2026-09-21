@@ -628,6 +628,10 @@ async function showVault(group: string) {
 /* ── Starting up ───────────────────────────────────────────────────── */
 
 async function boot() {
+  // Painted before anything is asked for: what follows reads a file and
+  // then talks to an instance, and a window showing nothing while it
+  // waits looks like a window that did not open.
+  app.innerHTML = `<div class="entrance"><span class="wordmark">STEMMA</span><p class="quiet">Starting…</p></div>`;
   try { signed = await invoke<Signed | null>("whoami"); } catch { signed = null; }
   if (!signed) { signInScreen(); return; }
   try { waiting = await invoke<Waiting[]>("proposals"); } catch { waiting = []; }

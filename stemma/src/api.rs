@@ -19,6 +19,16 @@ const PROTOCOL_HEADER: &str = stemma_core::PROTOCOL_HEADER;
 /// How long to wait on a request before giving up.
 const TIMEOUT: Duration = Duration::from_secs(20);
 
+/// How long the whole of reaching an instance may take.
+///
+/// A name can resolve to more than one address, and the client tries
+/// them in turn, giving the first the largest share of this. Without a
+/// bound of its own, that share is most of the request: a host whose
+/// name carries an address in a family this network cannot reach would
+/// cost thirteen seconds of nothing before the address that works is
+/// even tried. Connecting is fast or it is not going to happen.
+const CONNECTING: Duration = Duration::from_secs(6);
+
 /// An instance, as this program talks to it.
 pub struct Server {
     address: String,
@@ -405,6 +415,7 @@ impl Server {
 
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(TIMEOUT))
+            .timeout_connect(Some(CONNECTING))
             // A refusal carries a body that says which refusal it is, and
             // the device flow says "not yet" with one of them.
             .http_status_as_error(false)
