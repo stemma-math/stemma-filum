@@ -17,7 +17,9 @@ use serde::Serialize;
 use stemma::home::{Environment, Home};
 use stemma_core::line::{Line, Name};
 use stemma_core::repository;
-use typst_as_lib::{TypstEngine, typst_kit_options::TypstKitFontOptions};
+use typst::diag::SourceDiagnostic;
+use typst::syntax::Source;
+use typst_as_lib::{TypstAsLibError, TypstEngine, typst_kit_options::TypstKitFontOptions};
 use typst_library::layout::PagedDocument;
 
 #[derive(Serialize)]
@@ -677,8 +679,9 @@ fn preview(path: String, source: String) -> Result<Preview, String> {
     let root = path
         .parent()
         .ok_or_else(|| "the line has no directory".to_owned())?;
+    let main = Source::detached(source);
     let engine = TypstEngine::builder()
-        .main_file(source)
+        .main_file(main.clone())
         .with_file_system_resolver(root)
         .search_fonts_with(
             TypstKitFontOptions::default()
@@ -690,9 +693,9 @@ fn preview(path: String, source: String) -> Result<Preview, String> {
     let diagnostics = compiled
         .warnings
         .iter()
-        .map(|warning| format!("{:?}", warning))
+        .map(|warning| complaint(&main, warning))
         .collect();
-    let document: PagedDocument = compiled.output.map_err(|errors| format!("{:?}", errors))?;
+    let document: PagedDocument = compiled.output.map_err(|error| refused(&main, &error))?;
     let svg = document
         .pages
         .iter()
@@ -700,6 +703,39 @@ fn preview(path: String, source: String) -> Result<Preview, String> {
         .collect::<Vec<_>>()
         .join("\n");
     Ok(Preview { svg, diagnostics })
+}
+
+/// One thing Typst has to say, where a person can act on it.
+///
+/// Typst says where it is as a span, which is a range of bytes in a
+/// file and means nothing to anybody. What is wanted is the line it is
+/// on, the sentence, and the hints, which are part of the sentence and
+/// not a footnote to it.
+fn complaint(main: &Source, diagnostic: &SourceDiagnostic) -> String {
+    let at = main
+        .range(diagnostic.span)
+        .and_then(|range| main.lines().byte_to_line_column(range.start))
+        .map(|(line, column)| format!("line {}, column {}: ", line + 1, column + 1))
+        .unwrap_or_default();
+    let hints: String = diagnostic
+        .hints
+        .iter()
+        .map(|hint| format!("\n  {hint}"))
+        .collect();
+
+    format!("{at}{}{hints}", diagnostic.message)
+}
+
+/// Why Typst would not compose the document.
+fn refused(main: &Source, error: &TypstAsLibError) -> String {
+    match error {
+        TypstAsLibError::TypstSource(diagnostics) => diagnostics
+            .iter()
+            .map(|diagnostic| complaint(main, diagnostic))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        other => other.to_string(),
+    }
 }
 
 #[tauri::command(async)]
@@ -1085,7 +1121,7 @@ pub fn run() {
 mod tests {
     use std::path::Path;
 
-    use super::{analyse, identity};
+    use super::{Source, SourceDiagnostic, analyse, complaint, identity};
 
     #[test]
     fn a_line_identity_comes_from_its_repository_path() {
@@ -1117,5 +1153,26 @@ mod tests {
 
         assert!(line.is_some());
         assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn what_typst_refused_is_a_sentence_and_not_a_dump_of_the_insides() {
+        let text = "= Things\n\n#question[What is a thing?]\n";
+        let main = Source::detached(text.to_owned());
+        let at = text.find("question").unwrap();
+        let node = typst::syntax::LinkedNode::new(main.root())
+            .leaf_at(at + 1, typst::syntax::Side::Before)
+            .unwrap();
+        let diagnostic = SourceDiagnostic::error(node.span(), "unknown variable: question")
+            .with_hint("nothing here defines it");
+
+        let said = complaint(&main, &diagnostic);
+
+        assert_eq!(
+            said,
+            "line 3, column 2: unknown variable: question\n  nothing here defines it"
+        );
+        assert!(!said.contains("SourceDiagnostic"));
+        assert!(!said.contains("Span("));
     }
 }

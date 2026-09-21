@@ -984,10 +984,19 @@ impl Server {
 
 /// The readable part of what an instance said when it refused.
 ///
-/// A refusal is a page when a person is reading and a line when a
-/// program is, and a wall of markup at a terminal says nothing.
+/// An instance that knows a program is asking answers with the sentence
+/// alone. One that does not — an older one, or something else entirely
+/// behind the same address — answers with a page, and a wall of markup
+/// at a terminal says nothing, so what words it has are read out of it.
 fn summarise(said: &str) -> String {
     let text = said.trim();
+
+    if let Some(line) = serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|answer| answer["error"].as_str().map(str::to_owned))
+    {
+        return line;
+    }
 
     if !text.starts_with('<') {
         return text.to_owned();
@@ -1063,6 +1072,23 @@ mod tests {
             "403 Forbidden This machine is not registered here."
         );
         assert_eq!(summarise("  plain words  "), "plain words");
+    }
+
+    #[test]
+    fn a_refusal_meant_for_a_program_is_taken_as_it_was_given() {
+        let said =
+            r#"{"error":"This machine is not registered here. Run `stemma node init` on it."}"#;
+
+        assert_eq!(
+            summarise(said),
+            "This machine is not registered here. Run `stemma node init` on it."
+        );
+
+        // Anything else that happens to be JSON is still read as words.
+        assert_eq!(
+            summarise(r#"{"trouble":"elsewhere"}"#),
+            r#"{"trouble":"elsewhere"}"#
+        );
     }
 
     #[test]

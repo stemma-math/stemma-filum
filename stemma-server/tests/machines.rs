@@ -185,6 +185,27 @@ async fn signing_a_machine_in_does_not_offer_it_for_work() {
 }
 
 #[tokio::test]
+async fn a_program_is_refused_in_a_line_and_a_person_in_a_page() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+
+    let token = harness.credential("ana").await;
+    let refused = harness.get_with_token("/api/machines", &token).await;
+
+    assert_eq!(refused.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        parsed(&refused)["error"].as_str(),
+        Some("This machine is not registered here. Run `stemma node init` on it.")
+    );
+    assert!(!refused.body.contains('<'));
+
+    // The same refusal, asked for by somebody reading, is still a page.
+    let page = harness.get("/machines/nobody").await;
+    assert!(page.body.contains("<!DOCTYPE html>") || page.body.contains("<html"));
+}
+
+#[tokio::test]
 async fn a_machine_registers_once_and_says_what_it_found() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;

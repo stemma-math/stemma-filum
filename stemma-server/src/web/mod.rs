@@ -293,6 +293,7 @@ pub fn router() -> Router<Instance> {
         .route(assets::DESCENT_PATH, get(assets::descent))
         .route(assets::FONT_PATH, get(assets::font))
         .fallback(get(not_found))
+        .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))
 }
 
 /// What became of a message.
@@ -374,6 +375,43 @@ impl IntoResponse for WebError {
             tracing::error!("{error:#}");
         }
 
-        (self.status(), layout::failure(&self)).into_response()
+        let mut response = (self.status(), layout::failure(&self)).into_response();
+        response.extensions_mut().insert(Refusal(self.explain()));
+
+        response
+    }
+}
+
+/// What a refusal said, carried beside the page that says it.
+///
+/// The sentence is the same for everybody; only its wrapping differs. So
+/// it travels on the response, and whoever is about to send it decides
+/// whether it goes out as a page or as a line.
+#[derive(Debug, Clone)]
+pub struct Refusal(pub String);
+
+/// Gives a program the sentence and a person the page.
+///
+/// Routes under `/api` are read by programs, and a program handed a
+/// document ends up showing somebody the navigation bar of an error
+/// page. The same refusal, as one field, is what it can use.
+pub async fn in_the_form_it_was_asked_for(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let a_program_asked = request.uri().path().starts_with("/api/");
+    let response = next.run(request).await;
+
+    let Some(Refusal(said)) = response.extensions().get::<Refusal>().cloned() else {
+        return response;
+    };
+
+    match a_program_asked {
+        true => (
+            response.status(),
+            axum::Json(serde_json::json!({ "error": said })),
+        )
+            .into_response(),
+        false => response,
     }
 }
