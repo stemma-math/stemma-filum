@@ -108,14 +108,15 @@ pub fn take(
     machine: &MachineId,
     owner: &UserId,
 ) -> Result<Claim> {
-    if let Some(standing) = holder(connection, group, side, line)? {
+    if let Some(standing) = holder(connection, group, side, line, owner)? {
         if &standing.machine != machine {
             return Ok(standing);
         }
 
         renew(connection, &standing.id)?;
 
-        return holder(connection, group, side, line)?.context("the claim cannot be read back");
+        return holder(connection, group, side, line, owner)?
+            .context("the claim cannot be read back");
     }
 
     // A claim that lapsed is not a claim. Letting go of it here rather
@@ -123,8 +124,9 @@ pub fn take(
     connection
         .execute(
             "UPDATE claims SET released_at = datetime('now')
-              WHERE group_id = ?1 AND side = ?2 AND line = ?3 AND released_at IS NULL",
-            params![group.to_string(), side.as_str(), line],
+              WHERE group_id = ?1 AND side = ?2 AND line = ?3 AND released_at IS NULL
+                AND (side = 'shared' OR user_id = ?4)",
+            params![group.to_string(), side.as_str(), line, owner.to_string()],
         )
         .context("cannot let the lapsed claim go")?;
 
@@ -143,7 +145,7 @@ pub fn take(
         )
         .context("cannot take the line")?;
 
-    holder(connection, group, side, line)?.context("the claim cannot be read back")
+    holder(connection, group, side, line, owner)?.context("the claim cannot be read back")
 }
 
 /// Says the machine is still writing.
@@ -197,17 +199,19 @@ pub fn holder(
     group: &GroupId,
     side: Side,
     line: &str,
+    owner: &UserId,
 ) -> Result<Option<Claim>> {
     connection
         .query_row(
             &format!(
                 "SELECT {} FROM claims JOIN machines ON machines.id = claims.machine_id
                   WHERE claims.group_id = ?1 AND claims.side = ?2 AND claims.line = ?3
+                    AND (claims.side = 'shared' OR claims.user_id = ?4)
                     AND {}",
                 columns(),
                 standing()
             ),
-            params![group.to_string(), side.as_str(), line],
+            params![group.to_string(), side.as_str(), line, owner.to_string()],
             Claim::from_row,
         )
         .optional()
@@ -308,7 +312,7 @@ mod tests {
         let connection = database.connection();
 
         assert_eq!(
-            holder(connection, &group, Side::Shared, "quotient-groups").unwrap(),
+            holder(connection, &group, Side::Shared, "quotient-groups", &owner).unwrap(),
             None
         );
 
@@ -363,7 +367,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            holder(connection, &group, Side::Shared, "line").unwrap(),
+            holder(connection, &group, Side::Shared, "line", &owner).unwrap(),
             None
         );
 
@@ -380,7 +384,7 @@ mod tests {
         let claim = take(connection, &group, Side::Shared, "line", &laptop, &owner).unwrap();
         ask(connection, &claim.id, Some(&desktop)).unwrap();
 
-        let asked = holder(connection, &group, Side::Shared, "line")
+        let asked = holder(connection, &group, Side::Shared, "line", &owner)
             .unwrap()
             .unwrap();
         assert!(asked.asked);
@@ -388,7 +392,7 @@ mod tests {
         release(connection, &claim.id).unwrap();
 
         assert_eq!(
-            holder(connection, &group, Side::Shared, "line").unwrap(),
+            holder(connection, &group, Side::Shared, "line", &owner).unwrap(),
             None
         );
     }

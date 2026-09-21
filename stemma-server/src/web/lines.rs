@@ -90,11 +90,12 @@ pub async fn view(
     };
 
     let writing = {
+        let owner = signed.user.id.clone();
         let id = group.id.clone();
         let name = name.clone();
 
         instance
-            .read(move |connection| claims::holder(connection, &id, side, name.as_str()))
+            .read(move |connection| claims::holder(connection, &id, side, name.as_str(), &owner))
             .await?
     };
     let chrome = Chrome::anonymous(

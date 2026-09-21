@@ -434,10 +434,11 @@ async fn gone(
 
     let id = group.id.clone();
     let named = name.clone();
+    let author = who.id.clone();
 
     instance
         .write(move |connection| {
-            lines::forget(connection, &id, Side::Private, &named)?;
+            lines::forget(connection, &id, Side::Private, &named, &author)?;
 
             Ok(())
         })

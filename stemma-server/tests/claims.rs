@@ -325,3 +325,94 @@ async fn a_machine_is_told_every_line_being_written_where_it_works() {
     assert_eq!(listed["claims"][0]["mine"].as_bool(), Some(false));
     assert_eq!(listed["claims"][0]["label"].as_str(), Some("ana's laptop"));
 }
+
+#[tokio::test]
+async fn handing_back_a_claim_requires_the_sessions_form_token() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    a_group_with_a_line(&mut harness, "ana").await;
+    let laptop = a_machine(&mut harness, "ana", "ana's laptop").await;
+    harness
+        .post_json_with_token("/api/claims", &laptop, &about())
+        .await;
+
+    let refused = harness
+        .post(
+            &format!("/g/algebra/shared/{LINE}/claim/release"),
+            &[("form_token", "wrong-token")],
+        )
+        .await;
+    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+    let listed = parsed(&harness.get_with_token("/api/claims", &laptop).await);
+    assert_eq!(listed["claims"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn private_claims_are_visible_only_to_their_owner() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    a_group_with_a_line(&mut harness, "ana").await;
+    let laptop = a_machine(&mut harness, "ana", "ana's laptop").await;
+    let private = about().replace("shared", "private");
+    assert_eq!(
+        harness
+            .post_json_with_token("/api/claims", &laptop, &private)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    register(&mut harness, "bruno").await;
+    add_member(&mut harness, "bruno").await;
+    let other = a_machine(&mut harness, "bruno", "bruno's laptop").await;
+    for endpoint in ["/api/claims/renew", "/api/claims/ask"] {
+        assert_eq!(
+            harness
+                .post_json_with_token(endpoint, &other, &private)
+                .await
+                .status,
+            StatusCode::NOT_FOUND
+        );
+    }
+    let listed = parsed(&harness.get_with_token("/api/claims", &other).await);
+    assert!(listed["claims"].as_array().unwrap().is_empty());
+    let own = parsed(&harness.get_with_token("/api/claims", &laptop).await);
+    assert_eq!(own["claims"].as_array().unwrap().len(), 1);
+    let taken = harness
+        .post_json_with_token("/api/claims", &other, &private)
+        .await;
+    assert_eq!(taken.status, StatusCode::OK);
+    assert_eq!(parsed(&taken)["standing"], "writing");
+    harness
+        .post_json_with_token("/api/claims/release", &other, &private)
+        .await;
+    let own = parsed(&harness.get_with_token("/api/claims", &laptop).await);
+    assert_eq!(own["claims"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn renewing_does_not_reveal_a_claim_outside_the_group() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    a_group_with_a_line(&mut harness, "ana").await;
+    let laptop = a_machine(&mut harness, "ana", "ana's laptop").await;
+    harness
+        .post_json_with_token("/api/claims", &laptop, &about())
+        .await;
+    register(&mut harness, "bruno").await;
+    let other = harness.credential("bruno").await;
+    harness
+        .post_json_with_token(
+            "/api/machines",
+            &other,
+            r#"{"label":"bruno's laptop","agents":[]}"#,
+        )
+        .await;
+    assert_eq!(
+        harness
+            .post_json_with_token("/api/claims/renew", &other, &about())
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+}

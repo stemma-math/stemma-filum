@@ -67,6 +67,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "lines",
         sql: include_str!("../migrations/0010-lines.sql"),
     },
+    Migration {
+        name: "private-line-scopes",
+        sql: include_str!("../migrations/0011-private-line-scopes.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.
@@ -264,6 +268,57 @@ mod tests {
 
         assert_eq!(applied.len(), MIGRATIONS.len());
         assert_eq!(database.version().unwrap(), expected_version());
+        assert!(database.is_current().unwrap());
+    }
+
+    #[test]
+    fn private_scope_migration_preserves_existing_lines_and_claims() {
+        let mut database = Database::in_memory().unwrap();
+        for migration in &MIGRATIONS[..10] {
+            database.connection.execute_batch(migration.sql).unwrap();
+        }
+        database
+            .connection
+            .pragma_update(None, "user_version", 10)
+            .unwrap();
+        database
+            .connection
+            .execute_batch(
+                "INSERT INTO users (id, slug, email, display_name, password_hash)
+               VALUES ('usr:ana', 'ana', 'ana@example.org', 'Ana', 'hash');
+             INSERT INTO groups (id, slug, name) VALUES ('grp:algebra', 'algebra', 'Algebra');
+             INSERT INTO client_tokens (id, user_id, label, token_hash)
+               VALUES ('tok:old', 'usr:ana', 'Laptop', 'old-hash');
+             INSERT INTO machines (id, user_id, token_id, label)
+               VALUES ('mch:old', 'usr:ana', 'tok:old', 'Laptop');
+             INSERT INTO lines (id, group_id, side, name, author, started_at)
+               VALUES ('lin:old', 'grp:algebra', 'private', 'quotients', 'usr:ana', '2026-01-01');
+             INSERT INTO claims (id, group_id, side, line, machine_id, user_id)
+               VALUES ('clm:old', 'grp:algebra', 'private', 'quotients', 'mch:old', 'usr:ana');",
+            )
+            .unwrap();
+        database.migrate().unwrap();
+        let original: (String, String, String) = database
+            .connection
+            .query_row(
+                "SELECT id, author, started_at FROM lines WHERE name = 'quotients'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            original,
+            ("lin:old".into(), "usr:ana".into(), "2026-01-01".into())
+        );
+        let claim: String = database
+            .connection
+            .query_row(
+                "SELECT user_id FROM claims WHERE id = 'clm:old'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(claim, "usr:ana");
         assert!(database.is_current().unwrap());
     }
 

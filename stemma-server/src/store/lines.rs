@@ -68,7 +68,7 @@ impl Started {
 
     /// Whether this person may write it themselves.
     pub fn admits(&self, who: &UserId) -> bool {
-        self.writing.admits(&self.author, who)
+        &self.author == who || self.side == Side::Shared && self.writing.admits(&self.author, who)
     }
 }
 
@@ -97,29 +97,30 @@ pub fn start(
         )
         .context("cannot record the line")?;
 
-    by_name(connection, group, side, name)?.context("the line cannot be read back")
+    by_name(connection, group, side, name, author)?.context("the line cannot be read back")
 }
 
 /// Records that a line moved to the group, and who writes it there.
 pub fn share(
-    connection: &Connection,
+    connection: &mut Connection,
     group: &GroupId,
     name: &Name,
     author: &UserId,
     writing: WhoWrites,
 ) -> Result<Started> {
-    connection
+    let transaction = connection.transaction()?;
+    transaction
         .execute(
-            "DELETE FROM lines WHERE group_id = ?1 AND side = 'private' AND name = ?2",
-            params![group.to_string(), name.as_str()],
+            "DELETE FROM lines WHERE group_id = ?1 AND side = 'private' AND name = ?2 AND author = ?3",
+            params![group.to_string(), name.as_str(), author.to_string()],
         )
         .context("cannot move the line")?;
 
-    connection
+    transaction
         .execute(
             "INSERT INTO lines (id, group_id, side, name, author, writing, shared_at)
              VALUES (?1, ?2, 'shared', ?3, ?4, ?5, datetime('now'))
-             ON CONFLICT (group_id, side, name) DO UPDATE
+             ON CONFLICT (group_id, side, name) WHERE side = 'shared' DO UPDATE
                 SET writing = ?5, shared_at = datetime('now')",
             params![
                 LineId::generate().to_string(),
@@ -131,18 +132,27 @@ pub fn share(
         )
         .context("cannot record that the line is the group's")?;
 
-    by_name(connection, group, Side::Shared, name)?.context("the line cannot be read back")
+    let shared = by_name(&transaction, group, Side::Shared, name, author)?
+        .context("the line cannot be read back")?;
+    transaction.commit()?;
+    Ok(shared)
 }
 
 /// Forgets a line the repository no longer has.
 ///
 /// What the line *was* is in git, which is where it belongs. This row
 /// only ever held who started it and who writes it.
-pub fn forget(connection: &Connection, group: &GroupId, side: Side, name: &Name) -> Result<()> {
+pub fn forget(
+    connection: &Connection,
+    group: &GroupId,
+    side: Side,
+    name: &Name,
+    author: &UserId,
+) -> Result<()> {
     connection
         .execute(
-            "DELETE FROM lines WHERE group_id = ?1 AND side = ?2 AND name = ?3",
-            params![group.to_string(), side.as_str(), name.as_str()],
+            "DELETE FROM lines WHERE group_id = ?1 AND side = ?2 AND name = ?3 AND (side = 'shared' OR author = ?4)",
+            params![group.to_string(), side.as_str(), name.as_str(), author.to_string()],
         )
         .context("cannot forget the line")?;
 
@@ -155,14 +165,15 @@ pub fn by_name(
     group: &GroupId,
     side: Side,
     name: &Name,
+    author: &UserId,
 ) -> Result<Option<Started>> {
     connection
         .query_row(
             &format!(
                 "SELECT {COLUMNS} FROM lines
-                  WHERE group_id = ?1 AND side = ?2 AND name = ?3"
+                  WHERE group_id = ?1 AND side = ?2 AND name = ?3 AND (side = 'shared' OR author = ?4)"
             ),
-            params![group.to_string(), side.as_str(), name.as_str()],
+            params![group.to_string(), side.as_str(), name.as_str(), author.to_string()],
             Started::from_row,
         )
         .optional()
@@ -228,8 +239,8 @@ mod tests {
 
     #[test]
     fn a_line_starts_as_its_authors_own() {
-        let (database, group, author) = instance();
-        let connection = database.connection();
+        let (mut database, group, author) = instance();
+        let connection = database.connection_mut();
 
         let started = start(connection, &group, Side::Private, &quotients(), &author).unwrap();
 
@@ -237,15 +248,15 @@ mod tests {
         assert_eq!(started.author, author);
         assert_eq!(started.shared_at, None);
         assert_eq!(
-            by_name(connection, &group, Side::Shared, &quotients()).unwrap(),
+            by_name(connection, &group, Side::Shared, &quotients(), &author).unwrap(),
             None
         );
     }
 
     #[test]
     fn sharing_moves_the_line_and_says_who_writes_it() {
-        let (database, group, author) = instance();
-        let connection = database.connection();
+        let (mut database, group, author) = instance();
+        let connection = database.connection_mut();
         let other: UserId = "usr:bruno".parse().unwrap();
 
         start(connection, &group, Side::Private, &quotients(), &author).unwrap();
@@ -257,7 +268,7 @@ mod tests {
         assert!(!shared.admits(&other), "everybody else proposes");
 
         assert_eq!(
-            by_name(connection, &group, Side::Private, &quotients()).unwrap(),
+            by_name(connection, &group, Side::Private, &quotients(), &author).unwrap(),
             None,
             "a move, not a copy"
         );
@@ -265,8 +276,8 @@ mod tests {
 
     #[test]
     fn a_line_anybody_writes_admits_anybody() {
-        let (database, group, author) = instance();
-        let connection = database.connection();
+        let (mut database, group, author) = instance();
+        let connection = database.connection_mut();
         let other: UserId = "usr:bruno".parse().unwrap();
 
         start(connection, &group, Side::Private, &quotients(), &author).unwrap();
@@ -274,5 +285,39 @@ mod tests {
 
         assert!(shared.admits(&other));
         assert_eq!(started_by(connection, &group, &author).unwrap().len(), 1);
+    }
+    #[test]
+    fn personal_names_are_independent_and_sharing_moves_only_the_authors_copy() {
+        let (mut database, group, author) = instance();
+        let connection = database.connection_mut();
+        let other = users::create(
+            connection,
+            &Slug::parse("bruno").unwrap(),
+            "bruno@example.org",
+            "Bruno",
+            "hash",
+        )
+        .unwrap()
+        .unwrap()
+        .id;
+        start(connection, &group, Side::Private, &quotients(), &author).unwrap();
+        let private = start(connection, &group, Side::Private, &quotients(), &other).unwrap();
+        assert!(!private.admits(&author));
+        share(connection, &group, &quotients(), &author, WhoWrites::Anyone).unwrap();
+        assert!(
+            by_name(connection, &group, Side::Private, &quotients(), &author)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            by_name(connection, &group, Side::Private, &quotients(), &other).unwrap(),
+            Some(private)
+        );
+        forget(connection, &group, Side::Private, &quotients(), &author).unwrap();
+        assert!(
+            by_name(connection, &group, Side::Private, &quotients(), &other)
+                .unwrap()
+                .is_some()
+        );
     }
 }

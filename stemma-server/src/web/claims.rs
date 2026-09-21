@@ -63,12 +63,16 @@ pub async fn take(
             // A shared line its author kept is theirs to write, and
             // everybody else proposes. Nothing about that is a warning:
             // the machine simply is not the one writing it.
-            if let Some(started) = crate::store::lines::by_name(connection, &group, side, &line)?
-                && !started.admits(&owner)
+            if let Some(started) =
+                crate::store::lines::by_name(connection, &group, side, &line, &owner)?
+                && (side == Side::Private && started.author != owner || !started.admits(&owner))
             {
                 anyhow::bail!("its author writes this line; everybody else proposes")
             }
 
+            if let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)? {
+                visible(&claim, &owner)?;
+            }
             claims::take(connection, &group, side, line.as_str(), &id, &owner)
         })
         .await
@@ -86,18 +90,22 @@ pub async fn renew(
     let machine = super::machines::registered(&instance, &credential).await?;
     let (group, side, line) = about.read()?;
     let id = machine.id;
+    let owner = machine.owner.clone();
 
     let claim = instance
         .write(move |connection| {
-            let Some(claim) = claims::holder(connection, &group, side, line.as_str())? else {
+            in_the_group(connection, &group, &owner)?;
+            let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)?
+            else {
                 anyhow::bail!("nothing here");
             };
 
+            visible(&claim, &owner)?;
             if claim.machine == id {
                 claims::renew(connection, &claim.id)?;
             }
 
-            claims::holder(connection, &group, side, line.as_str())?.context_or_nothing()
+            claims::holder(connection, &group, side, line.as_str(), &owner)?.context_or_nothing()
         })
         .await
         .map_err(nothing_here)?;
@@ -114,10 +122,11 @@ pub async fn release(
     let machine = super::machines::registered(&instance, &credential).await?;
     let (group, side, line) = about.read()?;
     let id = machine.id;
+    let owner = machine.owner.clone();
 
     instance
         .write(move |connection| {
-            if let Some(claim) = claims::holder(connection, &group, side, line.as_str())?
+            if let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)?
                 && claim.machine == id
             {
                 claims::release(connection, &claim.id)?;
@@ -145,13 +154,15 @@ pub async fn ask(
         .write(move |connection| {
             in_the_group(connection, &group, &owner)?;
 
-            let Some(claim) = claims::holder(connection, &group, side, line.as_str())? else {
+            let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)?
+            else {
                 anyhow::bail!("nothing here");
             };
 
+            visible(&claim, &owner)?;
             claims::ask(connection, &claim.id, Some(&id))?;
 
-            claims::holder(connection, &group, side, line.as_str())?.context_or_nothing()
+            claims::holder(connection, &group, side, line.as_str(), &owner)?.context_or_nothing()
         })
         .await
         .map_err(nothing_here)?;
@@ -173,7 +184,11 @@ pub async fn listing(
             let mut found = Vec::new();
 
             for membership in groups::for_user(connection, &owner)? {
-                found.extend(claims::for_group(connection, &membership.group.id)?);
+                found.extend(
+                    claims::for_group(connection, &membership.group.id)?
+                        .into_iter()
+                        .filter(|claim| claim.side == Side::Shared || claim.owner == owner),
+                );
             }
 
             Ok(found)
@@ -199,6 +214,13 @@ pub async fn listing(
     Ok(Json(json!({ "claims": listed })).into_response())
 }
 
+/// Proof that the release came from the signed-in session's form.
+#[derive(Debug, Deserialize)]
+pub struct ReleaseForm {
+    /// The session's CSRF token.
+    pub form_token: String,
+}
+
 /// Hands a line back from the web.
 ///
 /// Only the person whose machine is holding it: the claim belongs to a
@@ -207,7 +229,9 @@ pub async fn hand_back(
     State(instance): State<Instance>,
     signed: SignedIn,
     Path((group, side, line)): Path<(String, String, String)>,
+    axum::Form(form): axum::Form<ReleaseForm>,
 ) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
     let about = About {
         group: group.clone(),
         side: side.clone(),
@@ -218,7 +242,7 @@ pub async fn hand_back(
 
     instance
         .write(move |connection| {
-            let Some(claim) = claims::holder(connection, &id, chosen, name.as_str())? else {
+            let Some(claim) = claims::holder(connection, &id, chosen, name.as_str(), &who)? else {
                 return Ok(());
             };
 
@@ -251,6 +275,14 @@ fn standing(claim: &Claim, asking: &stemma_core::id::MachineId) -> serde_json::V
         "asked": claim.asked,
         "said": standing.said(),
     })
+}
+
+/// A personal claim reveals activity only to its owner.
+fn visible(claim: &Claim, who: &stemma_core::id::UserId) -> anyhow::Result<()> {
+    if claim.side == Side::Private && &claim.owner != who {
+        anyhow::bail!("nothing here");
+    }
+    Ok(())
 }
 
 /// Refuses somebody who is not in the group, the way every page does.
