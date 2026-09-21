@@ -157,6 +157,8 @@ pub fn apply(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
     let credentials = crate::session::required(home)?;
     let server = Server::at(&credentials.server)?;
     let accepted = server.accepted_proposal(&credentials.token, &proposal.to_string())?;
+    stemma_core::id::Slug::parse(&accepted.group).context("the proposal names no group")?;
+    let line = repository::check_line_name(&accepted.line).context("the proposal names no line")?;
     let config = Config::read(&home.config_file())?;
     let side: Side = accepted
         .side
@@ -178,21 +180,12 @@ pub fn apply(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
         bail!("the clone has uncommitted work; keep it before applying the proposal")
     }
 
-    let path = clone
-        .join(repository::LINES)
-        .join(&accepted.line)
-        .join(repository::ENTRY);
+    let path = repository::line_entry(&clone, &line);
     std::fs::write(&path, &accepted.source)
         .with_context(|| format!("cannot write {}", path.display()))?;
     let mut paths = vec![path];
     if let Some(lean_source) = accepted.lean_source {
-        let lean_path = repository::line_lean_entry(
-            &clone,
-            &accepted
-                .line
-                .parse()
-                .context("the proposal names no line")?,
-        );
+        let lean_path = repository::line_lean_entry(&clone, &line);
         std::fs::write(&lean_path, lean_source)
             .with_context(|| format!("cannot write {}", lean_path.display()))?;
         paths.push(lean_path);

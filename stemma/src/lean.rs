@@ -43,16 +43,8 @@ pub fn check(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<LeanDigest
         }));
     }
 
-    if let Some(found) = mathlib_revision(clone)?
-        && found != mathlib
-    {
-        return Ok(Some(LeanDigest {
-            lean: lean.to_owned(),
-            mathlib: mathlib.to_owned(),
-            compiled: false,
-            statements: Vec::new(),
-            diagnostic: format!("Mathlib {mathlib} is pinned but the Lake manifest has {found}"),
-        }));
+    if let Err(reason) = check_mathlib(clone, mathlib) {
+        return Ok(Some(refused(&reason, pins)));
     }
 
     let output = Command::new("lake")
@@ -111,14 +103,7 @@ pub fn check_offered(
             ));
         }
     }
-    match mathlib_revision(clone).map_err(|error| error.to_string())? {
-        Some(found) if found != mathlib => {
-            return Err(format!(
-                "Mathlib {mathlib} is pinned but the Lake manifest has {found}"
-            ));
-        }
-        _ => {}
-    }
+    check_mathlib(clone, mathlib)?;
     if let Some(parent) = scratch.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -169,8 +154,10 @@ fn version_in(output: &[u8]) -> Option<String> {
 
 fn mathlib_revision(clone: &Path) -> Result<Option<String>> {
     let path = clone.join("lake-manifest.json");
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Ok(None);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("cannot read {}", path.display())),
     };
     let manifest: serde_json::Value =
         serde_json::from_str(&text).with_context(|| format!("cannot read {}", path.display()))?;
@@ -179,6 +166,18 @@ fn mathlib_revision(clone: &Path) -> Result<Option<String>> {
         .and_then(|packages| packages.iter().find(|package| package["name"] == "mathlib"))
         .and_then(|package| package["rev"].as_str())
         .map(str::to_owned))
+}
+
+fn check_mathlib(clone: &Path, pinned: &str) -> Result<(), String> {
+    match mathlib_revision(clone).map_err(|error| format!("{error:#}"))? {
+        Some(found) if found == pinned => Ok(()),
+        Some(found) => Err(format!(
+            "Mathlib {pinned} is pinned but the Lake manifest has {found}"
+        )),
+        None => Err(format!(
+            "Mathlib {pinned} is pinned but the Lake manifest does not identify its revision"
+        )),
+    }
 }
 
 fn markers(source: &str) -> Vec<Siglum> {
@@ -211,6 +210,24 @@ fn concise(output: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unrecorded_mathlib_revision_cannot_satisfy_a_pin() {
+        assert!(check_mathlib(Path::new("/nonexistent/stemma"), "pinned").is_err());
+        let root = std::env::temp_dir().join(format!("stemma-mathlib-pin-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = root.join("lake-manifest.json");
+        std::fs::write(&manifest, r#"{"packages": []}"#).unwrap();
+        assert!(check_mathlib(&root, "pinned").is_err());
+        std::fs::write(
+            &manifest,
+            r#"{"packages": [{"name":"mathlib","rev":"pinned"}]}"#,
+        )
+        .unwrap();
+        assert!(check_mathlib(&root, "pinned").is_ok());
+        assert!(check_mathlib(&root, "another").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn a_clean_module_names_the_statements_it_verifies() {

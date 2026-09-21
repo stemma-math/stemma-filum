@@ -72,6 +72,7 @@ pub fn clone(url: &str, into: &Path, helper: &str) -> Result<()> {
             &format!("credential.helper={helper}"),
             "clone",
             "--quiet",
+            "--",
             url,
             &into.display().to_string(),
         ],
@@ -187,6 +188,9 @@ pub fn commit_path(repository: &Path, path: &Path, message: &str) -> Result<()> 
 
 /// Commits several paths atomically using the person's ordinary git identity.
 pub fn commit_paths(repository: &Path, paths: &[PathBuf], message: &str) -> Result<()> {
+    if paths.is_empty() {
+        bail!("no paths were selected to commit");
+    }
     let inside = paths
         .iter()
         .map(|path| {
@@ -263,7 +267,13 @@ pub fn merge_without_committing(repository: &Path) -> Result<Vec<String>> {
         Ok(_) => Ok(Vec::new()),
         // A merge that stops on a conflict is the ordinary case here,
         // not a failure: what it could not settle is the answer.
-        Err(_) => unsettled(repository),
+        Err(error) => {
+            let conflicts = unsettled(repository)?;
+            if conflicts.is_empty() {
+                return Err(error);
+            }
+            Ok(conflicts)
+        }
     }
 }
 
@@ -354,6 +364,21 @@ fn run(directory: &Path, arguments: &[&str]) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_merge_without_conflicts_is_not_reported_as_success() {
+        let root = std::env::temp_dir().join(format!("stemma-merge-error-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        run(&root, &["init", "--quiet"]).unwrap();
+        let error = merge_without_committing(&root).unwrap_err();
+        assert!(error.to_string().contains("git merge"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_empty_path_selection_cannot_commit_unrelated_staged_work() {
+        assert!(commit_paths(Path::new("/nonexistent"), &[], "Do not commit").is_err());
+    }
 
     #[test]
     fn two_sides_that_have_both_moved_are_the_case_nothing_here_settles() {

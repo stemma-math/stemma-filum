@@ -75,31 +75,22 @@ fn read_question(input: impl BufRead) -> Result<BTreeMap<String, String>> {
 /// Answering anybody else's question would hand this instance's
 /// credential to another server.
 fn is_our_instance(server: &str, protocol: &str, host: &str) -> bool {
-    let (ours_protocol, ours_host) = match server.split_once("://") {
-        Some((protocol, rest)) => (protocol, rest.split('/').next().unwrap_or(rest)),
-        None => return false,
+    let (Ok(ours), Ok(asked)) = (
+        url::Url::parse(server),
+        url::Url::parse(&format!("{protocol}://{host}")),
+    ) else {
+        return false;
     };
-
-    if ours_protocol != protocol {
+    if !matches!(ours.scheme(), "http" | "https")
+        || !asked.username().is_empty()
+        || asked.password().is_some()
+        || asked.path() != "/"
+        || asked.query().is_some()
+        || asked.fragment().is_some()
+    {
         return false;
     }
-
-    with_port(ours_host, ours_protocol) == with_port(host, protocol)
-}
-
-/// A host with the port it means, so that two spellings of one address
-/// compare equal.
-fn with_port(host: &str, protocol: &str) -> String {
-    if host.contains(':') {
-        return host.to_owned();
-    }
-
-    let port = match protocol {
-        "https" => "443",
-        _ => "80",
-    };
-
-    format!("{host}:{port}")
+    ours.origin() == asked.origin()
 }
 
 #[cfg(test)]
@@ -136,12 +127,25 @@ mod tests {
             ("https", "elsewhere.example"),
             ("http", "stemma.test"),
             ("https", "stemma.test:8443"),
+            ("https", "attacker@stemma.test"),
+            ("https", "stemma.test/path"),
         ] {
             assert!(
                 !is_our_instance("https://stemma.test", protocol, host),
                 "answered {protocol}://{host}"
             );
         }
+    }
+
+    #[test]
+    fn equivalent_hosts_and_ipv6_default_ports_match() {
+        assert!(is_our_instance(
+            "https://stemma.test",
+            "https",
+            "STEMMA.TEST:443"
+        ));
+        assert!(is_our_instance("https://[::1]", "https", "[::1]:443"));
+        assert!(!is_our_instance("https://[::1]", "https", "[::1]:8443"));
     }
 
     #[test]

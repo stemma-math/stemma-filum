@@ -89,7 +89,7 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
         _ => None,
     };
 
-    if matches!(task, Task::Formalize { .. } | Task::Verify { .. }) {
+    if needs_lean_check(&task, &outcome) {
         let checked = proposal
             .as_ref()
             .and_then(|offer| offer.lean_source.as_deref())
@@ -154,6 +154,11 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
         _ => outcome,
     };
     Completed { outcome, proposal }
+}
+
+fn needs_lean_check(task: &Task, outcome: &Outcome) -> bool {
+    matches!(task, Task::Formalize { .. } | Task::Verify { .. })
+        && matches!(outcome, Outcome::Produced { .. })
 }
 
 /// Everything this machine returns after doing one job.
@@ -460,6 +465,27 @@ pub fn output_exists(home: &Home, job: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn formal_work_preserves_agent_failure_and_nothing_found_outcomes() {
+        let task: Task = "formalize@thm:first".parse().unwrap();
+        assert!(!needs_lean_check(
+            &task,
+            &Outcome::out_of_reach("agent unavailable")
+        ));
+        assert!(!needs_lean_check(
+            &task,
+            &Outcome::NothingFound {
+                said: "no proof".to_owned()
+            }
+        ));
+        assert!(needs_lean_check(
+            &task,
+            &Outcome::Produced {
+                said: "proof offered".to_owned()
+            }
+        ));
+    }
     use crate::agents::Finished;
 
     const SOURCE: &str = r##"

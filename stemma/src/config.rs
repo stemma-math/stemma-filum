@@ -55,14 +55,8 @@ impl Config {
 
     /// Writes it.
     pub fn write(&self, path: &Path) -> Result<()> {
-        if let Some(directory) = path.parent() {
-            std::fs::create_dir_all(directory)
-                .with_context(|| format!("cannot create {}", directory.display()))?;
-        }
-
         let text = toml::to_string_pretty(self).context("cannot write the configuration")?;
-
-        std::fs::write(path, text).with_context(|| format!("cannot write {}", path.display()))
+        crate::storage::replace(path, &text)
     }
 
     /// Where clones land.

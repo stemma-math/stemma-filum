@@ -38,16 +38,8 @@ impl Credentials {
 
     /// Writes them where only this account can read them.
     pub fn write(&self, path: &Path) -> Result<()> {
-        if let Some(directory) = path.parent() {
-            std::fs::create_dir_all(directory)
-                .with_context(|| format!("cannot create {}", directory.display()))?;
-        }
-
         let text = toml::to_string_pretty(self).context("cannot write the credential")?;
-
-        // Written and then narrowed in one step, so there is never a
-        // moment when the file exists and anybody can read it.
-        write_private(path, &text)
+        crate::storage::replace(path, &text)
     }
 
     /// Forgets them.
@@ -58,27 +50,6 @@ impl Credentials {
             Err(error) => Err(error).with_context(|| format!("cannot remove {}", path.display())),
         }
     }
-}
-
-/// Writes a file only this account may read.
-fn write_private(path: &Path, contents: &str) -> Result<()> {
-    use std::io::Write;
-
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-
-    let mut file = options
-        .open(path)
-        .with_context(|| format!("cannot write {}", path.display()))?;
-
-    file.write_all(contents.as_bytes())
-        .with_context(|| format!("cannot write {}", path.display()))
 }
 
 #[cfg(test)]
@@ -125,6 +96,10 @@ mod tests {
         let root = somewhere("credentials-mode");
         let path = root.join("credentials.toml");
 
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&path, "old credential").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
         Credentials {
             server: "https://stemma.test".to_owned(),
             user: "usr:ana".to_owned(),
@@ -137,5 +112,34 @@ mod tests {
         assert_eq!(mode, 0o600);
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replacing_a_credential_does_not_follow_a_symbolic_link() {
+        let root = somewhere("credentials-symlink");
+        std::fs::create_dir_all(&root).unwrap();
+        let target = root.join("other-file");
+        let path = root.join("credentials.toml");
+        std::fs::write(&target, "keep this").unwrap();
+        std::os::unix::fs::symlink(&target, &path).unwrap();
+
+        Credentials {
+            server: "https://stemma.test".to_owned(),
+            user: "usr:ana".to_owned(),
+            token: "a secret".to_owned(),
+        }
+        .write(&path)
+        .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep this");
+        assert!(
+            !std::fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

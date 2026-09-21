@@ -462,6 +462,8 @@ impl Server {
             .send_json(serde_json::json!({ "device_code": device_code }))
             .with_context(|| format!("cannot reach {}", self.address))?;
 
+        self.check_protocol(response.headers())?;
+
         let answer: serde_json::Value = response
             .body_mut()
             .read_json()
@@ -946,12 +948,26 @@ impl Server {
 
     /// Gives a credential back.
     pub fn sign_out(&self, token: &str) -> Result<()> {
-        self.agent
+        let mut response = self
+            .agent
             .post(self.url("/api/logout"))
             .header("authorization", format!("Bearer {token}"))
             .send_empty()
             .with_context(|| format!("cannot reach {}", self.address))?;
 
+        self.check_protocol(response.headers())?;
+        match response.status().as_u16() {
+            // An already invalid credential also leaves this machine signed out.
+            200 | 204 | 401 | 403 => {}
+            status => {
+                let said = response.body_mut().read_to_string().unwrap_or_default();
+                bail!(
+                    "{} could not revoke the credential ({status}): {}",
+                    self.address,
+                    summarise(&said)
+                );
+            }
+        }
         Ok(())
     }
 
@@ -1014,7 +1030,7 @@ fn summarise(said: &str) -> String {
 
 /// The address of an instance, in the one form the rest of this uses.
 fn normalise(address: &str) -> Result<String> {
-    let address = address.trim().trim_end_matches('/');
+    let address = address.trim();
 
     if address.is_empty() {
         bail!("that is not the address of an instance");
@@ -1031,12 +1047,71 @@ fn normalise(address: &str) -> Result<String> {
         bail!("`{address}` is not an http or https address");
     }
 
-    Ok(address)
+    let parsed = url::Url::parse(&address).context("that is not the address of an instance")?;
+    if parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        bail!(
+            "an instance address needs a host and must not include credentials, a query or a fragment"
+        );
+    }
+
+    Ok(parsed.as_str().trim_end_matches('/').to_owned())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn reply_once(
+        status: &str,
+        protocol: Option<&str>,
+        body: &str,
+    ) -> (Server, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = Server::at(&format!("http://{}", listener.local_addr().unwrap())).unwrap();
+        let version = protocol
+            .map(|version| format!("{PROTOCOL_HEADER}: {version}\r\n"))
+            .unwrap_or_default();
+        let response = format!(
+            "HTTP/1.1 {status}\r\n{version}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        let worker = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        (server, worker)
+    }
+
+    #[test]
+    fn a_failed_remote_logout_is_reported() {
+        let (server, worker) = reply_once(
+            "500 Internal Server Error",
+            Some(&PROTOCOL_VERSION.to_string()),
+            r#"{"error":"revocation failed"}"#,
+        );
+        let error = server.sign_out("token").unwrap_err();
+        worker.join().unwrap();
+        assert!(error.to_string().contains("revocation failed"));
+    }
+
+    #[test]
+    fn sign_in_collection_requires_the_stemma_protocol() {
+        let (server, worker) = reply_once(
+            "200 OK",
+            None,
+            r#"{"access_token":"token","user":"usr:ana"}"#,
+        );
+        assert!(server.collect_sign_in("device").is_err());
+        worker.join().unwrap();
+    }
 
     #[test]
     fn a_host_on_its_own_is_taken_as_encrypted() {
@@ -1093,7 +1168,17 @@ mod tests {
 
     #[test]
     fn something_that_is_not_an_address_is_refused() {
-        for wrong in ["", "   ", "ftp://example.org", "ssh://example.org"] {
+        for wrong in [
+            "",
+            "   ",
+            "ftp://example.org",
+            "ssh://example.org",
+            "https://",
+            "https://bad host",
+            "https://user:secret@example.org",
+            "https://example.org?query",
+            "https://example.org#fragment",
+        ] {
             assert!(normalise(wrong).is_err(), "took `{wrong}`");
         }
     }

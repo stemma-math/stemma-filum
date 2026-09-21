@@ -10,7 +10,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::api::{GroupRemote, Server};
 use crate::config::Config;
@@ -96,6 +96,12 @@ pub fn run(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
     let credentials = crate::session::required(home)?;
     let server = Server::at(&credentials.server)?;
     let listing = server.workspace(&credentials.token)?;
+
+    // Validate the complete listing before using remote names as local paths.
+    for group in &listing.groups {
+        stemma_core::id::Slug::parse(&group.slug)
+            .context("the instance returned an invalid group name")?;
+    }
 
     let mut config = Config::read(&home.config_file())?;
     let workspace = config.workspace_or(home.workspace());

@@ -130,7 +130,21 @@ fn do_one(
     )?;
     out.flush()?;
 
-    let completed = work::carry_out(home, config, handed);
+    let completed = std::thread::scope(|scope| -> Result<work::Completed> {
+        let (finished, waiting) = std::sync::mpsc::sync_channel(1);
+        scope.spawn(move || {
+            let completed = work::carry_out(home, config, handed);
+            let _ = finished.send(completed);
+        });
+        wait_with_heartbeat(waiting, Duration::from_secs(BEAT_SECONDS), || {
+            // Keep working through temporary network failures.
+            if let Err(error) = server.beat(&credentials.token, agents) {
+                writeln!(out, "{}: {error:#}", credentials.server)?;
+                out.flush()?;
+            }
+            Ok(())
+        })
+    })?;
     let outcome = &completed.outcome;
 
     writeln!(out, "  {}", outcome.said())?;
@@ -171,6 +185,23 @@ fn do_one(
     }
 
     Ok(())
+}
+
+/// Waits for work while keeping its machine visible to the instance.
+fn wait_with_heartbeat<T>(
+    waiting: std::sync::mpsc::Receiver<T>,
+    interval: Duration,
+    mut heartbeat: impl FnMut() -> Result<()>,
+) -> Result<T> {
+    loop {
+        match waiting.recv_timeout(interval) {
+            Ok(completed) => return Ok(completed),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => heartbeat()?,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                bail!("the job worker stopped without reporting an outcome");
+            }
+        }
+    }
 }
 
 /// Writes what a job taught about an agent into what this machine
@@ -416,6 +447,29 @@ fn plist(executable: &Path, home: &Home, moved: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn waiting_for_a_job_keeps_sending_heartbeats() {
+        let (finished, waiting) = std::sync::mpsc::channel();
+        let mut beats = 0;
+        let result = wait_with_heartbeat(waiting, Duration::from_millis(1), || {
+            beats += 1;
+            if beats == 2 {
+                finished.send("completed").unwrap();
+            }
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(result, "completed");
+        assert_eq!(beats, 2);
+    }
+
+    #[test]
+    fn a_lost_worker_is_reported_instead_of_waiting_forever() {
+        let (finished, waiting) = std::sync::mpsc::channel::<()>();
+        drop(finished);
+        assert!(wait_with_heartbeat(waiting, Duration::from_secs(30), || Ok(())).is_err());
+    }
     use stemma_core::id::Slug;
     use stemma_core::machine::Availability;
 

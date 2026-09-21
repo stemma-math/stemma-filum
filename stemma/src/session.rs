@@ -163,13 +163,13 @@ pub fn log_out(home: &Home, out: &mut impl Write) -> Result<()> {
     // The local copy goes whatever the instance says: a machine that
     // cannot reach its instance must still be able to stop holding a
     // credential.
-    if let Err(error) =
-        Server::at(&credentials.server).and_then(|server| server.sign_out(&credentials.token))
-    {
+    let revocation =
+        Server::at(&credentials.server).and_then(|server| server.sign_out(&credentials.token));
+    Credentials::forget(&path)?;
+    if let Err(error) = revocation {
         writeln!(out, "The instance could not be told: {error:#}")?;
     }
 
-    Credentials::forget(&path)?;
     writeln!(out, "This machine is no longer signed in.")?;
 
     Ok(())
