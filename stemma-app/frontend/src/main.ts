@@ -389,7 +389,7 @@ function drawEditor() {
   if (!current) { go("lines"); return; }
   body().innerHTML = `<main class="apparatus">
     <aside id="gutter" class="${current.entry.side === "private" ? "private" : ""}">
-      <p class="label">APPARATUS</p><div id="nodes"></div><pre id="source-diagnostics"></pre>
+      <p class="label">APPARATUS</p><div id="nodes"></div><div id="notation"></div><pre id="source-diagnostics"></pre>
     </aside>
     <section class="writing"><textarea id="editor" spellcheck="false"></textarea></section>
     <section class="preview">
@@ -516,8 +516,40 @@ function drawNodes(opened: OpenLine) {
   const gutter = document.querySelector("#nodes");
   if (!gutter) return;
   gutter.innerHTML = nodes + boxes;
+  drawNotation(opened);
   say("#source-diagnostics", [...opened.diagnostics, ...(opened.lean && !opened.lean.compiled ? [opened.lean.diagnostic] : [])].join("\n"));
   gutter.querySelectorAll<HTMLButtonElement>("button").forEach((button) => button.onclick = () => drawLauncher(button.dataset.task));
+}
+
+/// Offers to write the import a line was started without.
+///
+/// Lines made before the notation was a package use environments that
+/// nothing defines, so they will not compose and nothing about the
+/// error says why. The fix is one line at the top, and there is no
+/// reason to make somebody type it.
+function drawNotation(opened: OpenLine) {
+  const target = document.querySelector<HTMLDivElement>("#notation");
+  if (!target) return;
+  const missing = opened.diagnostics.some((one) => one.includes("does not say where its environments come from"));
+  target.hidden = !missing;
+  if (!missing) { target.innerHTML = ""; return; }
+  target.innerHTML = `<div class="mark"><span>this line has no notation import, so it cannot compose</span><button id="add-notation"${writing ? "" : " disabled"}>${writing ? "add it" : "write this line to add it"}</button></div>`;
+  const add = target.querySelector<HTMLButtonElement>("#add-notation");
+  if (add) add.onclick = async () => {
+    const path = opened.entry.path;
+    try {
+      // It reads the file, so what is in the editor has to be in it.
+      await save();
+      const next = await invoke<OpenLine>("add_notation", { path });
+      if (current?.entry.path !== path) return;
+      current = next;
+      const input = document.querySelector<HTMLTextAreaElement>("#editor");
+      if (input) input.value = next.source;
+      drawNodes(next);
+      await render();
+      tell("The notation import was added to this line.");
+    } catch (error) { tell(said(error)); }
+  };
 }
 
 async function takeClaim() { await askAbout("claim"); }
@@ -532,6 +564,7 @@ async function askAbout(command: string) {
     if (!target.isConnected) return;
     writing = claim.standing === "writing";
     editor().disabled = !writing;
+    if (current) drawNotation(current);
     const minutes = claim.left === null ? "" : `<span class="quiet">it lapses in ${Math.max(1, Math.ceil(claim.left / 60))} minutes</span>`;
     const action = claim.standing === "open" ? `<button id="take-claim">Write this line</button>` : writing ? `<button id="let-go">Let it go</button>` : `<button id="ask-for-it"${claim.asked ? " disabled" : ""}>${claim.asked ? "Asked for" : "Ask for it"}</button>`;
     target.innerHTML = `<div class="job"><span>${escape(claim.said)}</span>${minutes}${action}</div>`;

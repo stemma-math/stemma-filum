@@ -705,6 +705,26 @@ fn record_line(path: String) -> Result<Option<String>, String> {
         .map(|recorded| recorded.to_string()))
 }
 
+/// Puts the missing import at the top of a line and saves it.
+///
+/// A line written before the notation was a package has no import to
+/// have lost, so this is not a correction of anybody's mistake and does
+/// not ask them to retype one.
+#[tauri::command(async)]
+fn add_notation(path: String) -> Result<OpenLine, String> {
+    let admitted = admitted(&path)?;
+    let source = std::fs::read_to_string(&admitted).map_err(said)?;
+
+    if !stemma_core::notation::missing_from(&source) {
+        return open_line(path);
+    }
+
+    save_line(
+        path,
+        format!("{}\n\n{}", stemma_core::notation::import(), source),
+    )
+}
+
 #[tauri::command(async)]
 fn preview(path: String, source: String) -> Result<Preview, String> {
     let path = admitted(&path)?;
@@ -771,14 +791,23 @@ fn complaint(main: &Source, diagnostic: &SourceDiagnostic) -> String {
 }
 
 /// Why Typst would not compose the document.
+///
+/// "unknown variable: theorem" is true and useless: what it means is
+/// that the line never said where its environments come from, and that
+/// is what somebody can act on.
 fn refused(main: &Source, error: &TypstAsLibError) -> String {
-    match error {
+    let said = match error {
         TypstAsLibError::TypstSource(diagnostics) => diagnostics
             .iter()
             .map(|diagnostic| complaint(main, diagnostic))
             .collect::<Vec<_>>()
             .join("\n"),
         other => other.to_string(),
+    };
+
+    match stemma_core::notation::missing_from(main.text()) {
+        true => format!("{said}\n\n{}", stemma_core::notation::how_to_add_it()),
+        false => said,
     }
 }
 
@@ -1104,15 +1133,23 @@ fn identity(path: &Path) -> Result<(String, String, String), String> {
 }
 
 fn analyse(source: &str) -> (Option<Line>, Vec<stemma_core::line::BlackBox>, Vec<String>) {
+    // Said first, because everything else a line without its import is
+    // told is a consequence of not having it.
+    let missing = stemma_core::notation::missing_from(source)
+        .then(stemma_core::notation::how_to_add_it)
+        .into_iter();
+
     match Line::read(source) {
         Ok(line) => {
             let boxes = line.boxes();
-            (Some(line), boxes, Vec::new())
+            (Some(line), boxes, missing.collect())
         }
         Err(faults) => (
             None,
             Vec::new(),
-            faults.into_iter().map(|fault| fault.to_string()).collect(),
+            missing
+                .chain(faults.into_iter().map(|fault| fault.to_string()))
+                .collect(),
         ),
     }
 }
@@ -1166,6 +1203,7 @@ pub fn run() {
             open_line,
             save_line,
             record_line,
+            add_notation,
             preview,
             machine,
             job_output,
@@ -1237,9 +1275,15 @@ mod tests {
         );
     }
 
+    /// A source as a line actually holds one, import and all.
+    fn written(body: &str) -> String {
+        format!("{}\n\n{body}", stemma_core::notation::import())
+    }
+
     #[test]
     fn unfinished_source_remains_available_with_diagnostics() {
-        let (line, boxes, diagnostics) = analyse(r#"#theorem(central: true)[Unfinished.]"#);
+        let (line, boxes, diagnostics) =
+            analyse(&written(r#"#theorem(central: true)[Unfinished.]"#));
 
         assert!(line.is_none());
         assert!(boxes.is_empty());
@@ -1248,11 +1292,26 @@ mod tests {
 
     #[test]
     fn valid_source_keeps_its_apparatus() {
-        let (line, _, diagnostics) =
-            analyse(r#"#theorem(id: "thm:main", central: true)[A statement.]"#);
+        let (line, _, diagnostics) = analyse(&written(
+            r#"#theorem(id: "thm:main", central: true)[A statement.]"#,
+        ));
 
         assert!(line.is_some());
         assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn a_line_started_before_the_notation_was_a_package_is_told_what_it_lacks() {
+        // Exactly what such a line holds: environments, and nothing
+        // saying where they come from.
+        let (_, _, diagnostics) = analyse("= Hola\n\n#question[Adiós.]\n");
+
+        assert!(
+            diagnostics
+                .iter()
+                .any(|said| said.contains("where its environments come from")),
+            "nothing said the import was missing: {diagnostics:?}"
+        );
     }
 
     #[test]
