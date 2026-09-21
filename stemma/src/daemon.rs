@@ -390,6 +390,7 @@ fn unit(executable: &Path, moved: Option<&str>) -> String {
         Some(root) => format!("Environment={}={root}\n", crate::home::HOME_VARIABLE),
         None => String::new(),
     };
+    let path = format!("Environment=PATH={}\n", programs_path());
 
     format!(
         "[Unit]\n\
@@ -400,6 +401,7 @@ fn unit(executable: &Path, moved: Option<&str>) -> String {
          [Service]\n\
          Type=exec\n\
          ExecStart={} daemon run\n\
+         {path}\
          {moved}\
          Restart=on-failure\n\
          RestartSec=10s\n\
@@ -410,17 +412,38 @@ fn unit(executable: &Path, moved: Option<&str>) -> String {
     )
 }
 
+/// The path the daemon is given to find programs with.
+///
+/// A service is not started from anybody's shell, so it inherits a path
+/// of four system directories and nothing the person has installed. An
+/// agent sitting in `/opt/homebrew/bin` is then not merely unusable but
+/// reported to the group as not installed, which is a lie about their
+/// machine. So the places agents are actually installed into travel
+/// with the service, and the agents themselves get a path they can run
+/// the tools they need from.
+fn programs_path() -> String {
+    crate::agents::where_programs_are()
+        .iter()
+        .map(|place| place.display().to_string())
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
 /// The launch agent.
 fn plist(executable: &Path, home: &Home, moved: Option<&str>) -> String {
     let log = home.state_dir().join("daemon.log");
-    let environment = match moved {
+    let moved = match moved {
         Some(root) => format!(
-            "    <key>EnvironmentVariables</key>\n    \
-             <dict><key>{}</key><string>{root}</string></dict>\n",
+            "<key>{}</key><string>{root}</string>",
             crate::home::HOME_VARIABLE
         ),
         None => String::new(),
     };
+    let environment = format!(
+        "    <key>EnvironmentVariables</key>\n    \
+         <dict><key>PATH</key><string>{}</string>{moved}</dict>\n",
+        programs_path()
+    );
 
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -501,6 +524,21 @@ mod tests {
             Some("/data/stemma"),
         );
         assert!(agent.contains("<key>STEMMA_HOME</key><string>/data/stemma</string>"));
+    }
+
+    #[test]
+    fn the_service_carries_a_path_an_agent_can_be_found_on() {
+        let agent = plist(Path::new("/usr/local/bin/stemma"), &home(), None);
+        let service = unit(Path::new("/usr/local/bin/stemma"), None);
+
+        // What the system would otherwise give it, and where nothing is.
+        for written in [&agent, &service] {
+            assert!(written.contains("PATH"), "the service carries no path");
+            assert!(
+                written.contains("/opt/homebrew/bin") || written.contains("/usr/local/bin"),
+                "the path holds nowhere an agent is installed"
+            );
+        }
     }
 
     #[test]

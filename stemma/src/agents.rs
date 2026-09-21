@@ -316,14 +316,80 @@ pub fn output_path(home: &Home, job: &str) -> PathBuf {
         .join(format!("{}.log", job.replace(':', "-")))
 }
 
-/// The first place on the path with a program of this name.
+/// The first place this machine keeps programs that has one of this
+/// name.
 fn on_path(program: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH")?
-        .to_str()?
+    where_programs_are()
+        .into_iter()
+        .map(|directory| directory.join(program))
+        .find(|candidate| runnable(candidate))
+}
+
+/// Everywhere a program of an agent's might be.
+///
+/// The path first, because somebody who put one somewhere meant it.
+/// Then the places installers use, because the path is not the one this
+/// looks at: a daemon is started by the system, and the system starts
+/// it with a path of four directories that no agent has ever been
+/// installed into. Without these, an agent sitting right there is
+/// reported to the group as not installed.
+pub fn where_programs_are() -> Vec<PathBuf> {
+    let on_path = std::env::var_os("PATH")
+        .and_then(|path| path.to_str().map(str::to_owned))
+        .unwrap_or_default();
+
+    beside(&on_path, dirs::home_dir())
+}
+
+/// The path, and then the places installers write into beside a home.
+///
+/// The home is given rather than read so that this can be tried: what
+/// it does is only true of a machine somebody has installed things on,
+/// and a test has to be able to be that machine.
+fn beside(on_path: &str, home: Option<PathBuf>) -> Vec<PathBuf> {
+    let mut places: Vec<PathBuf> = on_path
         .split(':')
         .filter(|directory| !directory.is_empty())
-        .map(|directory| Path::new(directory).join(program))
-        .find(|candidate| runnable(candidate))
+        .map(PathBuf::from)
+        .collect();
+
+    for known in installed_into(home) {
+        if !places.contains(&known) {
+            places.push(known);
+        }
+    }
+
+    places
+}
+
+/// The directories the vendors' installers write into.
+fn installed_into(home: Option<PathBuf>) -> Vec<PathBuf> {
+    let beside = |inside: &str| home.as_ref().map(|home| home.join(inside));
+
+    // The per-user profile of a machine managed by Nix is named after
+    // the person, and there is no variable that holds it.
+    let profile = home
+        .as_ref()
+        .and_then(|home| home.file_name())
+        .map(|user| Path::new("/etc/profiles/per-user").join(user).join("bin"));
+
+    [
+        beside(".local/bin"),
+        beside(".claude/local"),
+        beside(".bun/bin"),
+        beside(".volta/bin"),
+        beside(".npm-global/bin"),
+        beside(".nix-profile/bin"),
+        beside(".cargo/bin"),
+        profile,
+        Some(PathBuf::from("/opt/homebrew/bin")),
+        Some(PathBuf::from("/usr/local/bin")),
+        Some(PathBuf::from("/run/current-system/sw/bin")),
+        Some(PathBuf::from("/nix/var/nix/profiles/default/bin")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Whether a path is something this machine can run.
@@ -379,6 +445,37 @@ mod tests {
 
     fn claude() -> Slug {
         Slug::parse("claude").unwrap()
+    }
+
+    #[test]
+    fn an_agent_is_found_where_it_was_installed_and_not_only_on_the_path() {
+        let machine = somewhere("installed");
+        let installed = machine.join(".local/bin");
+        std::fs::create_dir_all(&installed).unwrap();
+        stub(&installed, "claude", "echo 'claude 1.2.3'");
+
+        // What a service is started with on macOS, and what made an
+        // agent sitting right there be reported as not installed.
+        let places = beside("/usr/bin:/bin:/usr/sbin:/sbin", Some(machine.clone()));
+
+        assert!(
+            places
+                .iter()
+                .map(|place| place.join("claude"))
+                .any(|candidate| runnable(&candidate)),
+            "an installed agent was not found: {places:?}"
+        );
+
+        std::fs::remove_dir_all(&machine).unwrap();
+    }
+
+    #[test]
+    fn where_a_program_might_be_keeps_the_path_ahead_of_the_guesses() {
+        let places = beside("/somewhere/of/my/own", Some(PathBuf::from("/home/ana")));
+
+        assert_eq!(places[0], PathBuf::from("/somewhere/of/my/own"));
+        assert!(places.contains(&PathBuf::from("/home/ana/.local/bin")));
+        assert!(places.contains(&PathBuf::from("/opt/homebrew/bin")));
     }
 
     #[test]
