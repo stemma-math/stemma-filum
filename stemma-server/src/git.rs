@@ -213,13 +213,19 @@ fn seed(path: &Path, manifest: &Manifest) -> Result<()> {
 /// it did not get. Git hands over a set that hangs together or nothing
 /// at all, which is the only kind of copy worth keeping.
 pub fn mirror(from: &Path, to: &Path) -> Result<()> {
-    if let Some(parent) = to.parent() {
+    let parent = to.parent().filter(|parent| !parent.as_os_str().is_empty());
+
+    if let Some(parent) = parent {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("cannot create {}", parent.display()))?;
     }
 
+    // A backup may be started by root and then handed to the service
+    // account. Its inherited directory can consequently be somewhere the
+    // service account cannot traverse. The destination's parent was made by
+    // this process and is always a safe place from which to start git.
     run(
-        Path::new("."),
+        parent.unwrap_or(Path::new(".")),
         &[
             "clone",
             "--quiet",
