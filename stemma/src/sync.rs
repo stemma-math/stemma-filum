@@ -11,6 +11,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use stemma_core::line::Name;
 
 use crate::api::{GroupRemote, Server};
 use crate::config::Config;
@@ -89,6 +90,9 @@ pub struct Report {
     pub outcome: Outcome,
     /// Whether there is uncommitted work in it.
     pub dirty: bool,
+    /// The lines that were committed before any of it, because nobody
+    /// was writing them and they would otherwise have gone nowhere.
+    pub recorded: Vec<String>,
 }
 
 /// Brings every group this machine can work in into step.
@@ -116,11 +120,16 @@ pub fn run(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
         return Ok(reports);
     }
 
+    // Which lines are being written on this machine right now. What is
+    // uncommitted in one of those is somebody mid-sentence, and it is
+    // committed when they finish rather than from under them.
+    let held = held_here(&server, &credentials.token);
+
     for group in &listing.groups {
         let directory = config.group_directory(&group.slug, &workspace);
 
         for side in Side::both() {
-            let report = one(group, side, &directory);
+            let report = one(group, side, &directory, &held);
             writeln!(out, "{}", line(&report))?;
             reports.push(report);
         }
@@ -179,6 +188,7 @@ pub fn status(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
                 path,
                 dirty: outcome.0,
                 outcome: outcome.1,
+                recorded: Vec::new(),
             };
 
             writeln!(out, "{}", line(&report))?;
@@ -221,12 +231,17 @@ fn known_groups(config: &Config, workspace: &Path) -> Vec<(String, PathBuf)> {
 }
 
 /// Brings one repository into step.
-fn one(group: &GroupRemote, side: Side, directory: &Path) -> Report {
+fn one(group: &GroupRemote, side: Side, directory: &Path, held: &Held) -> Report {
     let path = directory.join(side.directory());
     let url = match side {
         Side::Shared => &group.shared,
         Side::Private => &group.personal,
     };
+
+    // Before anything is counted or sent: work written and never
+    // committed is invisible to everything below, and would sit here
+    // while this said the machine was up to date.
+    let recorded = record_loose(&path, group, side, held);
 
     let outcome = match work(url, &path) {
         Ok(outcome) => outcome,
@@ -241,7 +256,58 @@ fn one(group: &GroupRemote, side: Side, directory: &Path) -> Report {
         path,
         outcome,
         dirty,
+        recorded,
     }
+}
+
+/// The lines this machine is writing, as the instance has them.
+///
+/// An instance that cannot be asked means nothing is treated as being
+/// written, and the safe reading of that is the opposite: nothing is
+/// committed from under anybody. So it is every line, and a machine
+/// that cannot reach its instance commits nothing by itself.
+fn held_here(server: &Server, token: &str) -> Held {
+    match server.claims(token) {
+        Ok(claims) => Held::These(
+            claims
+                .into_iter()
+                .filter(|claim| claim.mine)
+                .map(|claim| (claim.group, claim.side, claim.line))
+                .collect(),
+        ),
+        Err(_) => Held::Unknown,
+    }
+}
+
+/// What this machine knows about which of its lines are being written.
+enum Held {
+    /// The instance said, and these are they.
+    These(Vec<(String, String, String)>),
+    /// The instance could not be asked.
+    Unknown,
+}
+
+/// Commits work nobody is writing, and says which lines those were.
+fn record_loose(clone: &Path, group: &GroupRemote, side: Side, held: &Held) -> Vec<String> {
+    let Held::These(held) = held else {
+        return Vec::new();
+    };
+
+    if !git::is_clone(clone) {
+        return Vec::new();
+    }
+
+    let here: Vec<Name> = held
+        .iter()
+        .filter(|(slug, which, _)| slug == &group.slug && which == side.directory())
+        .filter_map(|(_, _, line)| Name::parse(line).ok())
+        .collect();
+
+    crate::writing::record_loose(clone, &here)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|recorded| recorded.line.as_str().to_owned())
+        .collect()
 }
 
 /// The work itself.
@@ -382,6 +448,7 @@ mod tests {
             path: PathBuf::from("/home/ana/stemma/algebra/private"),
             outcome: Outcome::Cloned,
             dirty: true,
+            recorded: Vec::new(),
         };
 
         let line = line(&report);

@@ -37,9 +37,23 @@ pub fn take(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) ->
     Ok(())
 }
 
-/// Lets the line go.
+/// Lets the line go, having written what was written.
+///
+/// In that order: a line let go still holding uncommitted work is work
+/// nobody else can see on a line this machine no longer claims. If the
+/// writing cannot be recorded it is said and the claim is let go all
+/// the same — a claim nobody can release is worse than one released
+/// with the work still on the machine, and synchronising will offer to
+/// record it again.
 pub fn release(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
     let (server, token, about) = addressed(home, at, line)?;
+
+    match crate::writing::record(at) {
+        Ok(Some(recorded)) => writeln!(out, "{recorded}")?,
+        Ok(None) => {}
+        Err(error) => writeln!(out, "  it is not in the history yet: {error:#}")?,
+    }
+
     server.release_claim(&token, &about)?;
 
     writeln!(out, "{}  nobody is writing it now", about.line)?;

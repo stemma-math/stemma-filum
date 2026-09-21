@@ -209,6 +209,25 @@ pub fn commit_paths(repository: &Path, paths: &[PathBuf], message: &str) -> Resu
     Ok(())
 }
 
+/// Everything uncommitted in the clone, as paths inside it.
+///
+/// Best effort, and deliberately so: what this is asked is which lines
+/// somebody has touched, and a path that cannot be read as one is a
+/// path that answers nothing either way. Reading the records with `-z`
+/// is what keeps a name with a space in it from arriving in pieces.
+pub fn changed_paths(repository: &Path) -> Result<Vec<PathBuf>> {
+    let said = run(
+        repository,
+        &["status", "--porcelain", "-z", "--untracked-files=all"],
+    )?;
+
+    Ok(said
+        .split('\0')
+        .filter(|record| record.len() > 3)
+        .map(|record| repository.join(&record[3..]))
+        .collect())
+}
+
 /// What a file held at one commit.
 ///
 /// Reading the work a job is about goes through git rather than through

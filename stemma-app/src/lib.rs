@@ -100,6 +100,7 @@ struct Stepped {
     outcome: String,
     parted: bool,
     dirty: bool,
+    recorded: Vec<String>,
 }
 
 /// One line as this machine has it on disk.
@@ -276,6 +277,7 @@ fn sync() -> Result<Vec<Stepped>, String> {
             outcome: report.outcome.to_string(),
             parted: matches!(report.outcome, stemma::sync::Outcome::Parted(_, _)),
             dirty: report.dirty,
+            recorded: report.recorded,
         })
         .collect())
 }
@@ -688,6 +690,21 @@ fn save_line(path: String, source: String) -> Result<OpenLine, String> {
     })
 }
 
+/// Writes what was written into the clone's history.
+///
+/// Called when the writing ends — letting the line go, leaving it, or
+/// closing the window — and not when the file is saved. Saving happens
+/// whenever somebody pauses and belongs to the disk; a commit is what
+/// the rest of the group reads.
+#[tauri::command(async)]
+fn record_line(path: String) -> Result<Option<String>, String> {
+    let path = admitted(&path)?;
+
+    Ok(stemma::writing::record(&path)
+        .map_err(said)?
+        .map(|recorded| recorded.to_string()))
+}
+
 #[tauri::command(async)]
 fn preview(path: String, source: String) -> Result<Preview, String> {
     let path = admitted(&path)?;
@@ -856,9 +873,19 @@ fn claim(path: String) -> Result<Claim, String> {
     })
 }
 
-/// Lets the line go.
+/// Lets the line go, having written what was written.
+///
+/// In that order: work let go while still uncommitted is work nobody
+/// else can see on a line this machine no longer claims. A write that
+/// fails does not stop the claim being let go — the window says so,
+/// having tried it first and with the same failure — because a claim
+/// that cannot be released is worse than one released early.
 #[tauri::command(async)]
 fn let_go(path: String) -> Result<Claim, String> {
+    if let Ok(written) = admitted(&path) {
+        let _ = stemma::writing::record(&written);
+    }
+
     with_claim(&path, |server, token, about| {
         server.release_claim(token, about)
     })
@@ -1138,6 +1165,7 @@ pub fn run() {
             lines,
             open_line,
             save_line,
+            record_line,
             preview,
             machine,
             job_output,

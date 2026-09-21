@@ -34,7 +34,7 @@ const invoke = <T,>(command: string, args?: Record<string, unknown>): Promise<T>
 
 type Signed = { server: string; user: string };
 type Beginning = { code: string; url: string; url_complete: string; interval: number };
-type Stepped = { group: string; side: string; outcome: string; parted: boolean; dirty: boolean };
+type Stepped = { group: string; side: string; outcome: string; parted: boolean; dirty: boolean; recorded: string[] };
 type Known = { group: string; side: string; name: string; title: string | null; question: string | null; path: string };
 type Entry = { group: string; side: string; name: string; path: string };
 type Node = { siglum: string; name: string | null; centrality: "central" | "auxiliary"; uses: string[]; proved: boolean; at: number };
@@ -89,8 +89,12 @@ function tell(message: string) { const bar = document.querySelector<HTMLDivEleme
 
 function brandMark() {
   return `<svg class="brand-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-    <path d="M32 11C32 25 28 31 16 38C9 42 10 51 17 53C24 55 27 45 32 44C38 43 42 53 50 53C58 53 58 43 52 39C43 33 42 20 32 11Z" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="32" cy="10" r="6" fill="currentColor"/><circle cx="14" cy="47" r="6" fill="currentColor"/><circle cx="51" cy="47" r="6" fill="currentColor"/>
+    <path class="brand-mark__edge brand-mark__edge--left" d="M32 10C32 24 29 31 20 36C15 39 13 43 14 48"/>
+    <path class="brand-mark__edge brand-mark__edge--base" d="M14 48C24 40 31 44 39 47C44 49 48 49 51 47"/>
+    <path class="brand-mark__edge brand-mark__edge--right" d="M51 47C53 31 47 17 32 10"/>
+    <circle class="brand-mark__node brand-mark__node--top" cx="32" cy="10" r="6"/>
+    <circle class="brand-mark__node brand-mark__node--left" cx="14" cy="48" r="6"/>
+    <circle class="brand-mark__node brand-mark__node--right" cx="51" cy="47" r="6"/>
   </svg>`;
 }
 
@@ -120,7 +124,6 @@ function shell() {
         <span class="nav-label nav-label--system">System</span>
         <button data-view="machine"${view === "machine" ? ' class="here"' : ""}><span class="nav-icon">M</span><span>This machine</span></button>
       </nav>
-      <p class="sidebar-motto">Ideas, people and proofs — further together.</p>
     </aside>
     <section class="app-workspace">
       <header class="app-topbar">
@@ -160,6 +163,7 @@ async function go(next: View) {
     try { await flushEdits(); } catch (error) { tell(said(error)); return; }
     window.clearTimeout(saveTimer);
     window.clearTimeout(previewTimer);
+    await record();
     writing = false;
   }
   openRequest();
@@ -183,7 +187,7 @@ function signInScreen(problem?: string) {
     ${brand()}
     <span class="entrance-kicker">Desktop workspace</span>
     <h1>Connect this machine</h1>
-    <p class="quiet">Enter your group's Stemma address. You will approve this machine securely in your browser.</p>
+    <p class="quiet">Enter the address of your Stemma instance. You will confirm access in your browser.</p>
     ${problem ? `<p class="problem">${escape(problem)}</p>` : ""}
     <form id="sign-in"><input type="text" id="server" placeholder="stemma.example.org" aria-label="Instance address" autofocus><button type="submit">Continue</button></form>
   </div></main>`;
@@ -206,7 +210,7 @@ async function beginSignIn(server: string) {
     <p class="code">${escape(beginning.code)}</p>
     <p class="quiet">at ${escape(beginning.url)}</p>
     <button id="open">Open it in the browser</button>
-    <p class="quiet" id="state">Waiting for somebody to approve this machine…</p>
+    <p class="quiet" id="state">Waiting for approval in your browser...</p>
     <button id="give-up" class="quiet-button">Use a different instance</button>
   </div></main>`;
   document.querySelector<HTMLButtonElement>("#open")!.onclick = () => invoke("open_link", { url: beginning.url_complete }).catch(() => {});
@@ -230,14 +234,14 @@ async function beginSignIn(server: string) {
 
 async function drawLines() {
   const target = body();
-  target.innerHTML = `<div class="sheet"><section><p class="label">Lines on this machine</p><div id="known">reading…</div></section><section id="new-line"></section></div>`;
+  target.innerHTML = `<div class="sheet"><section><p class="label">Lines on this machine</p><div id="known">Loading...</div></section><section id="new-line"></section></div>`;
   await drawNewLine();
   if (!target.isConnected) return;
   try { known = await invoke<Known[]>("lines"); } catch (error) { say("#known", said(error)); return; }
   if (!target.isConnected) return;
   const listing = document.querySelector<HTMLDivElement>("#known");
   if (!listing) return;
-  if (!known.length) { listing.innerHTML = `<p class="quiet">Nothing here yet. Start a line above, or sync to bring down what the instance has.</p>`; return; }
+  if (!known.length) { listing.innerHTML = `<p class="quiet">No lines are available. Create a line or sync with the instance.</p>`; return; }
   listing.innerHTML = known.map((line) => `<div class="row">
     <div>
       <p class="row__name">${escape(line.title ?? line.name)}</p>
@@ -264,13 +268,13 @@ async function drawNewLine() {
       <label>Group<select id="group">${where.map((group) => `<option>${escape(group)}</option>`).join("")}</select></label>
       <label>Title<input type="text" id="title" required></label>
       <label>The question<textarea id="question" rows="2" required></textarea>
-        <span class="quiet">What this line exists to answer. Without it, it is a folder.</span></label>
+        <span class="quiet">Describe the research question this line will address.</span></label>
       <fieldset><legend>Who can see it</legend>
         <label class="choice"><input type="radio" name="seen" value="me" checked><span>Only me</span></label>
         <label class="choice"><input type="radio" name="seen" value="group"><span>The whole group</span></label>
       </fieldset>
       <button type="submit">Start the line</button>
-    </form>` : `<p class="quiet">No group on this machine yet. Sync to bring down the ones you are in.</p>`}</details>`;
+    </form>` : `<p class="quiet">No groups are available on this machine. Sync with the instance to update them.</p>`}</details>`;
   const form = document.querySelector<HTMLFormElement>("#start");
   if (!form) return;
   form.onsubmit = async (event) => {
@@ -291,7 +295,7 @@ function share(path: string) {
     if (!row || row.querySelector(".sharing")) return;
     const panel = document.createElement("form");
     panel.className = "sharing stack";
-    panel.innerHTML = `<p class="quiet">Sharing is a move. The group receives the line; what you wrote getting there stays with you.</p>
+  panel.innerHTML = `<p class="quiet">Move this line to the shared group repository.</p>
     <fieldset><legend>What the group sees of what you have written</legend>
       <label class="choice"><input type="radio" name="travels" value="today" checked><span>Today's state only</span></label>
       <label class="choice"><input type="radio" name="travels" value="everything"><span>Everything from the beginning</span></label>
@@ -321,11 +325,18 @@ async function takeOut(path: string) {
 /* ── Synchronising ─────────────────────────────────────────────────── */
 
 async function bringIntoStep() {
-  tell("bringing this machine into step…");
+  tell("Syncing this machine...");
   try { stepped = await invoke<Stepped[]>("sync"); } catch (error) { tell(said(error)); return; }
   const parted = stepped.filter((one) => one.parted);
-  tell(stepped.map((one) => `${one.group}/${one.side}: ${one.outcome}`).join(" · ") || "nothing to bring down");
-  if (parted.length) tell(`${parted.map((one) => `${one.group}/${one.side}`).join(", ")} — both sides moved; open the line to settle it.`);
+  const recorded = stepped.flatMap((one) => one.recorded);
+  // Work still only on this machine. It is never nothing quietly: a
+  // line somebody is writing is held back on purpose, and one that is
+  // held back for any other reason is something they need to know.
+  const behind = stepped.filter((one) => one.dirty);
+  tell(stepped.map((one) => `${one.group}/${one.side}: ${one.outcome}`).join(" · ") || "Everything is up to date.");
+  if (recorded.length) tell(`Written into history before syncing: ${recorded.join(", ")}.`);
+  if (behind.length) tell(`${behind.map((one) => `${one.group}/${one.side}`).join(", ")}: there is work here that is not in the history yet, so it has not gone anywhere. A line you are writing is written when you let it go.`);
+  if (parted.length) tell(`${parted.map((one) => `${one.group}/${one.side}`).join(", ")}: both versions changed. Open the line to resolve the conflict.`);
 }
 
 /* ── The editor ────────────────────────────────────────────────────── */
@@ -341,6 +352,10 @@ async function open(path: string) {
     ]);
     if (!active()) return;
     await flushEdits();
+    // The last moment the line being left is still the open one. Going
+    // from one line to another does not pass through `go`, so without
+    // this the line you just left would be the only one never written.
+    await record();
     if (!active()) return;
     current = opened;
     writing = false;
@@ -384,10 +399,10 @@ function drawEditor() {
     </section>
     <aside id="register">
       <section><p class="label">LINE</p><p class="row__name">${escape(current.entry.name)}</p><p class="quiet identifier">${escape(current.entry.group)} · ${escape(current.entry.side)}</p><span id="save" class="quiet">saved</span></section>
-      <section><p class="label">CLAIM</p><div id="claim">—</div></section>
+      <section><p class="label">CLAIM</p><div id="claim">No active claim</div></section>
       <section id="parted-block" hidden><p class="label">TWO VERSIONS</p><div id="parted"></div></section>
       <section><p class="label">LAUNCH</p><div id="launcher"></div></section>
-      <section><p class="label">JOBS</p><div id="jobs">—</div></section>
+      <section><p class="label">JOBS</p><div id="jobs">No jobs</div></section>
     </aside>
   </main>`;
   const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
@@ -460,6 +475,21 @@ async function save() {
   }
 }
 
+/// Writes the open line into the clone's history.
+///
+/// This is where a commit belongs: the end of a stretch of writing, not
+/// the end of a keystroke. Saving keeps the file safe every time
+/// somebody pauses; this is what the rest of the group reads, and it
+/// happens when they stop writing.
+async function record() {
+  if (!current) return;
+  const path = current.entry.path;
+  try {
+    const written = await invoke<string | null>("record_line", { path });
+    if (written) saved("written");
+  } catch (error) { tell(`This line is saved on this machine and not in its history yet: ${said(error)}`); }
+}
+
 /** Navigation must also save edits made while an earlier write was in flight. */
 async function flushEdits() {
   const input = document.querySelector<HTMLTextAreaElement>("#editor");
@@ -497,7 +527,7 @@ async function askAbout(command: string) {
   const target = document.querySelector<HTMLDivElement>("#claim");
   if (!target) return;
   try {
-    if (command === "let_go") await save();
+    if (command === "let_go") { await save(); await record(); }
     const claim = await invoke<Claim>(command, { path: current.entry.path });
     if (!target.isConnected) return;
     writing = claim.standing === "writing";
@@ -536,7 +566,7 @@ async function drawParted() {
     <pre class="version">${escape(one.there ?? "it is not there")}</pre>
     <span><button data-keep="here" data-mark="${escape(one.siglum)}|${escape(one.part)}">Keep this machine's</button><button data-keep="there" data-mark="${escape(one.siglum)}|${escape(one.part)}">Keep the other</button></span></div>`).join("")
     + `<button id="bring-together" disabled>Bring them together</button>`
-    + `<p class="quiet">Neither version is discarded: the one not kept stays in this machine's history.</p>`;
+    + `<p class="quiet">The version you do not select will remain in this machine's history.</p>`;
   target.querySelectorAll<HTMLButtonElement>("button[data-keep]").forEach((button) => button.onclick = () => {
     decisions.set(button.dataset.mark!, button.dataset.keep as "here" | "there");
     button.parentElement!.querySelectorAll("button").forEach((other) => other.classList.remove("kept"));
@@ -597,13 +627,13 @@ function rawOutputs(target: HTMLElement) {
 
 async function drawReview() {
   const target = body();
-  target.innerHTML = `<div class="sheet"><section><p class="label">Waiting for you</p><div id="waiting">reading…</div></section><section id="reading"></section></div>`;
+  target.innerHTML = `<div class="sheet"><section><p class="label">Waiting for you</p><div id="waiting">Loading...</div></section><section id="reading"></section></div>`;
   try { waiting = await invoke<Waiting[]>("proposals"); } catch (error) { say("#waiting", said(error)); return; }
   if (!target.isConnected) return;
   countWaiting();
   const listing = document.querySelector<HTMLDivElement>("#waiting");
   if (!listing) return;
-  if (!waiting.length) { listing.innerHTML = `<p class="quiet">Nothing is waiting for you to read it.</p>`; return; }
+  if (!waiting.length) { listing.innerHTML = `<p class="quiet">There are no proposals awaiting your review.</p>`; return; }
   listing.innerHTML = waiting.map((one) => `<div class="row">
     <div><p class="row__name">${escape(one.line)}</p><p class="quiet">${escape(one.task)} · ${escape(one.agent)} · ${escape(one.vendor)} ${escape(one.model)}</p></div>
     <div class="row__actions"><button data-read="${escape(one.proposal)}">Read it</button></div></div>`).join("");
@@ -640,7 +670,7 @@ async function read(proposal: string) {
     <ul class="findings">${reading.findings.map((finding) => `<li>${escape(finding)}</li>`).join("")}</ul>
     ${reading.state === "awaiting_review"
       ? `<div class="row__actions"><button data-decide="reject">Reject</button><button data-decide="ask_again">Ask again</button><button data-decide="accept" class="primary">Accept</button></div>
-         <p class="quiet">Accepting signs these words as yours, with the model recorded beside them.</p>`
+         <p class="quiet">Accepting records you as the reviewer and preserves the model information.</p>`
       : `<p class="quiet">This proposal was ${escape(reading.state)}.</p><button id="write-it">Write it to this machine</button>`}`;
   target.querySelectorAll<HTMLButtonElement>("[data-decide]").forEach((button) => button.onclick = async () => {
     try { tell(await invoke<string>("decide_proposal", { proposal, decision: button.dataset.decide })); }
@@ -656,18 +686,18 @@ async function read(proposal: string) {
 
 async function drawMachine() {
   const target = body();
-  target.innerHTML = `<div class="sheet"><section><p class="label">This machine</p><div id="panel">reading…</div></section>
+  target.innerHTML = `<div class="sheet"><section><p class="label">This machine</p><div id="panel">Loading...</div></section>
     <section><p class="label">Offer it for work</p><div id="offer"></div></section>
-    <section><p class="label">Jobs</p><div id="jobs">—</div></section></div>`;
+    <section><p class="label">Jobs</p><div id="jobs">No jobs</div></section></div>`;
   let where: string[] = [];
   try { where = await invoke<string[]>("groups"); } catch { where = []; }
   if (!target.isConnected) return;
   document.querySelector("#offer")!.innerHTML = `<form id="node" class="stack">
-    ${where.map((group) => `<label class="choice"><input type="checkbox" name="group" value="${escape(group)}" checked><span>${escape(group)}</span></label>`).join("") || `<p class="quiet">No group on this machine yet.</p>`}
+    ${where.map((group) => `<label class="choice"><input type="checkbox" name="group" value="${escape(group)}" checked><span>${escape(group)}</span></label>`).join("") || `<p class="quiet">No groups are available on this machine.</p>`}
     <div class="row__actions"><button type="submit">Offer this machine</button><button type="button" id="daemon">Install the daemon</button></div>
-    <p class="quiet">The daemon takes work while this machine is on. Nothing runs an agent unless you asked for it.</p></form>
+    <p class="quiet">The background service accepts jobs while this machine is running.</p></form>
     <div class="row"><div><p class="row__name">The command line</p>
-      <p class="quiet">This application carries <code>stemma</code> with it. Everything here can be done from a terminal, and everything a terminal can do is here.</p></div>
+      <p class="quiet">Install the bundled <code>stemma</code> command to manage this workspace from a terminal.</p></div>
       <div class="row__actions"><button id="install-cli">Install it</button></div></div>`;
   document.querySelector<HTMLFormElement>("#node")!.onsubmit = async (event) => {
     event.preventDefault();
@@ -688,7 +718,7 @@ async function drawMachine() {
     if (!about || !jobs) return;
     about.innerHTML = `<p class="row__name">${escape(panel.label)}</p><p class="quiet">${escape(panel.presence)}</p>
       ${panel.agents.map((agent) => `<div class="agent ${agent.reason ? "out" : ""}">${escape(agent.called)} <code>${escape(agent.reason ?? agent.availability)}</code></div>`).join("")}`;
-    jobs.innerHTML = panel.jobs.length ? panel.jobs.map(jobRow).join("") : "Nothing has been asked of this machine.";
+    jobs.innerHTML = panel.jobs.length ? panel.jobs.map(jobRow).join("") : "No jobs have been assigned to this machine.";
     rawOutputs(jobs);
   } catch (error) { say("#panel", said(error)); }
 }
@@ -700,24 +730,24 @@ async function drawVault() {
   let where: string[] = [];
   try { where = await invoke<string[]>("groups"); } catch { where = []; }
   if (!target.isConnected) return;
-  if (!where.length) { target.innerHTML = `<div class="sheet"><p class="quiet">No group on this machine yet.</p></div>`; return; }
+  if (!where.length) { target.innerHTML = `<div class="sheet"><p class="quiet">No groups are available on this machine.</p></div>`; return; }
   target.innerHTML = `<div class="sheet">
     <label>Group<select id="vault-group">${where.map((group) => `<option>${escape(group)}</option>`).join("")}</select></label>
-    <section><p class="label">Definitions</p><div id="vault-entries">reading…</div></section>
+    <section><p class="label">Definitions</p><div id="vault-entries">Loading...</div></section>
     <section><p class="label">Admit a definition</p><form id="admit" class="stack">
       <label>Siglum<input type="text" id="admit-siglum" placeholder="def:group" required></label>
       <label>Distinguishing name<input type="text" id="admit-name" required></label>
       <label>The prose admitted<textarea id="admit-prose" rows="3" required></textarea></label>
       <label>The complete Lean module<textarea id="admit-lean" rows="5" required></textarea></label>
       <button type="submit">Admit it</button>
-      <p class="quiet">The module is compiled here, against the group's pin, before anything is sent.</p></form></section>
+      <p class="quiet">The module is compiled locally against the group's pinned version before submission.</p></form></section>
     <section><p class="label">Admit a bridge</p><form id="bridge" class="stack">
       <label>From<input type="text" id="bridge-left" required></label>
       <label>To<input type="text" id="bridge-right" required></label>
       <label>Kind<select id="bridge-kind"><option value="predicate">predicate</option><option value="structure">structure</option></select></label>
       <label>The complete Lean module<textarea id="bridge-lean" rows="5" required></textarea></label>
       <button type="submit">Admit the bridge</button>
-      <p class="quiet">A bridge is unconditional or it is not a bridge. An equivalence under hypotheses is an ordinary theorem.</p></form></section>
+      <p class="quiet">Bridges must be unconditional. Equivalences with hypotheses should be added as regular theorems.</p></form></section>
   </div>`;
   const chosen = () => document.querySelector<HTMLSelectElement>("#vault-group")!.value;
   document.querySelector<HTMLSelectElement>("#vault-group")!.onchange = () => showVault(chosen());
@@ -792,7 +822,7 @@ async function boot() {
   // Painted before anything is asked for: what follows reads a file and
   // then talks to an instance, and a window showing nothing while it
   // waits looks like a window that did not open.
-  app.innerHTML = `<main class="entrance-surface"><div class="entrance-brand">${brandMark()}</div><div class="entrance">${brand()}<p class="quiet">Starting your workspace…</p></div></main>`;
+  app.innerHTML = `<main class="entrance-surface"><div class="entrance-brand">${brandMark()}</div><div class="entrance">${brand()}<p class="quiet">Starting your workspace...</p></div></main>`;
   try { signed = await invoke<Signed | null>("whoami"); } catch { signed = null; }
   if (!signed) { signInScreen(); return; }
   try { waiting = await invoke<Waiting[]>("proposals"); } catch { waiting = []; }
@@ -810,6 +840,7 @@ async function start() {
     if (input) input.readOnly = true;
     try {
       await flushEdits();
+      await record();
     } catch (error) {
       event.preventDefault();
       if (input) input.readOnly = false;

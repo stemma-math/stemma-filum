@@ -33,3 +33,4 @@ pub mod sync;
 pub mod vault;
 pub mod work;
 pub mod workspace;
+pub mod writing;
