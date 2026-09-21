@@ -8,7 +8,7 @@
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use super::WebError;
-use super::assets::{DESCENT_PATH, STYLESHEET_PATH};
+use super::assets::{DESCENT_PATH, STYLESHEET_PATH, SURFACE_PATH};
 use crate::store::users::User;
 
 /// What the shell needs to know about this page.
@@ -32,6 +32,8 @@ pub struct Chrome {
     /// An instance with no accounts offers none: a log-in link there would
     /// be offering to sign in as somebody who does not exist.
     pub offer_ways_in: bool,
+    /// Whether this is the instance's full-screen front door.
+    pub landing: bool,
 }
 
 impl Chrome {
@@ -46,6 +48,7 @@ impl Chrome {
             registration_open: false,
             draws: false,
             offer_ways_in: true,
+            landing: false,
         }
     }
 
@@ -58,6 +61,12 @@ impl Chrome {
     /// Says that this page has a descent to draw.
     pub fn drawing(mut self) -> Self {
         self.draws = true;
+        self
+    }
+
+    /// Makes this page the full-screen front door.
+    pub fn landing(mut self) -> Self {
+        self.landing = true;
         self
     }
 
@@ -83,6 +92,14 @@ impl Chrome {
 
 /// Draws a page.
 pub fn page(chrome: &Chrome, content: Markup) -> Markup {
+    let body_class = if chrome.landing {
+        "landing-page"
+    } else if chrome.visitor.is_some() {
+        "product-page"
+    } else {
+        "auth-page"
+    };
+
     html! {
         (DOCTYPE)
         html lang="en" {
@@ -94,11 +111,23 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 @if chrome.draws {
                     script src=(DESCENT_PATH) type="module" {}
                 }
+                script src=(SURFACE_PATH) type="module" {}
             }
-            body {
-                (masthead(chrome))
-                main class="sheet" { (content) }
-                (foot(chrome))
+            body class=(body_class) {
+                @if chrome.visitor.is_some() {
+                    div class="product-shell" {
+                        (sidebar(chrome))
+                        div class="product-workspace" {
+                            (topbar(chrome))
+                            main class="sheet" { (content) }
+                            (foot(chrome))
+                        }
+                    }
+                } @else {
+                    (masthead(chrome))
+                    main class="sheet" { (content) }
+                    (foot(chrome))
+                }
             }
         }
     }
@@ -140,6 +169,58 @@ fn masthead(chrome: &Chrome) -> Markup {
     }
 }
 
+/// The product's persistent navigation.
+fn sidebar(chrome: &Chrome) -> Markup {
+    html! {
+        aside class="sidebar" {
+            a class="wordmark" href="/" {
+                (mark())
+                span { "Stemma" }
+            }
+            p class="sidebar__instance" { (chrome.instance) }
+            nav class="sidebar__nav" aria-label="Workspace" {
+                p class="sidebar__label" { "Workspace" }
+                (destination("/", "Overview", chrome.current))
+                (destination("/#groups", "Groups", chrome.current))
+                (destination("/#machines", "Machines", chrome.current))
+                (destination("/#reviews", "Reviews", chrome.current))
+            }
+            div class="sidebar__aside" {
+                p { "Ideas, people and proofs — further together." }
+            }
+        }
+    }
+}
+
+/// Account and instance controls stay above the current workspace.
+fn topbar(chrome: &Chrome) -> Markup {
+    html! {
+        header class="topbar" {
+            div {
+                p class="topbar__eyebrow" { "Workspace" }
+                p class="topbar__title" { (chrome.title) }
+            }
+            nav class="topbar__actions" aria-label="Account" {
+                @if chrome.maintainer {
+                    (destination("/admin", "Admin", chrome.current))
+                }
+                @if let Some(user) = &chrome.visitor {
+                    span class="avatar" aria-hidden="true" {
+                        (user.display_name.chars().next().unwrap_or('S'))
+                    }
+                    span class="topbar__identity" {
+                        strong { (user.display_name) }
+                        span class="identifier" { (user.id.to_string()) }
+                    }
+                }
+                form method="post" action="/logout" {
+                    button class="button button--quiet" type="submit" { "Log out" }
+                }
+            }
+        }
+    }
+}
+
 /// One place to go.
 fn destination(href: &str, words: &str, current: &str) -> Markup {
     html! {
@@ -170,16 +251,17 @@ pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
     }
 }
 
-/// The mark: a heavy stem with two hairlines descending from it.
+/// The mark: three nodes held together by one continuous descent.
 ///
 /// Written out rather than built element by element, because the elements
 /// of an SVG close themselves and the HTML ones around them do not.
 pub fn mark() -> Markup {
     PreEscaped(
-        r#"<svg class="mark" width="14" height="17" viewBox="0 0 14 17" fill="none" aria-hidden="true">
-            <path d="M2 1 V16" stroke="currentColor" stroke-width="2.2" />
-            <path d="M2 5 H8 V9.5" stroke="currentColor" stroke-width="1" />
-            <path d="M2 10.5 H12 V15" stroke="currentColor" stroke-width="1" />
+        r#"<svg class="mark" width="32" height="32" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <path d="M32 11 C32 25 28 31 16 38 C9 42 10 51 17 53 C24 55 27 45 32 44 C38 43 42 53 50 53 C58 53 58 43 52 39 C43 33 42 20 32 11Z" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+            <circle cx="32" cy="10" r="6" fill="currentColor" />
+            <circle cx="14" cy="47" r="6" fill="currentColor" />
+            <circle cx="51" cy="47" r="6" fill="currentColor" />
         </svg>"#
             .to_owned(),
     )

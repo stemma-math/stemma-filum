@@ -42,7 +42,8 @@ pub async fn door(
     let chrome = match accounts {
         0 => Chrome::anonymous("Front door", &name).without_ways_in(),
         _ => Chrome::anonymous("Front door", &name).registration(policy.registration_open),
-    };
+    }
+    .landing();
 
     Ok(page(&chrome, body(&name, &policy, accounts)).into_response())
 }
@@ -51,23 +52,32 @@ pub async fn door(
 fn body(name: &str, policy: &Policy, accounts: i64) -> Markup {
     html! {
         div class="doorway" {
-            h1 class="doorway__name" { (name) }
-
-            @match &policy.operator {
-                Some(operator) => p class="doorway__operator" { "Run by " (operator) "." }
-                None => p class="doorway__operator quiet" {
-                    "Nobody has said yet who runs this instance."
+            div class="doorway__constellation" aria-hidden="true" {
+                (super::layout::mark())
+            }
+            div class="doorway__copy" {
+                p class="doorway__eyebrow" { "Mathematics collaboration for the AI era" }
+                h1 class="doorway__name" { "Stemma" }
+                p class="doorway__lead" {
+                    "Ideas, people and proofs — connected in one shared research space."
                 }
-            }
-
-            @if let Some(contact) = &policy.contact {
-                p class="quiet" { (contact) }
-            }
-
-            @if accounts == 0 {
-                (fresh())
-            } @else {
-                (way_in(policy))
+                div class="doorway__actions" {
+                    @if accounts == 0 {
+                        (fresh())
+                    } @else {
+                        (way_in(policy))
+                    }
+                }
+                p class="doorway__meta" {
+                    span { (name) }
+                    @match &policy.operator {
+                        Some(operator) => span { "Run by " (operator) "." }
+                        None => span { "Independent research infrastructure" }
+                    }
+                    @if let Some(contact) = &policy.contact {
+                        span { (contact) }
+                    }
+                }
             }
         }
     }
@@ -88,7 +98,7 @@ fn fresh() -> Markup {
                 "from the machine itself."
             }
             div class="stack stack--tight" {
-                p { a class="button" href="/register" { "Create the first account" } }
+                p { a class="button button--hero" href="/register" data-surface-exit { "Create the first account" } }
                 p class="quiet" {
                     "Then, on the machine: "
                     code { "stemma-server admin grant <account>" }
@@ -103,9 +113,9 @@ fn way_in(policy: &Policy) -> Markup {
     html! {
         div class="block" {
             div class="actions" {
-                a class="button" href="/login" { "Log in" }
+                a class="button button--hero" href="/login" data-surface-exit { "Enter Stemma" }
                 @if policy.registration_open {
-                    a href="/register" { "Create an account" }
+                    a class="button button--glass" href="/register" data-surface-exit { "Create an account" }
                 }
             }
 

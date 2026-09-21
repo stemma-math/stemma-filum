@@ -18,8 +18,11 @@ pub const STYLESHEET_PATH: &str = "/assets/stemma.css";
 /// Where the faces are served, one path segment below.
 pub const FONT_PATH: &str = "/assets/fonts/{file}";
 
-/// Where the one script the web has is served.
+/// Where the shared descent drawing is served.
 pub const DESCENT_PATH: &str = "/assets/descent.js";
+
+/// Where the small surface-transition script is served.
+pub const SURFACE_PATH: &str = "/assets/surface.js";
 
 /// The stylesheet itself.
 const STYLESHEET: &str = include_str!("../../assets/stemma.css");
@@ -32,6 +35,9 @@ const STYLESHEET: &str = include_str!("../../assets/stemma.css");
 /// its graph with the same file, so that one change to the trace
 /// changes both.
 const DESCENT: &str = include_str!("../../../assets/descent.js");
+
+/// The front-door transition, kept deliberately independent of page logic.
+const SURFACE: &str = include_str!("../../assets/surface.js");
 
 /// The faces the design names, subset to the Latin these pages set.
 ///
@@ -83,6 +89,9 @@ static STYLESHEET_TAG: LazyLock<String> = LazyLock::new(|| tag_of(STYLESHEET.as_
 /// The same, for the drawing.
 static DESCENT_TAG: LazyLock<String> = LazyLock::new(|| tag_of(DESCENT.as_bytes()));
 
+/// The same, for the surface transition.
+static SURFACE_TAG: LazyLock<String> = LazyLock::new(|| tag_of(SURFACE.as_bytes()));
+
 /// The same, for each face.
 static FONT_TAGS: LazyLock<Vec<String>> =
     LazyLock::new(|| FONTS.iter().map(|(_, face)| tag_of(face)).collect());
@@ -116,6 +125,16 @@ pub async fn descent(headers: HeaderMap) -> Response {
         DESCENT.as_bytes(),
         "text/javascript; charset=utf-8",
         &DESCENT_TAG,
+    )
+}
+
+/// Serves the front-door transition.
+pub async fn surface(headers: HeaderMap) -> Response {
+    serve(
+        &headers,
+        SURFACE.as_bytes(),
+        "text/javascript; charset=utf-8",
+        &SURFACE_TAG,
     )
 }
 

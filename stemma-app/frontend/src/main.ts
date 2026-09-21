@@ -87,6 +87,15 @@ let showing: "document" | "descent" = "document";
 function said(error: unknown) { return String(error).replace(/^Error:\s*/, ""); }
 function tell(message: string) { const bar = document.querySelector<HTMLDivElement>("#said"); if (bar) { bar.textContent = message; bar.hidden = !message; } }
 
+function brandMark() {
+  return `<svg class="brand-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+    <path d="M32 11C32 25 28 31 16 38C9 42 10 51 17 53C24 55 27 45 32 44C38 43 42 53 50 53C58 53 58 43 52 39C43 33 42 20 32 11Z" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="32" cy="10" r="6" fill="currentColor"/><circle cx="14" cy="47" r="6" fill="currentColor"/><circle cx="51" cy="47" r="6" fill="currentColor"/>
+  </svg>`;
+}
+
+function brand() { return `<span class="brand">${brandMark()}<span>Stemma</span></span>`; }
+
 // Whatever was being read may come back after the view that asked for
 // it was thrown away: the shell is redrawn whole, and everything in it
 // goes. Nothing is left to write on then, and that is not a failure —
@@ -97,21 +106,35 @@ function say(selector: string, message: string) { const target = document.queryS
 
 function shell() {
   const count = waiting.length ? ` <span class="count">${waiting.length}</span>` : "";
-  app.innerHTML = `<header>
-    <span class="wordmark">STEMMA</span>
-    <nav>
-      <button data-view="lines"${view === "lines" || view === "editor" ? ' class="here"' : ""}>Lines</button>
-      <button data-view="review"${view === "review" ? ' class="here"' : ""}>Review${count}</button>
-      <button data-view="machine"${view === "machine" ? ' class="here"' : ""}>This machine</button>
-      <button data-view="vault"${view === "vault" ? ' class="here"' : ""}>Vault</button>
-    </nav>
-    <span class="spacer"></span>
-    <button id="sync">Sync</button>
-    <span id="who" class="quiet">${signed ? escape(`${signed.user} · ${signed.server}`) : ""}</span>
-    <button id="sign-out">Sign out</button>
-  </header>
-  <div id="said" hidden></div>
-  <div id="body"></div>`;
+  const title = view === "editor" ? current?.entry.name ?? "Editor" : view === "lines" ? "Lines" : view === "review" ? "Review" : view === "machine" ? "This machine" : "Vault";
+  const initial = signed?.user.trim().charAt(0).toUpperCase() || "S";
+  app.innerHTML = `<div class="app-shell">
+    <aside class="app-sidebar">
+      ${brand()}
+      <p class="instance-name">${signed ? escape(signed.server) : ""}</p>
+      <nav aria-label="Workspace">
+        <span class="nav-label">Workspace</span>
+        <button data-view="lines"${view === "lines" || view === "editor" ? ' class="here"' : ""}><span class="nav-icon">L</span><span>Lines</span></button>
+        <button data-view="review"${view === "review" ? ' class="here"' : ""}><span class="nav-icon">R</span><span>Review${count}</span></button>
+        <button data-view="vault"${view === "vault" ? ' class="here"' : ""}><span class="nav-icon">V</span><span>Vault</span></button>
+        <span class="nav-label nav-label--system">System</span>
+        <button data-view="machine"${view === "machine" ? ' class="here"' : ""}><span class="nav-icon">M</span><span>This machine</span></button>
+      </nav>
+      <p class="sidebar-motto">Ideas, people and proofs — further together.</p>
+    </aside>
+    <section class="app-workspace">
+      <header class="app-topbar">
+        <div><span class="topbar-eyebrow">Workspace</span><strong>${escape(title)}</strong></div>
+        <span class="spacer"></span>
+        <button id="sync" class="sync-button"><span class="status-dot"></span>Sync</button>
+        <span class="avatar" aria-hidden="true">${escape(initial)}</span>
+        <span id="who" class="identity">${signed ? escape(signed.user) : ""}<small>${signed ? escape(signed.server) : ""}</small></span>
+        <button id="sign-out" class="quiet-button">Sign out</button>
+      </header>
+      <div id="said" hidden></div>
+      <div id="body"></div>
+    </section>
+  </div>`;
 
   app.querySelectorAll<HTMLButtonElement>("nav button").forEach((button) => button.onclick = () => go(button.dataset.view as View));
   document.querySelector<HTMLButtonElement>("#sync")!.onclick = bringIntoStep;
@@ -156,13 +179,14 @@ async function go(next: View) {
 function signInScreen(problem?: string) {
   signInRequest();
   window.clearTimeout(signInTimer);
-  app.innerHTML = `<div class="entrance">
-    <span class="wordmark">STEMMA</span>
-    <h1>Sign this machine in</h1>
-    <p class="quiet">Give the address of your group's instance. You approve the machine in your own browser, on the instance's own pages.</p>
+  app.innerHTML = `<main class="entrance-surface"><div class="entrance-brand">${brandMark()}</div><div class="entrance">
+    ${brand()}
+    <span class="entrance-kicker">Desktop workspace</span>
+    <h1>Connect this machine</h1>
+    <p class="quiet">Enter your group's Stemma address. You will approve this machine securely in your browser.</p>
     ${problem ? `<p class="problem">${escape(problem)}</p>` : ""}
-    <form id="sign-in"><input type="text" id="server" placeholder="stemma.example.org" autofocus><button type="submit">Sign in</button></form>
-  </div>`;
+    <form id="sign-in"><input type="text" id="server" placeholder="stemma.example.org" aria-label="Instance address" autofocus><button type="submit">Continue</button></form>
+  </div></main>`;
   document.querySelector<HTMLFormElement>("#sign-in")!.onsubmit = async (event) => {
     event.preventDefault();
     const server = document.querySelector<HTMLInputElement>("#server")!.value.trim();
@@ -175,15 +199,16 @@ async function beginSignIn(server: string) {
   const active = signInRequest();
   const beginning = await invoke<Beginning>("sign_in_start", { server });
   if (!active()) return;
-  app.innerHTML = `<div class="entrance">
-    <span class="wordmark">STEMMA</span>
+  app.innerHTML = `<main class="entrance-surface"><div class="entrance-brand">${brandMark()}</div><div class="entrance">
+    ${brand()}
+    <span class="entrance-kicker">Secure connection</span>
     <h1>Type this code</h1>
     <p class="code">${escape(beginning.code)}</p>
     <p class="quiet">at ${escape(beginning.url)}</p>
     <button id="open">Open it in the browser</button>
     <p class="quiet" id="state">Waiting for somebody to approve this machine…</p>
     <button id="give-up" class="quiet-button">Use a different instance</button>
-  </div>`;
+  </div></main>`;
   document.querySelector<HTMLButtonElement>("#open")!.onclick = () => invoke("open_link", { url: beginning.url_complete }).catch(() => {});
   document.querySelector<HTMLButtonElement>("#give-up")!.onclick = () => signInScreen();
   const poll = async () => {
@@ -767,7 +792,7 @@ async function boot() {
   // Painted before anything is asked for: what follows reads a file and
   // then talks to an instance, and a window showing nothing while it
   // waits looks like a window that did not open.
-  app.innerHTML = `<div class="entrance"><span class="wordmark">STEMMA</span><p class="quiet">Starting…</p></div>`;
+  app.innerHTML = `<main class="entrance-surface"><div class="entrance-brand">${brandMark()}</div><div class="entrance">${brand()}<p class="quiet">Starting your workspace…</p></div></main>`;
   try { signed = await invoke<Signed | null>("whoami"); } catch { signed = null; }
   if (!signed) { signInScreen(); return; }
   try { waiting = await invoke<Waiting[]>("proposals"); } catch { waiting = []; }

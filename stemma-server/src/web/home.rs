@@ -76,7 +76,7 @@ fn body(
             p class="quiet identifier" { (signed.user.id.to_string()) }
         }
 
-        div class="block" {
+        div class="block" id="groups" {
             p class="label" { "Groups" }
 
             @if memberships.is_empty() {
@@ -109,7 +109,7 @@ fn body(
         (super::machines::summary(machines))
 
         @if !proposals.is_empty() {
-            div class="block" {
+            div class="block" id="reviews" {
                 p class="label" { "Proposals awaiting your review" }
                 ul class="register" {
                     @for proposal in proposals {

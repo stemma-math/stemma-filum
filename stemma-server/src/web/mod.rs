@@ -292,6 +292,7 @@ pub fn router() -> Router<Instance> {
         .route("/admin/requests/{id}/decline", post(admin::decline))
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
         .route(assets::DESCENT_PATH, get(assets::descent))
+        .route(assets::SURFACE_PATH, get(assets::surface))
         .route(assets::FONT_PATH, get(assets::font))
         .fallback(get(not_found))
         .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))

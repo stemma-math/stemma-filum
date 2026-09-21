@@ -1,9 +1,7 @@
 /* The application's own stylesheet.
  *
- * The same grammar as the instance's pages: flat ink on flat paper, no
- * radius, no shadow, separation by hairline and by the three paper
- * levels. Colour is earned — a human commitment, a machine proof, a
- * refutation — and nothing else here takes any.
+ * The desktop app shares the instance's deep-blue navigation, cool working
+ * surfaces and typographic roles while keeping all scrolling inside panels.
  */
 
 :root {
@@ -628,4 +626,565 @@ textarea#editor {
     #gutter {
         min-height: auto;
     }
+}
+
+/* ── Stemma application surface ───────────────────────────────────── */
+
+:root,
+:root:not([data-theme="light"]),
+:root[data-theme="dark"],
+:root[data-theme="light"] {
+    --paper: #f1f5f9;
+    --raise: #ffffff;
+    --sunk: #e9eff6;
+    --ink: #101d2f;
+    --ink-2: #48566a;
+    --quiet: #758298;
+    --rule: #d5dfea;
+    --soft: #e6edf4;
+    --ditto: #2d6de7;
+    --verified: #0c7a66;
+    --refuted: #b33b4a;
+    --night: #031a3b;
+    --night-deep: #01122d;
+    --blue: #69a7ff;
+    color-scheme: light;
+}
+
+html,
+body,
+#app {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    background: var(--paper);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+}
+
+input,
+textarea,
+select,
+pre,
+code,
+.diff,
+#page,
+.row__name,
+.quiet:not(button) {
+    user-select: text;
+}
+
+button,
+select,
+input,
+textarea {
+    min-height: 36px;
+    border-radius: 8px;
+    border-color: var(--rule);
+    transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+button {
+    padding: 7px 12px;
+    background: var(--raise);
+    box-shadow: 0 1px 2px rgb(15 35 60 / 5%);
+}
+
+button:hover,
+button:focus-visible {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgb(45 109 231 / 10%);
+}
+
+button.primary {
+    color: #fff;
+    border-color: var(--ditto);
+    background: var(--ditto);
+}
+
+input,
+textarea,
+select {
+    background: #f8fafc;
+    border-color: #cbd7e5;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    background: #fff;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgb(45 109 231 / 10%);
+}
+
+.app-shell {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 224px minmax(0, 1fr);
+}
+
+.app-sidebar {
+    position: relative;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 28px 17px 20px;
+    overflow: hidden;
+    color: #dce9ff;
+    background:
+        radial-gradient(circle at 0 100%, rgb(74 144 236 / 45%), transparent 48%),
+        linear-gradient(180deg, #06234c, var(--night-deep));
+}
+
+.app-sidebar::after,
+.entrance-surface::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .11;
+    background-image:
+        radial-gradient(circle at 25% 25%, #fff 0 .35px, transparent .7px),
+        radial-gradient(circle at 70% 70%, #fff 0 .3px, transparent .65px);
+    background-size: 4px 4px, 5px 5px;
+    mix-blend-mode: overlay;
+}
+
+.app-sidebar > * { position: relative; z-index: 1; }
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: inherit;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -.04em;
+}
+
+.brand-mark {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    color: #b6d5ff;
+    filter: drop-shadow(0 0 8px rgb(105 167 255 / 54%));
+}
+
+.instance-name {
+    min-height: 34px;
+    margin: 13px 8px 20px;
+    color: rgb(207 225 252 / 52%);
+    font: 11px/1.45 var(--mono);
+    overflow-wrap: anywhere;
+}
+
+.app-sidebar nav {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.app-sidebar nav button {
+    width: 100%;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    color: rgb(228 238 255 / 68%);
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+}
+
+.app-sidebar nav button:hover,
+.app-sidebar nav button.here {
+    color: #fff;
+    background: rgb(132 180 247 / 14%);
+    box-shadow: none;
+}
+
+.nav-icon {
+    width: 25px;
+    height: 25px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px solid rgb(183 211 251 / 16%);
+    border-radius: 7px;
+    font: 10px/1 var(--mono);
+}
+
+.app-sidebar nav button.here .nav-icon {
+    color: #071a39;
+    border-color: #9bc4ff;
+    background: #9bc4ff;
+    box-shadow: 0 0 12px rgb(105 167 255 / 38%);
+}
+
+.nav-label {
+    margin: 7px 10px 5px;
+    color: rgb(190 216 255 / 42%);
+    font: 600 9px/1 var(--sans);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+}
+
+.nav-label--system { margin-top: 21px; }
+
+.count {
+    min-width: 18px;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border: 0;
+    border-radius: 999px;
+    color: #06234c;
+    background: #a9ceff;
+}
+
+.sidebar-motto {
+    margin: auto 8px 0;
+    padding-top: 16px;
+    border-top: 1px solid rgb(197 220 255 / 12%);
+    color: rgb(196 218 251 / 44%);
+    font-size: 11px;
+    line-height: 1.55;
+}
+
+.app-workspace {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.app-topbar {
+    height: 70px;
+    flex: 0 0 70px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 clamp(18px, 2.5vw, 34px);
+    border-bottom: 1px solid var(--soft);
+    background: rgb(255 255 255 / 90%);
+}
+
+.app-topbar > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.app-topbar strong {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -.025em;
+}
+
+.topbar-eyebrow,
+.entrance-kicker {
+    color: var(--quiet);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+}
+
+.sync-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--verified);
+    box-shadow: 0 0 0 3px rgb(12 122 102 / 10%);
+}
+
+.avatar {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    background: linear-gradient(145deg, #74aeff, #285fc5);
+    box-shadow: 0 4px 12px rgb(45 109 231 / 20%);
+    font-size: 12px;
+}
+
+.identity {
+    display: flex;
+    flex-direction: column;
+    max-width: 190px;
+    color: var(--ink);
+    font-size: 12px;
+    line-height: 1.25;
+}
+
+.identity small {
+    overflow: hidden;
+    color: var(--quiet);
+    font: 9px/1.3 var(--mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#said {
+    flex: 0 0 auto;
+    padding: 9px 28px;
+    border-color: #bfd4ee;
+    color: #245084;
+    background: #e9f3ff;
+}
+
+#body {
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+#body > .sheet {
+    width: 100%;
+    max-width: 1120px;
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    align-items: start;
+    gap: 20px;
+    padding: clamp(22px, 3vw, 38px);
+}
+
+#body > .sheet > section,
+#body > .sheet > label {
+    grid-column: 1 / -1;
+}
+
+#body > .sheet > section {
+    min-width: 0;
+    padding: clamp(18px, 2.5vw, 26px);
+    border: 1px solid var(--soft);
+    border-radius: 14px;
+    background: var(--raise);
+    box-shadow: 0 7px 24px rgb(25 53 84 / 5%);
+}
+
+#body > .sheet > section:first-child {
+    border-color: rgb(45 109 231 / 14%);
+}
+
+#body > .sheet > section .label:first-child {
+    margin-bottom: 18px;
+}
+
+.row {
+    padding: 15px 4px;
+}
+
+.row:hover {
+    background: #f8fbff;
+}
+
+.row__name {
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -.015em;
+}
+
+.label,
+.wordmark {
+    font-family: var(--sans);
+}
+
+.label {
+    color: #617087;
+    font-size: 9px;
+}
+
+.starting {
+    padding: 2px 0;
+}
+
+.starting summary {
+    color: var(--ditto);
+    font-family: var(--sans);
+}
+
+/* Editor panels own their scrolling; the window never does. */
+
+#body:has(.apparatus) {
+    overflow: hidden;
+}
+
+#body .apparatus {
+    width: 100%;
+    height: 100%;
+    grid-template-columns: 10rem minmax(25rem, 1fr) minmax(24rem, 1fr) 19rem;
+    background: var(--paper);
+}
+
+#body .apparatus aside {
+    padding: 22px 17px;
+    background: #f8fbff;
+}
+
+#gutter {
+    border-color: var(--soft);
+}
+
+#register {
+    border-color: var(--soft);
+    background: var(--raise) !important;
+}
+
+.writing {
+    background: #fff;
+}
+
+.preview {
+    background: #dce5ee;
+}
+
+.tabs {
+    position: sticky;
+    z-index: 2;
+    top: -20px;
+    width: fit-content;
+    padding: 4px;
+    border: 1px solid rgb(180 196 213 / 70%);
+    border-radius: 10px;
+    background: rgb(245 249 252 / 90%);
+    backdrop-filter: blur(12px);
+}
+
+.tabs button {
+    border-color: transparent;
+    box-shadow: none;
+}
+
+.tabs button.here {
+    color: #fff;
+    border-color: var(--ditto);
+    background: var(--ditto);
+}
+
+#page,
+.descent,
+.diff,
+.raw-output,
+.version {
+    border-radius: 8px;
+}
+
+/* First-run connection */
+
+.entrance-surface {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    padding: 34px;
+    background:
+        radial-gradient(ellipse 65% 42% at 0 108%, #ddebff 0, #76a9e8 18%, rgb(35 100 182 / 45%) 45%, transparent 72%),
+        radial-gradient(ellipse 60% 42% at 100% 105%, #f4f8ff 0, #90bdf2 17%, rgb(35 100 182 / 38%) 42%, transparent 70%),
+        radial-gradient(circle at 50% 38%, #073066 0, var(--night-deep) 54%, #010d23 100%);
+}
+
+.entrance-surface::after { z-index: 1; }
+
+.entrance-brand {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 50%;
+    opacity: .08;
+    transform: translate(-50%, -50%);
+}
+
+.entrance-brand .brand-mark {
+    width: min(70vw, 640px);
+    height: min(70vw, 640px);
+}
+
+.entrance {
+    position: relative;
+    z-index: 2;
+    width: min(100%, 450px);
+    max-width: none;
+    margin: 0;
+    padding: 34px;
+    gap: 15px;
+    border: 1px solid rgb(201 221 249 / 20%);
+    border-radius: 18px;
+    color: #eef5ff;
+    background: rgb(3 26 59 / 72%);
+    box-shadow: 0 24px 70px rgb(0 9 25 / 38%);
+    backdrop-filter: blur(22px);
+}
+
+.entrance .brand { margin-bottom: 14px; }
+.entrance .quiet { color: rgb(214 231 255 / 66%); }
+.entrance .entrance-kicker { color: #8bbcff; }
+.entrance h1 { color: #fff; font-size: 30px; letter-spacing: -.045em; }
+
+.entrance form {
+    margin-top: 7px;
+}
+
+.entrance input {
+    min-width: 0;
+    color: #0d2038;
+    background: #f6f9fd;
+}
+
+.entrance form button,
+.entrance > button:not(.quiet-button) {
+    color: #071a39;
+    border-color: #a9ceff;
+    background: #a9ceff;
+}
+
+.entrance .quiet-button {
+    color: #bbd5fa;
+    background: transparent;
+}
+
+.entrance .problem {
+    color: #ffdbe0;
+    border-color: #ff8191;
+}
+
+@media (max-width: 1050px) {
+    .app-shell { grid-template-columns: 74px minmax(0, 1fr); }
+    .app-sidebar { padding: 23px 11px; align-items: center; }
+    .app-sidebar .brand > span,
+    .instance-name,
+    .nav-label,
+    .sidebar-motto,
+    .app-sidebar nav button > span:last-child { display: none; }
+    .app-sidebar nav button { width: 44px; justify-content: center; padding: 8px; }
+    .app-sidebar nav { margin-top: 28px; }
+    #body .apparatus { grid-template-columns: 8rem minmax(24rem, 1fr) minmax(22rem, 1fr); }
+    #register { grid-column: 2 / 4; }
+}
+
+@media (max-width: 760px) {
+    .identity { display: none; }
+    .app-topbar { padding-inline: 14px; }
+    #body > .sheet { padding: 18px; }
 }

@@ -368,7 +368,7 @@ fn body(
             }
         }
 
-        div class="block" {
+        div class="block" id="machines" {
             p class="label" { "Agents" }
             p class="quiet" {
                 "What this machine found when it looked. Stemma holds no key for any "
