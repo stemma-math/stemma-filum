@@ -94,7 +94,10 @@ pub async fn authenticate(
         .read(move |connection| users::password_hash(connection, &id))
         .await?;
 
-    let correct = stored.is_some_and(|stored| password::verify(&proof.password, &stored));
+    let offered = proof.password.clone();
+    let correct = instance
+        .blocking(move || Ok(stored.is_some_and(|stored| password::verify(&offered, &stored))))
+        .await?;
 
     if !correct {
         let policy = instance.policy().await?;

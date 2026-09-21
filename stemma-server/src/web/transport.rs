@@ -99,7 +99,14 @@ fn is_git_talking(method: &Method) -> bool {
 /// Splits what was asked for into a repository and a path inside it.
 fn split(rest: &str) -> Option<(&str, &str)> {
     match rest.split_once(".git/") {
-        Some((repository, path)) if !path.is_empty() => Some((&rest[..repository.len() + 4], path)),
+        Some((repository, path))
+            if !path.is_empty()
+                && !path.contains('\\')
+                && !path.chars().any(char::is_control)
+                && path.split('/').all(|part| !matches!(part, "" | "." | "..")) =>
+        {
+            Some((&rest[..repository.len() + 4], path))
+        }
         _ => None,
     }
 }
@@ -308,31 +315,39 @@ struct Head {
 }
 
 /// Reads the headers git wrote, leaving the body where it is.
-async fn read_cgi_head(
-    mut stdout: tokio::process::ChildStdout,
-) -> Result<(Head, impl tokio::io::AsyncRead + Unpin + Send)> {
+async fn read_cgi_head<R>(stdout: R) -> Result<(Head, tokio::io::BufReader<R>)>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
     use tokio::io::AsyncReadExt;
+
+    const MAX_HEAD_BYTES: usize = 64 * 1024;
+    let mut stdout = tokio::io::BufReader::new(stdout);
 
     let mut buffer = Vec::new();
     let mut byte = [0_u8; 1];
 
-    // The head ends at a blank line, which is the only thing that can be
-    // read one byte at a time without also swallowing the body.
+    // Buffer the pipe reads while retaining any body bytes read ahead.
+    // A broken backend must not produce an empty success or unbounded head.
     while !buffer.ends_with(b"\r\n\r\n") && !buffer.ends_with(b"\n\n") {
+        anyhow::ensure!(
+            buffer.len() < MAX_HEAD_BYTES,
+            "git returned oversized CGI headers"
+        );
         match stdout.read(&mut byte).await? {
-            0 => break,
+            0 => anyhow::bail!("git output ended before its CGI headers were complete"),
             _ => buffer.push(byte[0]),
         }
     }
 
-    let text = String::from_utf8_lossy(&buffer).into_owned();
+    let text = String::from_utf8(buffer).context("git returned non-UTF-8 CGI headers")?;
     let mut status = StatusCode::OK;
     let mut headers = Vec::new();
 
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
+        let (name, value) = line
+            .split_once(':')
+            .context("git returned a malformed CGI header")?;
         let value = value.trim().to_owned();
 
         if name.eq_ignore_ascii_case("status") {
@@ -341,7 +356,7 @@ async fn read_cgi_head(
                 .next()
                 .and_then(|code| code.parse().ok())
                 .and_then(|code: u16| StatusCode::from_u16(code).ok())
-                .unwrap_or(StatusCode::OK);
+                .context("git returned an invalid CGI status")?;
         } else {
             headers.push((name.to_owned(), value));
         }
@@ -369,6 +384,43 @@ pub fn personal_path(group: &Slug, user: &UserId) -> String {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn cgi_headers_preserve_status_and_body() {
+        use tokio::io::AsyncReadExt;
+
+        for separator in ["\r\n", "\n"] {
+            let output = format!(
+                "Status: 403 Forbidden{separator}Content-Type: text/plain{separator}{separator}body\n"
+            );
+            let (head, mut rest) = read_cgi_head(output.as_bytes()).await.unwrap();
+            assert_eq!(head.status, StatusCode::FORBIDDEN);
+            assert_eq!(
+                head.headers,
+                vec![("Content-Type".into(), "text/plain".into())]
+            );
+            let mut body = String::new();
+            rest.read_to_string(&mut body).await.unwrap();
+            assert_eq!(body, "body\n");
+        }
+    }
+
+    #[tokio::test]
+    async fn broken_cgi_output_is_not_a_successful_response() {
+        for output in [
+            "",
+            "Content-Type: text/plain\r\n",
+            "not a header\n\n",
+            "Status: nonsense\n\n",
+        ] {
+            assert!(
+                read_cgi_head(output.as_bytes()).await.is_err(),
+                "accepted {output:?}"
+            );
+        }
+        let oversized = vec![b'a'; 64 * 1024 + 1];
+        assert!(read_cgi_head(oversized.as_slice()).await.is_err());
+    }
+
     fn basic(user: &str, password: &str) -> HeaderMap {
         let encoded =
             base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"));
@@ -395,7 +447,17 @@ mod tests {
 
     #[test]
     fn what_is_not_a_repository_path_is_refused() {
-        for asked in ["shared.git", "", "info/refs", "shared.git/", "shared/info"] {
+        for asked in [
+            "shared.git",
+            "",
+            "info/refs",
+            "shared.git/",
+            "shared/info",
+            "shared.git/../personal/ana.git/info/refs",
+            "shared.git/info/./refs",
+            "shared.git//info/refs",
+            "shared.git/..\\personal\\ana.git/info/refs",
+        ] {
             assert_eq!(split(asked), None, "took `{asked}`");
         }
     }

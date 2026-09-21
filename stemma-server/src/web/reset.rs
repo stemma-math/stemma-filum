@@ -178,7 +178,8 @@ pub async fn set(
             .into_response());
     }
 
-    let hash = password::hash(&form.password)?;
+    let offered = form.password.clone();
+    let hash = instance.blocking(move || password::hash(&offered)).await?;
     let key = instance.key.clone();
 
     let changed = instance

@@ -171,7 +171,8 @@ pub async fn join_and_register(
         "" => slug.as_str().to_owned(),
         given => given.to_owned(),
     };
-    let hash = password::hash(&form.password)?;
+    let offered = form.password.clone();
+    let hash = instance.blocking(move || password::hash(&offered)).await?;
     let role = invitation.role;
     let id = invitation.id;
     let group_id = group.id.clone();

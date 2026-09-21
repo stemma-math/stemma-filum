@@ -95,8 +95,12 @@ pub async fn log_in(
     // The same answer whether the account does not exist, the password is
     // wrong or the account is suspended: this form must not be a way of
     // finding out who has an account here.
-    let admitted =
-        found.filter(|(user, stored)| user.is_active() && password::verify(&offered, stored));
+    let admitted = instance
+        .blocking(move || {
+            Ok(found
+                .filter(|(user, stored)| user.is_active() && password::verify(&offered, stored)))
+        })
+        .await?;
 
     let Some((user, _)) = admitted else {
         let policy = instance.policy().await?;
@@ -226,7 +230,8 @@ pub async fn register(
         given => given.to_owned(),
     };
 
-    let hash = password::hash(&form.password)?;
+    let offered = form.password.clone();
+    let hash = instance.blocking(move || password::hash(&offered)).await?;
     let email = form.email.trim().to_owned();
     let wanted = slug.clone();
 

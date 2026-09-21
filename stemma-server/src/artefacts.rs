@@ -4,6 +4,7 @@
 //! and thrown away freely: everything here can be built again by whoever
 //! has the commit. Git stays the source of truth, and this is a shelf.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -43,13 +44,32 @@ impl Shelf {
         commit: &str,
         content: &[u8],
     ) -> Result<PathBuf> {
+        anyhow::ensure!(
+            stemma_core::artefact::is_commit(commit),
+            "invalid artefact commit"
+        );
         let path = self.path(group, scope, kind, commit);
         let directory = path.parent().context("an artefact needs somewhere to go")?;
 
         std::fs::create_dir_all(directory)
             .with_context(|| format!("cannot create {}", directory.display()))?;
-        std::fs::write(&path, content)
-            .with_context(|| format!("cannot write {}", path.display()))?;
+        // Publish only a complete file. Concurrent readers and uploads must
+        // never observe a truncated artefact or interleave their writes.
+        let temporary = directory.join(format!(".{}.tmp", crate::tokens::secret()?));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .with_context(|| format!("cannot create {}", temporary.display()))?;
+        let written = (|| -> std::io::Result<()> {
+            file.write_all(content)?;
+            file.sync_all()?;
+            std::fs::rename(&temporary, &path)
+        })();
+        if written.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        written.with_context(|| format!("cannot write {}", path.display()))?;
 
         Ok(path)
     }
@@ -62,6 +82,10 @@ impl Shelf {
         kind: Kind,
         commit: &str,
     ) -> Result<Option<Vec<u8>>> {
+        anyhow::ensure!(
+            stemma_core::artefact::is_commit(commit),
+            "invalid artefact commit"
+        );
         let path = self.path(group, scope, kind, commit);
 
         match std::fs::read(&path) {
@@ -75,6 +99,10 @@ impl Shelf {
     ///
     /// Nothing is lost by it: whoever has the commit can build it again.
     pub fn evict(&self, group: &GroupId, scope: &Scope, kind: Kind, commit: &str) -> Result<bool> {
+        anyhow::ensure!(
+            stemma_core::artefact::is_commit(commit),
+            "invalid artefact commit"
+        );
         let path = self.path(group, scope, kind, commit);
 
         match std::fs::remove_file(&path) {
@@ -111,6 +139,28 @@ mod tests {
             shelf.path(&group(), &Scope::Personal(ana), Kind::Nodes, "abc1234"),
             Path::new("/var/lib/stemma/artefacts/algebra/personal/ana/nodes/abc1234.json")
         );
+    }
+
+    #[test]
+    fn invalid_commits_cannot_escape_the_shelf() {
+        let shelf = Shelf::new("unused");
+        for commit in ["../outside", "/tmp/outside", "", "not-a-commit"] {
+            assert!(
+                shelf
+                    .put(&group(), &Scope::Shared, Kind::Nodes, commit, b"{}")
+                    .is_err()
+            );
+            assert!(
+                shelf
+                    .get(&group(), &Scope::Shared, Kind::Nodes, commit)
+                    .is_err()
+            );
+            assert!(
+                shelf
+                    .evict(&group(), &Scope::Shared, Kind::Nodes, commit)
+                    .is_err()
+            );
+        }
     }
 
     #[test]

@@ -182,9 +182,14 @@ fn encode(path: &str) -> String {
 /// host is how a log-in form is turned into a way of sending people
 /// somewhere they did not mean to go.
 pub fn safe_destination(next: Option<&str>) -> String {
-    next.filter(|path| path.starts_with('/') && !path.starts_with("//"))
-        .unwrap_or("/")
-        .to_owned()
+    next.filter(|path| {
+        path.starts_with('/')
+            && !path.starts_with("//")
+            && !path.contains('\\')
+            && !path.chars().any(char::is_control)
+    })
+    .unwrap_or("/")
+    .to_owned()
 }
 
 #[cfg(test)]
@@ -201,6 +206,11 @@ mod tests {
     fn a_destination_somewhere_else_is_refused() {
         for elsewhere in [
             "//example.org",
+            "/\\example.org",
+            "/\t/example.org",
+            "/\n/example.org",
+            "/admin\r\nLocation: https://example.org",
+            "/admin\0",
             "https://example.org",
             "javascript:alert(1)",
             "admin",

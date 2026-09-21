@@ -120,19 +120,20 @@ impl Instance {
     {
         let repositories = self.repositories();
 
-        tokio::task::spawn_blocking(move || work(&repositories))
-            .await
-            .map_err(|error| {
-                WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
-            })?
-            .map_err(WebError::Internal)
+        self.blocking(move || work(&repositories)).await
     }
 
-    /// Runs work that touches the disk.
-    ///
-    /// Files are not asynchronous either, so this goes to a thread that
-    /// is allowed to wait for them.
+    /// Runs filesystem work without blocking an asynchronous worker.
     pub async fn on_disk<T, F>(&self, work: F) -> Result<T, WebError>
+    where
+        F: FnOnce() -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        self.blocking(work).await
+    }
+
+    /// Runs synchronous I/O or expensive computation on the blocking pool.
+    pub async fn blocking<T, F>(&self, work: F) -> Result<T, WebError>
     where
         F: FnOnce() -> Result<T> + Send + 'static,
         T: Send + 'static,
