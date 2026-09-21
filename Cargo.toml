@@ -18,6 +18,7 @@ argon2 = "0.6"
 axum = "0.8"
 base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
+dirs = "6"
 getrandom = "0.3"
 hmac = "0.13"
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "rustls-native-certs", "rustls-tls", "smtp-transport"] }

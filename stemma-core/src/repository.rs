@@ -78,6 +78,11 @@ impl std::str::FromStr for Side {
 /// Absent means nobody has pinned it yet, which is honest for a group
 /// that has not written anything: a pin somebody never chose would be a
 /// decision made by whichever release happened to create the repository.
+///
+/// `notation` is the exception, and is set when the repository is made.
+/// It is not a tool the group goes and installs but Stemma's own
+/// package, and there is no version of it a line could be written
+/// without.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pins {
@@ -87,6 +92,8 @@ pub struct Pins {
     pub lean: Option<String>,
     /// The exact Mathlib revision used by the group's Lake project.
     pub mathlib: Option<String>,
+    /// The version of the notation package the group's lines import.
+    pub notation: Option<String>,
 }
 
 /// The file at the root of a repository.
@@ -114,7 +121,10 @@ impl Manifest {
             group,
             side,
             description: Some(description.into()),
-            pins: Pins::default(),
+            pins: Pins {
+                notation: Some(crate::notation::VERSION.to_owned()),
+                ..Pins::default()
+            },
         }
     }
 

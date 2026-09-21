@@ -201,8 +201,16 @@ async fn born(
 }
 
 /// What a line's source says before anybody has written mathematics.
+///
+/// The import is written into the file rather than supplied by
+/// whatever composes it: the environments below are Typst functions,
+/// and a document that does not say where its functions come from is
+/// not one anybody else can compose.
 fn skeleton(title: &str, question: &str) -> String {
-    format!("= {title}\n\n#question[{question}]\n")
+    format!(
+        "{}\n\n= {title}\n\n#question[{question}]\n",
+        stemma_core::notation::import()
+    )
 }
 
 /// The two questions and the one warning.

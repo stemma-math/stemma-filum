@@ -4794,6 +4794,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "dirs",
  "serde",
  "serde_json",
  "stemma-core",

@@ -1,0 +1,8 @@
+[package]
+name = "notation"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Enric Cosme Llópez", "Mario Vago Marzal"]
+license = "MIT"
+description = "The environments a Stemma line is written with."
+repository = "https://github.com/mariovagomarzal/stemma"

@@ -679,6 +679,18 @@ fn preview(path: String, source: String) -> Result<Preview, String> {
     let root = path
         .parent()
         .ok_or_else(|| "the line has no directory".to_owned())?;
+
+    compose(root, source)
+}
+
+/// Typesets one source, with everything around it that it may import.
+///
+/// The environments a line declares are Typst functions and come from
+/// a package the command line carries. Putting it where Typst looks
+/// costs a comparison once it is already there.
+fn compose(root: &Path, source: String) -> Result<Preview, String> {
+    stemma::notation::install().map_err(said)?;
+
     let main = Source::detached(source);
     let engine = TypstEngine::builder()
         .main_file(main.clone())
@@ -1121,7 +1133,7 @@ pub fn run() {
 mod tests {
     use std::path::Path;
 
-    use super::{Source, SourceDiagnostic, analyse, complaint, identity};
+    use super::{Source, SourceDiagnostic, analyse, complaint, compose, identity};
 
     #[test]
     fn a_line_identity_comes_from_its_repository_path() {
@@ -1153,6 +1165,22 @@ mod tests {
 
         assert!(line.is_some());
         assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn a_line_written_the_way_the_instance_starts_one_composes() {
+        let source = format!(
+            "{}\n\n= Things\n\n#question[What is a thing?]\n\n\
+             #definition(id: \"def:thing\", name: \"Thing\")[A thing is a thing.]\n\n\
+             #theorem(id: \"thm:one\", central: true, uses: \"def:thing\")[Every thing is one.]\n\n\
+             #proof(of: \"thm:one\")[Immediate.]\n",
+            stemma_core::notation::import()
+        );
+
+        let composed = compose(Path::new("."), source).expect("a document");
+
+        assert!(composed.svg.contains("<svg"));
+        assert_eq!(composed.diagnostics, Vec::<String>::new());
     }
 
     #[test]
