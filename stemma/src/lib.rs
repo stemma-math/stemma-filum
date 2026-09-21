@@ -23,6 +23,7 @@ pub mod lines;
 pub mod machines;
 pub mod node;
 pub mod pin;
+pub mod program;
 pub mod proposals;
 pub mod session;
 pub mod sync;

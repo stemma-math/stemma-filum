@@ -84,6 +84,30 @@ pub fn clone(url: &str, into: &Path, helper: &str) -> Result<()> {
     Ok(())
 }
 
+/// Makes sure a clone still knows how to ask for a credential.
+///
+/// The helper names a program by its path, and paths move: a build
+/// directory is emptied, an application is dragged somewhere else. A
+/// clone left naming one that is gone sends whoever uses it to a
+/// password prompt they have no password for.
+pub fn keep_helper(repository: &Path, helper: &str) -> Result<()> {
+    // Absent rather than failed: git answers a name it does not have
+    // by exiting without success, which here is simply `nothing yet`.
+    let known = run(
+        repository,
+        &["config", "--local", "--get", "credential.helper"],
+    )
+    .unwrap_or_default();
+
+    if known.trim() == helper {
+        return Ok(());
+    }
+
+    run(repository, &["config", "credential.helper", helper])?;
+
+    Ok(())
+}
+
 /// Asks the instance what it has, without changing anything here.
 pub fn fetch(repository: &Path) -> Result<()> {
     run(repository, &["fetch", "--quiet", REMOTE])?;
@@ -383,6 +407,31 @@ mod tests {
         assert_eq!(containing(&deep).as_deref(), Some(clone.as_path()));
         assert_eq!(containing(&clone).as_deref(), Some(clone.as_path()));
         assert_eq!(containing(&root), None);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_clone_is_told_the_helper_it_does_not_have_yet_and_the_one_that_moved() {
+        let root = std::env::temp_dir().join(format!("stemma-helper-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        run(&root, &["init", "--quiet"]).unwrap();
+
+        let reading = || {
+            run(&root, &["config", "--local", "--get", "credential.helper"])
+                .unwrap_or_default()
+                .trim()
+                .to_owned()
+        };
+
+        assert_eq!(reading(), "");
+
+        keep_helper(&root, "!'/somewhere/stemma' credential").unwrap();
+        assert_eq!(reading(), "!'/somewhere/stemma' credential");
+
+        keep_helper(&root, "!'/elsewhere/stemma' credential").unwrap();
+        assert_eq!(reading(), "!'/elsewhere/stemma' credential");
 
         std::fs::remove_dir_all(&root).unwrap();
     }

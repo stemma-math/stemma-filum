@@ -228,7 +228,11 @@ pub const AGENT_NAME: &str = "org.stemma.daemon.plist";
 
 /// Puts the daemon under whatever supervises this machine.
 pub fn install(home: &Home, out: &mut impl Write) -> Result<()> {
-    let executable = std::env::current_exe().context("cannot find this program")?;
+    // What is supervised is the command line, not whatever asked for it
+    // to be installed. Asked from the application, `current_exe` would
+    // put the application itself in the plist, and every login would
+    // open a window.
+    let executable = crate::program::command_line()?;
     let moved = std::env::var(crate::home::HOME_VARIABLE).ok();
 
     match Supervisor::here() {

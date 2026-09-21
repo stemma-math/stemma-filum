@@ -17,6 +17,7 @@ use crate::config::Config;
 use crate::credentials::Credentials;
 use crate::git;
 use crate::home::Home;
+use crate::program;
 use crate::workspace::Side;
 
 /// What happened to one repository.
@@ -239,11 +240,14 @@ fn one(group: &GroupRemote, side: Side, directory: &Path) -> Report {
 
 /// The work itself.
 fn work(url: &str, path: &Path) -> Result<Outcome> {
+    let helper = helper()?;
+
     if !git::is_clone(path) {
-        git::clone(url, path, &helper())?;
+        git::clone(url, path, &helper)?;
         return Ok(Outcome::Cloned);
     }
 
+    git::keep_helper(path, &helper)?;
     git::fetch(path)?;
 
     let distance = git::distance(path)?;
@@ -283,16 +287,24 @@ fn describe(distance: git::Distance) -> Outcome {
     }
 }
 
-/// How git is told to ask this program for a credential.
-fn helper() -> String {
-    // Git runs the helper as `<helper> get`, and prefixes anything that
-    // is not an absolute path with `git-credential-`, so the program has
-    // to be named in full.
-    let program = std::env::current_exe()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|_| "stemma".to_owned());
+/// How git is told to ask the command line for a credential.
+///
+/// Not whatever is running: the application is not a credential
+/// helper, and git running it would open a window and then wait for an
+/// answer that a window has no way to give.
+fn helper() -> Result<String> {
+    // Git reads a helper that is not an absolute path as a name to look
+    // for under `git-credential-`, and a leading `!` as a shell command.
+    // The second is the one that survives a path with a space in it,
+    // which the application's own path may well have.
+    let program = program::command_line()?;
 
-    format!("{program} credential")
+    Ok(format!("!{} credential", quoted(&program)))
+}
+
+/// One path, as a shell word, whatever is in it.
+fn quoted(path: &Path) -> String {
+    format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
 }
 
 /// One line of what happened.
@@ -331,6 +343,16 @@ mod tests {
         assert!(said.contains("both moved"));
         assert!(said.contains("2 commits here"));
         assert!(said.contains("3 commits there"));
+    }
+
+    #[test]
+    fn a_path_with_a_space_in_it_is_still_one_word_to_a_shell() {
+        assert_eq!(
+            quoted(Path::new(
+                "/Applications/Stemma 2.app/Contents/MacOS/stemma"
+            )),
+            "'/Applications/Stemma 2.app/Contents/MacOS/stemma'"
+        );
     }
 
     #[test]
