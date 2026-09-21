@@ -22,17 +22,47 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 /// How long the whole of reaching an instance may take.
 ///
 /// A name can resolve to more than one address, and the client tries
-/// them in turn, giving the first the largest share of this. Without a
-/// bound of its own, that share is most of the request: a host whose
-/// name carries an address in a family this network cannot reach would
-/// cost thirteen seconds of nothing before the address that works is
-/// even tried. Connecting is fast or it is not going to happen.
+/// them in turn, giving the first the largest share of this. Which
+/// address goes first is therefore most of the answer, and that is
+/// settled in `reaching` before the client sees them; this is what is
+/// left for the case where none of them answers. Connecting is fast or
+/// it is not going to happen.
 const CONNECTING: Duration = Duration::from_secs(6);
 
 /// An instance, as this program talks to it.
 pub struct Server {
     address: String,
     agent: ureq::Agent,
+}
+
+/// The one agent every instance is reached through.
+///
+/// An agent keeps the connections it has opened, and a connection that
+/// is already open costs a fraction of one that is not: the handshake
+/// is most of a short request. A fresh agent for every command throws
+/// that away and pays it again, so there is one, and it lives as long
+/// as the program does.
+static REACHING: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+
+/// The agent, made the first time anything asks for it.
+fn agent() -> ureq::Agent {
+    REACHING
+        .get_or_init(|| {
+            let config = ureq::Agent::config_builder()
+                .timeout_global(Some(TIMEOUT))
+                .timeout_connect(Some(CONNECTING))
+                // A refusal carries a body that says which refusal it is, and
+                // the device flow says "not yet" with one of them.
+                .http_status_as_error(false)
+                .build();
+
+            ureq::Agent::with_parts(
+                config,
+                ureq::unversioned::transport::DefaultConnector::new(),
+                crate::reaching::HappyEyeballs::default(),
+            )
+        })
+        .clone()
 }
 
 /// What an instance says when a machine asks to sign in.
@@ -413,16 +443,10 @@ impl Server {
     pub fn at(address: &str) -> Result<Self> {
         let address = normalise(address)?;
 
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(TIMEOUT))
-            .timeout_connect(Some(CONNECTING))
-            // A refusal carries a body that says which refusal it is, and
-            // the device flow says "not yet" with one of them.
-            .http_status_as_error(false)
-            .build()
-            .into();
-
-        Ok(Self { address, agent })
+        Ok(Self {
+            address,
+            agent: agent(),
+        })
     }
 
     /// The address this program is talking to.

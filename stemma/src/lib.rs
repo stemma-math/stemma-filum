@@ -26,6 +26,7 @@ pub mod notation;
 pub mod pin;
 pub mod program;
 pub mod proposals;
+pub mod reaching;
 pub mod session;
 pub mod storage;
 pub mod sync;
