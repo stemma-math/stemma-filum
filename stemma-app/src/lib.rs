@@ -3,6 +3,12 @@
 //! Commands here translate desktop requests into the same Rust operations the
 //! command line uses. Repository rules, source extraction and job launching
 //! remain in `stemma`; the webview owns presentation only.
+//!
+//! Every command is declared `async` even though none of them are: that
+//! is what puts them on a thread of their own instead of the one that
+//! draws the window. They talk to an instance over the network, run git
+//! and compile documents, and any of those on the drawing thread is a
+//! window that stops answering the mouse until it finishes.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -197,7 +203,7 @@ fn carried_out(
 }
 
 /// Who this machine acts for.
-#[tauri::command]
+#[tauri::command(async)]
 fn whoami() -> Result<Option<Signed>, String> {
     let home = home();
     let credentials =
@@ -210,7 +216,7 @@ fn whoami() -> Result<Option<Signed>, String> {
 }
 
 /// Asks an instance to let this machine in.
-#[tauri::command]
+#[tauri::command(async)]
 fn sign_in_start(
     server: String,
     signing_in: tauri::State<'_, SigningIn>,
@@ -229,7 +235,7 @@ fn sign_in_start(
 }
 
 /// Asks once whether somebody has approved it.
-#[tauri::command]
+#[tauri::command(async)]
 fn sign_in_poll(signing_in: tauri::State<'_, SigningIn>) -> Result<String, String> {
     let beginning = signing_in.0.lock().map_err(said)?.clone();
     let Some(beginning) = beginning else {
@@ -249,13 +255,13 @@ fn sign_in_poll(signing_in: tauri::State<'_, SigningIn>) -> Result<String, Strin
 }
 
 /// Gives the credential back and forgets it.
-#[tauri::command]
+#[tauri::command(async)]
 fn sign_out() -> Result<String, String> {
     carried_out(stemma::session::log_out)
 }
 
 /// Brings every group this machine can work in into step.
-#[tauri::command]
+#[tauri::command(async)]
 fn sync() -> Result<Vec<Stepped>, String> {
     let mut written = Vec::new();
     let reports = stemma::sync::run(&home(), &mut written).map_err(|error| format!("{error:#}"))?;
@@ -273,7 +279,7 @@ fn sync() -> Result<Vec<Stepped>, String> {
 }
 
 /// The groups this machine has a repository for.
-#[tauri::command]
+#[tauri::command(async)]
 fn groups() -> Result<Vec<String>, String> {
     let home = home();
     let config = stemma::config::Config::read(&home.config_file()).map_err(said)?;
@@ -296,7 +302,7 @@ fn groups() -> Result<Vec<String>, String> {
 }
 
 /// Starts a line.
-#[tauri::command]
+#[tauri::command(async)]
 fn new_line(
     group: String,
     title: String,
@@ -307,7 +313,7 @@ fn new_line(
 }
 
 /// Takes one of this person's own lines out.
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_line(path: String) -> Result<String, String> {
     let path = admitted(&path)?;
     let at = path
@@ -319,7 +325,7 @@ fn delete_line(path: String) -> Result<String, String> {
 }
 
 /// Moves one of them to the group.
-#[tauri::command]
+#[tauri::command(async)]
 fn share_line(path: String, history: bool, mine_to_write: bool) -> Result<String, String> {
     let path = admitted(&path)?;
     let at = path
@@ -331,13 +337,13 @@ fn share_line(path: String, history: bool, mine_to_write: bool) -> Result<String
 }
 
 /// Offers this machine to the instance as one that runs work.
-#[tauri::command]
+#[tauri::command(async)]
 fn node_init(groups: Vec<String>) -> Result<String, String> {
     carried_out(|home, out| stemma::node::init(home, &groups, out).map(|_| ()))
 }
 
 /// Puts the daemon under whatever supervises this machine.
-#[tauri::command]
+#[tauri::command(async)]
 fn daemon_install() -> Result<String, String> {
     carried_out(stemma::daemon::install)
 }
@@ -347,7 +353,7 @@ fn daemon_install() -> Result<String, String> {
 /// Worked out from what is in the editor rather than from the last
 /// thing a machine built, so the graph moves while somebody writes.
 /// The instance draws the same placement with the same file.
-#[tauri::command]
+#[tauri::command(async)]
 fn descent(
     source: String,
     verified: Vec<String>,
@@ -376,7 +382,7 @@ fn descent(
 /// installs both. The link goes somewhere that needs no privileges:
 /// asking a mathematician for an administrator password to get a
 /// command is asking for the wrong thing.
-#[tauri::command]
+#[tauri::command(async)]
 fn install_cli() -> Result<String, String> {
     let carried = std::env::current_exe()
         .ok()
@@ -437,7 +443,7 @@ fn runnable(path: &PathBuf) -> bool {
 ///
 /// Signing in happens in the instance's own pages, in the person's own
 /// browser, where they can see the address they are typing a code into.
-#[tauri::command]
+#[tauri::command(async)]
 fn open_link(url: String) -> Result<(), String> {
     let opener = match std::env::consts::OS {
         "macos" => "open",
@@ -454,7 +460,7 @@ fn open_link(url: String) -> Result<(), String> {
 }
 
 /// What is waiting for this person to read it.
-#[tauri::command]
+#[tauri::command(async)]
 fn proposals() -> Result<Vec<Waiting>, String> {
     let home = home();
     let credentials = stemma::session::required(&home).map_err(said)?;
@@ -477,7 +483,7 @@ fn proposals() -> Result<Vec<Waiting>, String> {
 }
 
 /// One proposal, as what moved.
-#[tauri::command]
+#[tauri::command(async)]
 fn proposal(proposal: String) -> Result<Review, String> {
     let home = home();
     let credentials = stemma::session::required(&home).map_err(said)?;
@@ -524,19 +530,19 @@ fn proposal(proposal: String) -> Result<Review, String> {
 }
 
 /// Records what the person decided about it.
-#[tauri::command]
+#[tauri::command(async)]
 fn decide_proposal(proposal: String, decision: String) -> Result<String, String> {
     carried_out(|home, out| stemma::proposals::decide(home, &proposal, &decision, out))
 }
 
 /// Writes an accepted proposal into this machine's clone.
-#[tauri::command]
+#[tauri::command(async)]
 fn apply_proposal(proposal: String) -> Result<String, String> {
     carried_out(|home, out| stemma::proposals::apply(home, &proposal, out))
 }
 
 /// Admits a definition to the group's vault.
-#[tauri::command]
+#[tauri::command(async)]
 fn vault_admit(
     group: String,
     siglum: String,
@@ -550,7 +556,7 @@ fn vault_admit(
 }
 
 /// Admits a proved licence to substitute one definition for another.
-#[tauri::command]
+#[tauri::command(async)]
 fn vault_bridge(
     group: String,
     left: String,
@@ -564,7 +570,7 @@ fn vault_bridge(
 }
 
 /// Attests a correspondence, or withdraws one.
-#[tauri::command]
+#[tauri::command(async)]
 fn vault_audit(
     group: String,
     target_kind: String,
@@ -577,7 +583,7 @@ fn vault_audit(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn lines() -> Result<Vec<Known>, String> {
     let home = home();
     let config = stemma::config::Config::read(&home.config_file()).map_err(said)?;
@@ -623,7 +629,7 @@ fn lines() -> Result<Vec<Known>, String> {
     Ok(found)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_line(path: String) -> Result<OpenLine, String> {
     let path = admitted(&path)?;
     let source = std::fs::read_to_string(&path).map_err(said)?;
@@ -644,7 +650,7 @@ fn open_line(path: String) -> Result<OpenLine, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_line(path: String, source: String) -> Result<OpenLine, String> {
     let path = admitted(&path)?;
     std::fs::write(&path, &source).map_err(said)?;
@@ -665,7 +671,7 @@ fn save_line(path: String, source: String) -> Result<OpenLine, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn preview(path: String, source: String) -> Result<Preview, String> {
     let path = admitted(&path)?;
     let root = path
@@ -696,7 +702,7 @@ fn preview(path: String, source: String) -> Result<Preview, String> {
     Ok(Preview { svg, diagnostics })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn machine() -> Result<MachinePanel, String> {
     let home = home();
     let credentials = stemma::session::required(&home).map_err(said)?;
@@ -742,14 +748,14 @@ fn machine() -> Result<MachinePanel, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn job_output(job: String) -> Result<String, String> {
     let mut output = Vec::new();
     stemma::jobs::output(&home(), &job, &mut output).map_err(said)?;
     String::from_utf8(output).map_err(said)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn offers(group: String) -> Result<Vec<Offer>, String> {
     let home = home();
     let credentials = stemma::session::required(&home).map_err(said)?;
@@ -780,7 +786,7 @@ fn offers(group: String) -> Result<Vec<Offer>, String> {
 }
 
 /// Takes the line for this machine, which also renews a claim it holds.
-#[tauri::command]
+#[tauri::command(async)]
 fn claim(path: String) -> Result<Claim, String> {
     with_claim(&path, |server, token, about| {
         server.take_claim(token, about)
@@ -788,7 +794,7 @@ fn claim(path: String) -> Result<Claim, String> {
 }
 
 /// Lets the line go.
-#[tauri::command]
+#[tauri::command(async)]
 fn let_go(path: String) -> Result<Claim, String> {
     with_claim(&path, |server, token, about| {
         server.release_claim(token, about)
@@ -796,7 +802,7 @@ fn let_go(path: String) -> Result<Claim, String> {
 }
 
 /// Asks whichever machine has the line to hand it back.
-#[tauri::command]
+#[tauri::command(async)]
 fn ask_for_line(path: String) -> Result<Claim, String> {
     with_claim(&path, |server, token, about| {
         server.ask_for_claim(token, about)
@@ -837,7 +843,7 @@ fn with_claim(
 }
 
 /// Asks an agent to reconcile the two versions, as a proposal.
-#[tauri::command]
+#[tauri::command(async)]
 fn reconcile(path: String, agent: String) -> Result<String, String> {
     let path = admitted(&path)?;
     let at = path
@@ -851,7 +857,7 @@ fn reconcile(path: String, agent: String) -> Result<String, String> {
 }
 
 /// What the two versions of this line disagree about.
-#[tauri::command]
+#[tauri::command(async)]
 fn parted(path: String) -> Result<Vec<Disagreement>, String> {
     let path = admitted(&path)?;
     let (clone, name) = clone_and_line(&path)?;
@@ -880,7 +886,7 @@ fn parted(path: String) -> Result<Vec<Disagreement>, String> {
 }
 
 /// Writes what the person decided, as one merge commit.
-#[tauri::command]
+#[tauri::command(async)]
 fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, String> {
     let path = admitted(&path)?;
     let (clone, name) = clone_and_line(&path)?;
@@ -921,7 +927,7 @@ fn clone_and_line(path: &Path) -> Result<(PathBuf, String), String> {
     Ok((clone, name))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn vault(group: String) -> Result<stemma::api::Vault, String> {
     let home = home();
     let credentials = stemma::session::required(&home).map_err(said)?;
@@ -931,7 +937,7 @@ fn vault(group: String) -> Result<stemma::api::Vault, String> {
         .map_err(said)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn launch(
     path: String,
     task: String,
