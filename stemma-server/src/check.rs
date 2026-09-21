@@ -372,13 +372,28 @@ fn inspect_listen(report: &mut Report, listen: &Listen) {
             if let Some(directory) = listen.socket_directory()
                 && !directory.exists()
             {
+                // A directory directly under /run is made by whatever
+                // starts the process and is gone again when it stops,
+                // so its absence says the instance is not running. That
+                // is the ordinary state of an instance somebody is
+                // about to start, and no reason to refuse to.
+                let made_at_startup = directory.parent() == Some(Path::new("/run"));
+                let said = format!(
+                    "the socket directory {} does not exist, so {} cannot be bound",
+                    directory.display(),
+                    path.display()
+                );
+
                 report.push(
-                    Finding::fatal(format!(
-                        "the socket directory {} does not exist, so {} cannot be bound",
-                        directory.display(),
-                        path.display()
-                    ))
-                    .remedy("systemd creates it from `RuntimeDirectory=`".to_owned()),
+                    match made_at_startup {
+                        true => Finding::warning(said),
+                        false => Finding::fatal(said),
+                    }
+                    .remedy(
+                        "systemd creates it from `RuntimeDirectory=` when the service \
+                         starts"
+                            .to_owned(),
+                    ),
                 );
             }
         }
@@ -515,6 +530,34 @@ fn mode_of(path: &Path) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_socket_directory_systemd_makes_is_not_a_reason_to_refuse_to_start() {
+        let mut report = Report::default();
+        inspect_listen(
+            &mut report,
+            &"unix:/run/stemma/server.sock".parse().unwrap(),
+        );
+
+        assert!(report.allows_startup(false), "{report}");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|finding| finding.message.contains("/run/stemma"))
+        );
+    }
+
+    #[test]
+    fn a_socket_directory_nobody_will_make_is() {
+        let mut report = Report::default();
+        inspect_listen(
+            &mut report,
+            &"unix:/nowhere/at/all/server.sock".parse().unwrap(),
+        );
+
+        assert!(!report.allows_startup(false));
+    }
 
     #[test]
     fn a_clean_report_lets_the_server_start() {
