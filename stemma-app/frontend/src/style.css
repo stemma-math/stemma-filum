@@ -131,6 +131,13 @@ section {
     display: block;
 }
 
+/* `section { display: block }` above beats the browser's own rule for
+ * `[hidden]`, so a section the code hides stays on the screen with
+ * nothing in it. Anything hidden is hidden. */
+[hidden] {
+    display: none !important;
+}
+
 .stack {
     display: flex;
     flex-direction: column;
