@@ -1161,9 +1161,15 @@ select:focus {
     min-height: 100svh;
     /* Bar, card, foot. The middle row takes the height that is left over
      * and never shrinks below the card, so the foot sits on the bottom edge
-     * of a short page and below the content of a long one. */
+     * of a short page and below the content of a long one.
+     *
+     * The gap is what keeps the card off the bar and the foot. Centring it
+     * is the row's auto margins, and those are whatever is left over — on a
+     * short window that is nothing, and the card landed flat against the
+     * foot. A gap is a floor the margins cannot spend. */
     display: grid;
     grid-template-rows: auto 1fr auto;
+    row-gap: var(--space-5);
     background:
         radial-gradient(circle at 4% 100%, rgb(105 167 255 / 20%), transparent 28rem),
         linear-gradient(145deg, #f9fbfd, #edf3f9);

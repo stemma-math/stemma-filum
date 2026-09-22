@@ -72,10 +72,8 @@ pub async fn authenticate_form(
     signed: SignedIn,
     Query(next): Query<Next>,
 ) -> Result<Response, WebError> {
-    let policy = instance.policy().await?;
-
     Ok(page(
-        &chrome(&instance, &policy, &signed, "Confirm it is you"),
+        &chrome(&instance, &signed, "Confirm it is you").await?,
         authenticate_body(&signed, next.next.as_deref(), None),
     )
     .into_response())
@@ -100,12 +98,10 @@ pub async fn authenticate(
         .await?;
 
     if !correct {
-        let policy = instance.policy().await?;
-
         return Ok((
             axum::http::StatusCode::UNAUTHORIZED,
             page(
-                &chrome(&instance, &policy, &signed, "Confirm it is you"),
+                &chrome(&instance, &signed, "Confirm it is you").await?,
                 authenticate_body(
                     &signed,
                     proof.next.as_deref(),
@@ -167,11 +163,7 @@ pub async fn area(
         (settings_block(&signed, &policy))
     };
 
-    Ok(page(
-        &chrome(&instance, &policy, &signed, "Admin").at("/admin"),
-        body,
-    )
-    .into_response())
+    Ok(page(&chrome(&instance, &signed, "Admin").await?, body).into_response())
 }
 
 /// Approves a group request, which creates the group.
@@ -307,10 +299,10 @@ fn trimmed(value: &str) -> Option<String> {
 }
 
 /// The shell these pages are drawn in.
-fn chrome(instance: &Instance, policy: &Policy, signed: &SignedIn, title: &str) -> Chrome {
-    Chrome::anonymous(title, super::front::instance_name(instance, policy))
-        .signed_in(signed.user.clone(), signed.maintainer)
-        .at("/admin")
+async fn chrome(instance: &Instance, signed: &SignedIn, title: &str) -> Result<Chrome, WebError> {
+    Ok(super::layout::around(instance, signed, title)
+        .await?
+        .at("/admin"))
 }
 
 /// The form that asks for the password again.
