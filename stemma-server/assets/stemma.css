@@ -1747,6 +1747,16 @@ html.surface-pending .auth-page .surface-transition,
 
 .product-page .sheet > .stack:first-child:not(.sheet--narrow) .quiet { color: rgb(218 233 255 / 65%); }
 
+/* Nothing in the sheet is elastic.
+ *
+ * The sheet is a column in a box of a fixed height, so its cards are flex
+ * items free to shrink. A card whose `overflow` is `visible` refuses, by
+ * the automatic minimum height every flex item has; the hero hides its
+ * grain with `overflow: hidden`, which throws that minimum away. So the
+ * hero was the one card that could give, and every card added below it
+ * took another slice off its words. The sheet scrolls instead. */
+.product-page .sheet > * { flex-shrink: 0; }
+
 .register li {
     padding: 14px 8px;
 }
