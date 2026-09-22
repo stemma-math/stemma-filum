@@ -15,6 +15,8 @@ pub struct Group {
     pub id: GroupId,
     /// What the group calls itself.
     pub name: String,
+    /// What the group is for, when it has said.
+    pub description: Option<String>,
     /// When it was created.
     pub created_at: String,
     /// When it was archived, if it was.
@@ -32,6 +34,7 @@ impl Group {
         Ok(Self {
             id: id_at(row, "id")?,
             name: row.get("name")?,
+            description: row.get("description")?,
             created_at: row.get("created_at")?,
             archived_at: row.get("archived_at")?,
         })
@@ -59,7 +62,7 @@ pub struct Member {
 }
 
 /// The columns every read of a group asks for.
-const COLUMNS: &str = "id, slug, name, created_at, archived_at";
+const COLUMNS: &str = "id, slug, name, description, created_at, archived_at";
 
 /// Creates a group with its first owner.
 ///
@@ -91,6 +94,23 @@ pub fn create(
     transaction.commit()?;
 
     by_id(connection, &id)?.context("the group was created and cannot be read back")
+}
+
+/// Says what a group is for.
+///
+/// An empty description is no description: a group that says nothing about
+/// itself should show nothing, not an empty line where a sentence goes.
+pub fn describe(connection: &Connection, id: &GroupId, description: &str) -> Result<()> {
+    let said = description.trim();
+
+    connection
+        .execute(
+            "UPDATE groups SET description = ?2 WHERE id = ?1",
+            params![id.to_string(), (!said.is_empty()).then_some(said)],
+        )
+        .context("cannot describe the group")?;
+
+    Ok(())
 }
 
 /// Whether a name is still free.
@@ -131,7 +151,7 @@ pub fn all(connection: &Connection) -> Result<Vec<Group>> {
 /// The groups somebody belongs to.
 pub fn for_user(connection: &Connection, user: &UserId) -> Result<Vec<Membership>> {
     let mut statement = connection.prepare(
-        "SELECT g.id, g.slug, g.name, g.created_at, g.archived_at, m.role
+        "SELECT g.id, g.slug, g.name, g.description, g.created_at, g.archived_at, m.role
            FROM memberships m JOIN groups g ON g.id = m.group_id
           WHERE m.user_id = ?1
           ORDER BY g.name",
@@ -378,9 +398,10 @@ pub fn approve(
         &request.name,
         &request.requested_by,
     )?;
+    describe(connection, &group.id, &request.reason)?;
     decide(connection, &request.id, Outcome::Approved, maintainer, note)?;
 
-    Ok(group)
+    by_id(connection, &group.id)?.context("the group was described and cannot be read back")
 }
 
 /// Declines a request, saying who decided and why.

@@ -71,6 +71,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "private-line-scopes",
         sql: include_str!("../migrations/0011-private-line-scopes.sql"),
     },
+    Migration {
+        name: "group-descriptions",
+        sql: include_str!("../migrations/0012-group-descriptions.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.
