@@ -1683,13 +1683,21 @@ html.surface-pending .auth-page .surface-transition,
 .tree__body a {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 8px;
     padding: 8px 10px;
     border-radius: 8px;
     font-size: 13px;
     color: rgb(228 238 255 / 66%);
     text-decoration: none;
+}
+
+/* The mark for the page you are on is a flex item here, so it needs saying
+ * that it is neither the thing that takes the leftover room nor the thing
+ * that gives room up: spread apart, it pushed the name to the far edge, and
+ * squeezed, it went oval the moment a long name wrapped. */
+.tree__body a[aria-current="page"]::before {
+    flex: none;
+    margin: 0;
 }
 
 .tree__body a:hover,
@@ -1699,6 +1707,7 @@ html.surface-pending .auth-page .surface-transition,
 }
 
 .tree__body .count {
+    margin-left: auto;
     color: #cfe2ff;
     font-size: 11px;
     padding: 1px 7px;
@@ -1831,11 +1840,18 @@ html.surface-pending .auth-page .surface-transition,
     box-shadow: 0 7px 24px rgb(25 53 84 / 5%);
 }
 
+/* No border, rather than one nobody can see.
+ *
+ * A gradient is laid out on the padding box and repeats outwards, so the
+ * area under a border shows the gradient wrapping round to its far edge —
+ * which on this card put a hairline of the light end hard against the dark
+ * end, down both sides. The border was transparent and doing nothing, so
+ * it goes and the padding box becomes the whole card. */
 .product-page .sheet > .stack:first-child:not(.sheet--narrow) {
     position: relative;
     overflow: hidden;
     color: #eaf2ff;
-    border-color: transparent;
+    border: 0;
     background:
         radial-gradient(circle at 96% 120%, rgb(114 175 255 / 48%), transparent 42%),
         linear-gradient(125deg, #06234c, #0b3b76);
