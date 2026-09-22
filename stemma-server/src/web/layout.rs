@@ -7,9 +7,53 @@
 
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
-use super::WebError;
 use super::assets::{DESCENT_PATH, STYLESHEET_PATH, SURFACE_PATH};
+use super::visitor::SignedIn;
+use super::{Instance, WebError};
+use crate::store::groups::Membership;
+use crate::store::machines::Machine;
 use crate::store::users::User;
+
+/// What the sidebar offers, whatever page is open.
+///
+/// The tree is the same on every signed-in page, so it is read once here
+/// rather than by each page that remembers to, and a page that forgets
+/// cannot quietly serve a shorter one.
+#[derive(Debug, Default, Clone)]
+pub struct Workspace {
+    /// The groups this person belongs to.
+    pub groups: Vec<Membership>,
+    /// The machines they have connected, each with what it is waiting for
+    /// them to deal with.
+    pub machines: Vec<(Machine, usize)>,
+    /// Whether they may ask for a group at all.
+    pub may_ask: bool,
+}
+
+/// The shell for a page somebody is signed in to, with its tree read.
+pub async fn around(
+    instance: &Instance,
+    signed: &SignedIn,
+    title: impl Into<String>,
+) -> Result<Chrome, WebError> {
+    let policy = instance.policy().await?;
+    let name = super::front::instance_name(instance, &policy);
+
+    let user = signed.user.id.clone();
+    let groups = instance
+        .read(move |connection| crate::store::groups::for_user(connection, &user))
+        .await?;
+
+    let machines = super::machines::owned_by(instance, &signed.user.id).await?;
+
+    Ok(Chrome::anonymous(title, name)
+        .signed_in(signed.user.clone(), signed.maintainer)
+        .holding(Workspace {
+            groups,
+            machines,
+            may_ask: policy.group_requests_open,
+        }))
+}
 
 /// What the shell needs to know about this page.
 pub struct Chrome {
@@ -18,7 +62,9 @@ pub struct Chrome {
     /// What the instance calls itself.
     pub instance: String,
     /// Which destination is the current one.
-    pub current: &'static str,
+    pub current: String,
+    /// What the sidebar offers.
+    pub workspace: Workspace,
     /// Who is reading, when anybody is.
     pub visitor: Option<User>,
     /// Whether they operate this instance.
@@ -42,7 +88,8 @@ impl Chrome {
         Self {
             title: title.into(),
             instance: instance.into(),
-            current: "",
+            current: String::new(),
+            workspace: Workspace::default(),
             visitor: None,
             maintainer: false,
             registration_open: false,
@@ -71,8 +118,14 @@ impl Chrome {
     }
 
     /// Marks which destination this page is.
-    pub fn at(mut self, current: &'static str) -> Self {
-        self.current = current;
+    pub fn at(mut self, current: impl Into<String>) -> Self {
+        self.current = current.into();
+        self
+    }
+
+    /// Gives the shell the tree to draw.
+    pub fn holding(mut self, workspace: Workspace) -> Self {
+        self.workspace = workspace;
         self
     }
 
@@ -152,9 +205,9 @@ fn masthead(chrome: &Chrome) -> Markup {
                 nav class="nav" hidden[chrome.landing] {
                     @match &chrome.visitor {
                         Some(user) => {
-                            (destination("/", "Home", chrome.current))
+                            (destination("/", "Home", &chrome.current))
                             @if chrome.maintainer {
-                                (destination("/admin", "Admin", chrome.current))
+                                (destination("/admin", "Admin", &chrome.current))
                             }
                             span class="quiet identifier" { (user.id.to_string()) }
                             form method="post" action="/logout" {
@@ -162,9 +215,9 @@ fn masthead(chrome: &Chrome) -> Markup {
                             }
                         }
                         None if chrome.offer_ways_in => {
-                            (destination("/login", "Log in", chrome.current))
+                            (destination("/login", "Log in", &chrome.current))
                             @if chrome.registration_open {
-                                (destination("/register", "Create an account", chrome.current))
+                                (destination("/register", "Create an account", &chrome.current))
                             }
                         }
                         None => {}
@@ -176,7 +229,13 @@ fn masthead(chrome: &Chrome) -> Markup {
 }
 
 /// The product's persistent navigation.
+///
+/// Every destination in it is a page of its own. Groups and machines are
+/// the two trees somebody actually works in, so they hang open under their
+/// heading rather than sending the reader to a list to pick from.
 fn sidebar(chrome: &Chrome) -> Markup {
+    let workspace = &chrome.workspace;
+
     html! {
         aside class="sidebar" {
             a class="wordmark" href="/" {
@@ -186,16 +245,66 @@ fn sidebar(chrome: &Chrome) -> Markup {
             p class="sidebar__instance" { (chrome.instance) }
             nav class="sidebar__nav" aria-label="Workspace" {
                 p class="sidebar__label" { "Workspace" }
-                (destination("/", "Overview", chrome.current))
-                (destination("/#groups", "Groups", chrome.current))
-                (destination("/#machines", "Machines", chrome.current))
-                (destination("/#reviews", "Reviews", chrome.current))
+                (destination("/", "Overview", &chrome.current))
+
+                details class="tree" data-empty[workspace.groups.is_empty()]
+                        open[!workspace.groups.is_empty() || in_a_group(&chrome.current)] {
+                    summary class="tree__head" { "Groups" }
+                    div class="tree__body" {
+                        @for membership in &workspace.groups {
+                            (destination(
+                                &format!("/g/{}", membership.group.slug()),
+                                &membership.group.name,
+                                &chrome.current,
+                            ))
+                        }
+                        @if workspace.groups.is_empty() {
+                            @if workspace.may_ask {
+                                a class="tree__add" href="/groups/new" {
+                                    span class="tree__plus" aria-hidden="true" { "+" }
+                                    span { "Request a group" }
+                                }
+                            } @else {
+                                p class="tree__empty" { "No groups yet." }
+                            }
+                        }
+                    }
+                }
+
+                details class="tree" data-empty[workspace.machines.is_empty()]
+                        open[!workspace.machines.is_empty()] {
+                    summary class="tree__head" { "Machines" }
+                    div class="tree__body" {
+                        @for (machine, owed) in &workspace.machines {
+                            (waypoint(
+                                &format!("/machines/{}", machine.id),
+                                &machine.label,
+                                *owed,
+                                &chrome.current,
+                            ))
+                        }
+                        @if workspace.machines.is_empty() {
+                            p class="tree__empty" {
+                                "No machines connected."
+                            }
+                        }
+                    }
+                }
             }
             div class="sidebar__aside" {
                 p { (chrome.instance) }
             }
         }
     }
+}
+
+/// Whether the reader is somewhere inside a group.
+///
+/// A line, a vault and the form that asks for a group are all group work,
+/// so the groups tree arrives open even when there is nothing in it yet
+/// and the only thing under it is the way to make one.
+fn in_a_group(current: &str) -> bool {
+    current.starts_with("/g/") || current == "/groups/new"
 }
 
 /// Account and instance controls stay above the current workspace.
@@ -208,7 +317,7 @@ fn topbar(chrome: &Chrome) -> Markup {
             }
             nav class="topbar__actions" aria-label="Account" {
                 @if chrome.maintainer {
-                    (destination("/admin", "Admin", chrome.current))
+                    (destination("/admin", "Admin", &chrome.current))
                 }
                 @if let Some(user) = &chrome.visitor {
                     span class="avatar" aria-hidden="true" {
@@ -222,6 +331,21 @@ fn topbar(chrome: &Chrome) -> Markup {
                 form method="post" action="/logout" {
                     button class="button button--quiet" type="submit" { "Log out" }
                 }
+            }
+        }
+    }
+}
+
+/// One place to go, with what is waiting there.
+///
+/// A count is only ever on a decision somebody owes, never on the state of
+/// the mathematics, so a machine with nothing to answer carries nothing.
+fn waypoint(href: &str, words: &str, owed: usize, current: &str) -> Markup {
+    html! {
+        a href=(href) aria-current=[(href == current).then_some("page")] {
+            span { (words) }
+            @if owed > 0 {
+                span class="count" aria-label={ (owed) " to deal with" } { (owed) }
             }
         }
     }

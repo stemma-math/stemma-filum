@@ -39,16 +39,13 @@ pub async fn request_form(
     signed: SignedIn,
 ) -> Result<Response, WebError> {
     let policy = instance.policy().await?;
+    let chrome = chrome(&instance, &signed).await?;
 
     if !policy.group_requests_open {
-        return Ok(page(&chrome(&instance, &policy, &signed), closed()).into_response());
+        return Ok(page(&chrome, closed()).into_response());
     }
 
-    Ok(page(
-        &chrome(&instance, &policy, &signed),
-        form(&signed, None, None),
-    )
-    .into_response())
+    Ok(page(&chrome, form(&signed, None, None)).into_response())
 }
 
 /// Records a request.
@@ -60,18 +57,16 @@ pub async fn request(
     signed.check_form(&asked.form_token)?;
 
     let policy = instance.policy().await?;
+    let chrome = chrome(&instance, &signed).await?;
 
     if !policy.group_requests_open {
-        return Ok(page(&chrome(&instance, &policy, &signed), closed()).into_response());
+        return Ok(page(&chrome, closed()).into_response());
     }
 
     let refuse = |problem: String, asked: &Asked| {
         (
             axum::http::StatusCode::UNPROCESSABLE_ENTITY,
-            page(
-                &chrome(&instance, &policy, &signed),
-                form(&signed, Some(&problem), Some(asked)),
-            ),
+            page(&chrome, form(&signed, Some(&problem), Some(asked))),
         )
             .into_response()
     };
@@ -117,16 +112,12 @@ pub async fn request(
 }
 
 /// The shell these pages are drawn in.
-fn chrome(
-    instance: &Instance,
-    policy: &crate::store::settings::Policy,
-    signed: &SignedIn,
-) -> Chrome {
-    Chrome::anonymous(
-        "Request a research group",
-        super::front::instance_name(instance, policy),
+async fn chrome(instance: &Instance, signed: &SignedIn) -> Result<Chrome, WebError> {
+    Ok(
+        super::layout::around(instance, signed, "Request a research group")
+            .await?
+            .at("/groups/new"),
     )
-    .signed_in(signed.user.clone(), signed.maintainer)
 }
 
 /// The form itself.
@@ -244,12 +235,9 @@ pub async fn space(
         return Err(WebError::NotFound);
     };
 
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        group.name.clone(),
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, group.name.clone())
+        .await?
+        .at(format!("/g/{}", group.slug()));
     let work = read_work(&instance, &group, &signed).await?;
     let (offers, queue) = read_machines(&instance, &group, &signed).await?;
 
@@ -356,11 +344,9 @@ pub async fn invite(
     let work = read_work(&instance, &group, &signed).await?;
     let (offers, queue) = read_machines(&instance, &group, &signed).await?;
 
-    let chrome = Chrome::anonymous(
-        group.name.clone(),
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, group.name.clone())
+        .await?
+        .at(format!("/g/{}", group.slug()));
 
     Ok(page(
         &chrome,

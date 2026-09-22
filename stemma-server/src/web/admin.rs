@@ -310,6 +310,7 @@ fn trimmed(value: &str) -> Option<String> {
 fn chrome(instance: &Instance, policy: &Policy, signed: &SignedIn, title: &str) -> Chrome {
     Chrome::anonymous(title, super::front::instance_name(instance, policy))
         .signed_in(signed.user.clone(), signed.maintainer)
+        .at("/admin")
 }
 
 /// The form that asks for the password again.

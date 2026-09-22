@@ -1632,6 +1632,102 @@ html.surface-pending .auth-page .surface-transition,
     box-shadow: 0 0 8px var(--blue);
 }
 
+/* The two trees.
+ *
+ * Groups and machines are where the work actually is, so they hang open in
+ * the bar rather than behind a list to pick from. A `details` is the whole
+ * mechanism: it opens with no JavaScript, and the page that is inside one
+ * is served with it already open. */
+.tree summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 9px;
+    color: rgb(228 238 255 / 72%);
+    cursor: pointer;
+    list-style: none;
+}
+
+.tree summary::-webkit-details-marker { display: none; }
+
+.tree summary:hover { color: #fff; background: rgb(132 180 247 / 14%); }
+
+/* The disclosure arrow, drawn rather than typed: a glyph from the font
+ * would sit on the font's baseline and turn about the wrong point. */
+.tree summary::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 4px solid currentColor;
+    border-top: 3.5px solid transparent;
+    border-bottom: 3.5px solid transparent;
+    transition: transform .16s ease;
+}
+
+.tree[open] > summary::before { transform: rotate(90deg); }
+
+/* A heading with nothing under it is still a destination somebody can
+ * fill, so it is dimmed rather than taken away. */
+.tree[data-empty] > summary { color: rgb(228 238 255 / 38%); }
+
+.tree__body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px 0 6px 18px;
+    padding-left: 10px;
+    border-left: 1px solid rgb(197 220 255 / 14%);
+}
+
+.tree__body a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: rgb(228 238 255 / 66%);
+    text-decoration: none;
+}
+
+.tree__body a:hover,
+.tree__body a[aria-current="page"] {
+    color: #fff;
+    background: rgb(132 180 247 / 14%);
+}
+
+.tree__body .count {
+    color: #cfe2ff;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: rgb(132 180 247 / 22%);
+}
+
+.tree__empty {
+    padding: 7px 10px;
+    font-size: 12px;
+    color: rgb(196 218 251 / 40%);
+}
+
+.tree__add { color: rgb(169 206 255 / 82%) !important; }
+
+.tree__plus {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    margin-right: 6px;
+    border: 1px dashed rgb(169 206 255 / 45%);
+    border-radius: 5px;
+    font-size: 11px;
+    line-height: 1;
+}
+
+.tree__add span:last-child { margin-right: auto; }
+
 .sidebar__aside {
     margin-top: auto;
     padding: 16px 10px 0;
@@ -1756,6 +1852,128 @@ html.surface-pending .auth-page .surface-transition,
  * hero was the one card that could give, and every card added below it
  * took another slice off its words. The sheet scrolls instead. */
 .product-page .sheet > * { flex-shrink: 0; }
+
+/* Group cards.
+ *
+ * A card is the unit somebody is choosing between, so it carries what the
+ * group is for and what it has shared. The whole card is the link: a card
+ * with a button in its corner asks the reader to find the button. */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    gap: 14px;
+}
+
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 13rem;
+    padding: 18px;
+    border: 1px solid var(--rule-soft);
+    border-radius: 13px;
+    background: var(--paper);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease;
+}
+
+.card:hover {
+    border-color: rgb(96 152 236 / 48%);
+    box-shadow: 0 8px 22px rgb(25 53 84 / 9%);
+    transform: translateY(-1px);
+}
+
+.card__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.card__name {
+    font-family: var(--grotesk);
+    font-size: var(--step-3);
+    font-weight: 500;
+    letter-spacing: -.01em;
+}
+
+.card__role {
+    font-size: var(--step-1);
+    color: var(--ink-3);
+}
+
+.card__about {
+    color: var(--ink-2);
+    font-size: var(--step-2);
+}
+
+.card__lines {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-soft);
+}
+
+.card__register {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.card__register li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: var(--step-2);
+}
+
+.card__line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card__register .quiet {
+    font-size: var(--step-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.card__enter {
+    margin-top: 12px;
+    color: var(--ditto);
+    font-size: var(--step-2);
+}
+
+.card__enter::after { content: " \2192"; }
+
+/* The card that makes a group: dashed, because it is an outline of one
+ * rather than one. */
+.card--new {
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    border-style: dashed;
+    background: none;
+    color: var(--ink-2);
+}
+
+.card__plus {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border: 1px dashed var(--rule);
+    border-radius: 11px;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--ditto);
+}
 
 .register li {
     padding: 14px 8px;

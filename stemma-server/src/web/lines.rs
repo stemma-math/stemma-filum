@@ -20,7 +20,7 @@ use stemma_core::model::BoxState;
 use stemma_core::repository::Side;
 
 use super::jobs::Offer;
-use super::layout::{Chrome, page, signature};
+use super::layout::{page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::artefacts::Shelf;
@@ -56,7 +56,6 @@ pub async fn view(
         None => Nodes::new(group.id.clone(), side, String::new()),
     };
 
-    let policy = instance.policy().await?;
     let offers = super::jobs::offers(&instance, &group.id).await?;
     let bridges = {
         let id = group.id.clone();
@@ -98,12 +97,10 @@ pub async fn view(
             .read(move |connection| claims::holder(connection, &id, side, name.as_str(), &owner))
             .await?
     };
-    let chrome = Chrome::anonymous(
-        digest.shown_as().to_owned(),
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer)
-    .drawing();
+    let chrome = super::layout::around(&instance, &signed, digest.shown_as().to_owned())
+        .await?
+        .at(format!("/g/{}", group.slug()))
+        .drawing();
 
     let launchers = Anchored {
         signed: &signed,

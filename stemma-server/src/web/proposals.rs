@@ -19,7 +19,7 @@ use stemma_core::id::ProposalId;
 use stemma_core::repository::{self, Side};
 
 use super::api::Credential;
-use super::layout::{Chrome, page, signature};
+use super::layout::{page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::proposals;
@@ -41,12 +41,9 @@ pub async fn review(
     }
 
     let stands = against(&instance, &proposal).await;
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        "Review a proposal",
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, "Review a proposal")
+        .await?
+        .at("/");
 
     Ok(page(&chrome, body(&signed, &proposal, stands.as_deref())).into_response())
 }

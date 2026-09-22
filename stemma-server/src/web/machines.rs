@@ -18,7 +18,7 @@ use stemma_core::id::{GroupId, JobId, MachineId, Slug};
 use stemma_core::machine::{Detected, Presence};
 
 use super::api::Credential;
-use super::layout::{Chrome, page, signature};
+use super::layout::{page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::{self, Group};
@@ -225,13 +225,9 @@ pub async fn panel(
         })
         .await?;
 
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        machine.label.clone(),
-        super::front::instance_name(&instance, &policy),
-    )
-    .at("/")
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, machine.label.clone())
+        .await?
+        .at(format!("/machines/{}", machine.id));
 
     let groups: Vec<(Group, bool)> = memberships
         .into_iter()
@@ -487,41 +483,6 @@ fn job_list(signed: &SignedIn, machine: &Machine, ran: &[jobs::Job], owed: usize
                                     button class="button button--quiet" type="submit" {
                                         "I have dealt with it"
                                     }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// How somebody's machines read on their own home page.
-pub fn summary(machines: &[(Machine, usize)]) -> Markup {
-    html! {
-        div class="block" {
-            p class="label" { "Your machines" }
-
-            @if machines.is_empty() {
-                p class="empty" {
-                    "No machines are connected. Run " code { "stemma login" }
-                    " and then " code { "stemma node init" } " on a machine to add it."
-                }
-            } @else {
-                ul class="register" {
-                    @for (machine, owed) in machines {
-                        li {
-                            span class="register__name" {
-                                a href={ "/machines/" (machine.id) } { (machine.label) }
-                            }
-                            // A sleeping machine is an ordinary state and
-                            // not a fault, so it is the word and nothing
-                            // else.
-                            span class="quiet" { (machine.presence) }
-                            span class="register__aside" {
-                                @if *owed > 0 {
-                                    span class="count" { (owed) " to deal with" }
                                 }
                             }
                         }

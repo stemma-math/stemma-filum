@@ -13,7 +13,7 @@ use stemma_core::model::Correspondence;
 use stemma_core::vault::{Bridge, BridgeKind, DownstreamDecision, Entry};
 
 use super::api::Credential;
-use super::layout::{Chrome, page, signature};
+use super::layout::{page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::{groups, vault};
@@ -275,12 +275,9 @@ pub async fn page_view(
             ))
         })
         .await?;
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        format!("{} vault", group.name),
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, format!("{} vault", group.name))
+        .await?
+        .at(format!("/g/{}", group.slug()));
     Ok(page(
         &chrome,
         body(&signed, &group.name, &slug, &entries, &bridges),

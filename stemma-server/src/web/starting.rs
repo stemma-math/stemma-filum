@@ -20,7 +20,7 @@ use stemma_core::id::{GroupId, Slug};
 use stemma_core::line::{Line, Name, NodeKind};
 use stemma_core::repository::{self, Side};
 
-use super::layout::{Chrome, page, signature};
+use super::layout::{page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::{self, Group};
@@ -64,12 +64,9 @@ pub async fn form(
     Path(slug): Path<String>,
 ) -> Result<Response, WebError> {
     let group = admit(&instance, &signed, &slug).await?;
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        "New line".to_owned(),
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, "New line")
+        .await?
+        .at(format!("/g/{}", group.slug()));
 
     Ok(page(&chrome, asked(&signed, &group, None, None)).into_response())
 }
@@ -103,12 +100,9 @@ pub async fn start(
             Ok(Redirect::to(&format!("/g/{}/{}/{}", group.slug(), side, name)).into_response())
         }
         Err(WebError::BadRequest(problem)) => {
-            let policy = instance.policy().await?;
-            let chrome = Chrome::anonymous(
-                "New line".to_owned(),
-                super::front::instance_name(&instance, &policy),
-            )
-            .signed_in(signed.user.clone(), signed.maintainer);
+            let chrome = super::layout::around(&instance, &signed, "New line")
+                .await?
+                .at(format!("/g/{}", group.slug()));
 
             Ok(page(&chrome, asked(&signed, &group, Some(&problem), Some(&form))).into_response())
         }
@@ -225,12 +219,9 @@ pub async fn share_form(
     };
 
     let source = mine(&instance, &signed.user, &group.id, &name).await?;
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        format!("Share {name}"),
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, format!("Share {name}"))
+        .await?
+        .at(format!("/g/{}", group.slug()));
 
     let held = held_back(&instance, &group.id, &source).await?;
 
@@ -269,12 +260,9 @@ pub async fn share(
         Err(WebError::BadRequest(problem)) => {
             let source = mine(&instance, &signed.user, &group.id, &name).await?;
             let held = held_back(&instance, &group.id, &source).await?;
-            let policy = instance.policy().await?;
-            let chrome = Chrome::anonymous(
-                format!("Share {name}"),
-                super::front::instance_name(&instance, &policy),
-            )
-            .signed_in(signed.user.clone(), signed.maintainer);
+            let chrome = super::layout::around(&instance, &signed, format!("Share {name}"))
+                .await?
+                .at(format!("/g/{}", group.slug()));
 
             Ok(page(
                 &chrome,

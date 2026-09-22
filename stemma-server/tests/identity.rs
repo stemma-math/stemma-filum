@@ -70,7 +70,9 @@ async fn registering_creates_the_account_and_signs_the_person_in() {
     let home = harness.get("/").await;
     assert!(home.says("Ana Ferrer"));
     assert!(home.says("usr:ana"));
-    assert!(home.says("You have not joined a research group yet"));
+    // No groups yet, so the only card on the overview is the one that
+    // makes one.
+    assert!(home.says("Request a research group"));
 }
 
 #[tokio::test]

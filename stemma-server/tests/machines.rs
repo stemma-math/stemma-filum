@@ -387,10 +387,12 @@ async fn a_machine_that_could_not_try_says_so_on_the_machine() {
     assert!(panel.says("is not signed in on this machine"));
     assert!(panel.says("I have dealt with it"));
 
-    // The group is told the typed reason and nothing about the account.
+    // The group is told the typed reason, and the decision stays on the
+    // machine: the count travels with its owner in their own bar, and the
+    // thing to do about it is offered nowhere else.
     let space = harness.get("/g/algebra").await;
     assert!(space.says("is not signed in on this machine"));
-    assert!(!space.says("to deal with"));
+    assert!(!space.says("I have dealt with it"));
 
     harness
         .post(

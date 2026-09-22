@@ -37,7 +37,7 @@ pub async fn door(
     let policy = instance.policy().await?;
     let name = instance_name(&instance, &policy);
 
-    let chrome = Chrome::anonymous("Front door", &name)
+    let chrome = Chrome::anonymous("Home", &name)
         .registration(policy.registration_open)
         .landing();
 

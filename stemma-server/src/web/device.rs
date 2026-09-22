@@ -13,7 +13,7 @@ use maud::{Markup, html};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::layout::{Chrome, page, signature};
+use super::layout::{page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::devices::{self, Collected, Grant};
@@ -147,12 +147,7 @@ pub async fn form(
     signed: SignedIn,
     Query(typed): Query<Typed>,
 ) -> Result<Response, WebError> {
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        "Sign a machine in",
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, "Sign a machine in").await?;
 
     let Some(code) = typed.code else {
         return Ok(page(&chrome, ask(&signed, "", None)).into_response());
@@ -176,12 +171,7 @@ pub async fn answer(
 ) -> Result<Response, WebError> {
     signed.check_form(&answer.form_token)?;
 
-    let policy = instance.policy().await?;
-    let chrome = Chrome::anonymous(
-        "Sign a machine in",
-        super::front::instance_name(&instance, &policy),
-    )
-    .signed_in(signed.user.clone(), signed.maintainer);
+    let chrome = super::layout::around(&instance, &signed, "Sign a machine in").await?;
 
     let Some(grant) = found(&instance, &answer.code).await? else {
         return Ok((
