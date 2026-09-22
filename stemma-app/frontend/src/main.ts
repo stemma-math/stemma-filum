@@ -53,7 +53,18 @@ type Moved = { change: "added" | "removed" | "kept"; text: string; before: numbe
 type Review = { proposal: string; group: string; side: string; line: string; task: string; agent: string; vendor: string; model: string; prompt_revision: string; state: string; extent: string; rows: Moved[]; source: string; lean_source: string | null; findings: string[] };
 type Vault = { entries: { id: string; siglum: string; name: string; correspondence: string }[]; bridges: { id: string; left: string; right: string; kind: string; correspondence: string; derived: boolean }[] };
 
-type View = "lines" | "editor" | "review" | "machine" | "vault";
+/// What fills the middle of the window.
+///
+/// One of these at a time, and a line is the ordinary one: the rest are
+/// the places you pass through on the way to writing one.
+type Stage = "welcome" | "editor" | "new-line" | "vault";
+
+/// What the settings window is showing.
+///
+/// Settings is where the machine is set up and the work it did is judged.
+/// Neither is mathematics, and neither belongs in the rail beside the
+/// lines, so both live behind one door that opens over everything.
+type Panel = "machine" | "reviews" | "account";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const RENEW = 5 * 60 * 1000;
@@ -68,7 +79,10 @@ const vaultRequest = latestRequest();
 let renewalTimer = 0;
 let signInTimer = 0;
 let signed: Signed | null = null;
-let view: View = "lines";
+let stage: Stage = "welcome";
+let panel: Panel | null = null;
+let group: string | null = null;
+let allGroups: string[] = [];
 let known: Known[] = [];
 let waiting: Waiting[] = [];
 let reading: Review | null = null;
@@ -108,74 +122,228 @@ function say(selector: string, message: string) { const target = document.queryS
 
 /* ── The shell ─────────────────────────────────────────────────────── */
 
+/// The window: a bar across the top, the rail of lines, and the stage.
+///
+/// Drawn once per sign-in rather than per view. What changes as somebody
+/// works is the rail's contents and the stage, and redrawing the frame
+/// around them would throw away the scroll position of a list they are
+/// reading.
 function shell() {
-  const count = waiting.length ? ` <span class="count">${waiting.length}</span>` : "";
-  const title = view === "editor" ? current?.entry.name ?? "Editor" : view === "lines" ? "Lines" : view === "review" ? "Review" : view === "machine" ? "This machine" : "Vault";
-  const initial = signed?.user.trim().charAt(0).toUpperCase() || "S";
+  const initial = shortName(signed?.user).charAt(0).toUpperCase() || "S";
   app.innerHTML = `<div class="app-shell">
-    <aside class="app-sidebar">
+    <header class="topbar">
       ${brand()}
-      <p class="instance-name">${signed ? escape(signed.server) : ""}</p>
-      <nav aria-label="Workspace">
-        <span class="nav-label">Workspace</span>
-        <button data-view="lines"${view === "lines" || view === "editor" ? ' class="here"' : ""}><span class="nav-icon">L</span><span>Lines</span></button>
-        <button data-view="review"${view === "review" ? ' class="here"' : ""}><span class="nav-icon">R</span><span>Review${count}</span></button>
-        <button data-view="vault"${view === "vault" ? ' class="here"' : ""}><span class="nav-icon">V</span><span>Vault</span></button>
-        <span class="nav-label nav-label--system">System</span>
-        <button data-view="machine"${view === "machine" ? ' class="here"' : ""}><span class="nav-icon">M</span><span>This machine</span></button>
-      </nav>
-    </aside>
-    <section class="app-workspace">
-      <header class="app-topbar">
-        <div><span class="topbar-eyebrow">Workspace</span><strong>${escape(title)}</strong></div>
-        <span class="spacer"></span>
-        <button id="sync" class="sync-button"><span class="status-dot"></span>Sync</button>
-        <span class="avatar" aria-hidden="true">${escape(initial)}</span>
-        <span id="who" class="identity">${signed ? escape(signed.user) : ""}<small>${signed ? escape(signed.server) : ""}</small></span>
-        <button id="sign-out" class="quiet-button">Sign out</button>
-      </header>
-      <div id="said" hidden></div>
-      <div id="body"></div>
-    </section>
+      <span class="topbar__where" id="where"></span>
+      <span class="spacer"></span>
+      <button id="sync" class="ghost" title="Bring this machine into step with the instance"><span class="status-dot"></span>Sync</button>
+      <button id="settings" class="ghost">Settings<span id="settings-count"></span></button>
+      <button id="account" class="account"><span class="avatar" aria-hidden="true">${escape(initial)}</span><span class="identity">${signed ? escape(signed.user) : ""}<small>${signed ? escape(signed.server) : ""}</small></span></button>
+    </header>
+    <div class="app-main">
+      <aside class="rail">
+        <button id="switch-group" class="rail__group" aria-haspopup="menu" aria-expanded="false">
+          <span class="rail__group-name" id="group-name"></span>
+          <span class="rail__chevron" aria-hidden="true"></span>
+        </button>
+        <div id="group-menu" class="menu" role="menu" hidden></div>
+        <div class="rail__body" id="rail-lines"></div>
+        <div class="rail__foot">
+          <button id="go-vault" class="rail__entry"><span class="rail__entry-mark" aria-hidden="true">§</span>Definitions</button>
+        </div>
+      </aside>
+      <section class="stage" id="stage"></section>
+    </div>
+    <div id="said" hidden></div>
+    <div id="scrim" class="scrim" hidden></div>
   </div>`;
 
-  app.querySelectorAll<HTMLButtonElement>("nav button").forEach((button) => button.onclick = () => go(button.dataset.view as View));
   document.querySelector<HTMLButtonElement>("#sync")!.onclick = bringIntoStep;
-  document.querySelector<HTMLButtonElement>("#sign-out")!.onclick = async () => {
-    try {
-      await flushEdits();
-      await invoke("sign_out");
-      window.clearInterval(renewalTimer);
-      window.clearTimeout(saveTimer);
-      window.clearTimeout(previewTimer);
-      current = null;
-      writing = false;
-      signed = null;
-      await boot();
-    } catch (error) { tell(said(error)); }
+  document.querySelector<HTMLButtonElement>("#settings")!.onclick = () => openPanel("machine");
+  document.querySelector<HTMLButtonElement>("#account")!.onclick = () => openPanel("account");
+  document.querySelector<HTMLButtonElement>("#switch-group")!.onclick = toggleGroupMenu;
+  document.querySelector<HTMLButtonElement>("#go-vault")!.onclick = () => goTo("vault");
+  document.querySelector<HTMLDivElement>("#scrim")!.onclick = (event) => {
+    if (event.target === event.currentTarget) closePanel();
   };
+  countWaiting();
 }
 
-function body() { return document.querySelector<HTMLDivElement>("#body")!; }
+function stageOf() { return document.querySelector<HTMLDivElement>("#stage")!; }
 
-async function go(next: View) {
-  if (view === "editor" && next !== "editor") {
-    try { await flushEdits(); } catch (error) { tell(said(error)); return; }
-    window.clearTimeout(saveTimer);
-    window.clearTimeout(previewTimer);
-    await record();
-    writing = false;
+/// A person's name out of their identifier.
+///
+/// `usr:mario` is what the instance calls them and `mario` is what they
+/// are called, which is what belongs on an avatar: an identifier's first
+/// letter is the first letter of the word `usr`, the same for everybody.
+function shortName(id: string | undefined) {
+  return (id ?? "").trim().split(":").pop() ?? "";
+}
+
+/// What a line is called.
+///
+/// The opened line carries what it is, and the listing carries what it
+/// is called: a heading somebody wrote. Where there is no heading yet,
+/// the directory name is the honest answer.
+function titleOf(entry: Entry) {
+  return known.find((line) => line.path === entry.path)?.title ?? entry.name;
+}
+
+/// What the bar says you are looking at.
+function nameTheView() {
+  const where = document.querySelector<HTMLSpanElement>("#where");
+  if (!where) return;
+  const words = stage === "editor" ? (current ? titleOf(current.entry) : "Editor")
+    : stage === "vault" ? "Definitions"
+    : stage === "new-line" ? "New line"
+    : signed?.server ?? "";
+  where.textContent = words;
+}
+
+/* ── The rail ──────────────────────────────────────────────────────── */
+
+/// Every group this machine has, and the one being worked in.
+///
+/// The rail is about one group at a time. Somebody who belongs to three
+/// is writing in one of them, and showing all three at once would ask
+/// them to read past two before finding the line they came for.
+async function loadGroups() {
+  try { allGroups = await invoke<string[]>("groups"); } catch { allGroups = []; }
+  if (group && !allGroups.includes(group)) group = null;
+  if (!group) group = allGroups[0] ?? null;
+}
+
+async function loadLines() {
+  try { known = await invoke<Known[]>("lines"); } catch (error) { tell(said(error)); known = []; }
+}
+
+/// The rail's contents: the group, then its lines by who can see them.
+function drawRail() {
+  const name = document.querySelector<HTMLSpanElement>("#group-name");
+  if (name) name.textContent = group ?? "No group";
+  const target = document.querySelector<HTMLDivElement>("#rail-lines");
+  if (!target) return;
+
+  if (!group) {
+    target.innerHTML = `<p class="rail__empty">No groups are on this machine yet. Sync to bring them here.</p>`;
+    return;
+  }
+
+  const mine = known.filter((line) => line.group === group && line.side === "private");
+  const ours = known.filter((line) => line.group === group && line.side !== "private");
+  const here = current?.entry.path;
+
+  const list = (lines: Known[]) => lines.map((line) => `<button class="line${line.path === here ? " line--here" : ""}" data-open="${escape(line.path)}">
+    <span class="line__name">${escape(line.title ?? line.name)}</span>
+    ${line.question ? `<span class="line__question">${escape(line.question)}</span>` : ""}
+  </button>`).join("");
+
+  target.innerHTML = `<button id="start-line" class="rail__entry rail__entry--make"><span class="rail__entry-mark" aria-hidden="true">+</span>New line</button>
+    <p class="rail__label">Yours alone</p>
+    ${mine.length ? list(mine) : `<p class="rail__empty">Nothing of your own here yet.</p>`}
+    <p class="rail__label">Shared with the group</p>
+    ${ours.length ? list(ours) : `<p class="rail__empty">Nothing has been shared yet.</p>`}`;
+
+  target.querySelectorAll<HTMLButtonElement>("[data-open]").forEach((button) => {
+    button.onclick = () => open(button.dataset.open!);
+  });
+  document.querySelector<HTMLButtonElement>("#start-line")!.onclick = () => goTo("new-line");
+}
+
+/// Marks the open line without redrawing the rail under the pointer.
+function markOpenLine() {
+  const here = current?.entry.path;
+  document.querySelectorAll<HTMLButtonElement>("#rail-lines .line").forEach((button) => {
+    button.classList.toggle("line--here", button.dataset.open === here);
+  });
+}
+
+function toggleGroupMenu() {
+  const menu = document.querySelector<HTMLDivElement>("#group-menu");
+  const button = document.querySelector<HTMLButtonElement>("#switch-group");
+  if (!menu || !button) return;
+  if (!menu.hidden) { closeGroupMenu(); return; }
+
+  menu.innerHTML = allGroups.length
+    ? allGroups.map((one) => `<button role="menuitem" data-group="${escape(one)}"${one === group ? ' class="here"' : ""}>${escape(one)}</button>`).join("")
+    : `<p class="rail__empty">No groups on this machine.</p>`;
+  menu.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  menu.querySelectorAll<HTMLButtonElement>("[data-group]").forEach((item) => {
+    item.onclick = () => { closeGroupMenu(); void chooseGroup(item.dataset.group!); };
+  });
+  window.setTimeout(() => document.addEventListener("pointerdown", awayFromMenu), 0);
+}
+
+function closeGroupMenu() {
+  const menu = document.querySelector<HTMLDivElement>("#group-menu");
+  if (menu) menu.hidden = true;
+  document.querySelector<HTMLButtonElement>("#switch-group")?.setAttribute("aria-expanded", "false");
+  document.removeEventListener("pointerdown", awayFromMenu);
+}
+
+function awayFromMenu(event: PointerEvent) {
+  const menu = document.querySelector<HTMLDivElement>("#group-menu");
+  const button = document.querySelector<HTMLButtonElement>("#switch-group");
+  const at = event.target as HTMLElement;
+  if (menu?.contains(at) || button?.contains(at)) return;
+  closeGroupMenu();
+}
+
+/// Moves to another group, leaving the line you were writing behind.
+///
+/// The open line belongs to the group it is in, so changing group puts
+/// it away — but only after what is in the editor is on the disk and in
+/// the history, the same as any other way of leaving a line.
+async function chooseGroup(next: string) {
+  if (next === group) return;
+  if (stage === "editor") { if (!await leaveEditor()) return; }
+  group = next;
+  current = null;
+  drawRail();
+  await goTo("welcome");
+}
+
+/* ── Moving about ──────────────────────────────────────────────────── */
+
+/// Puts the open line down: on the disk, then in the history.
+///
+/// Returns whether it worked. A line whose last edits could not be
+/// saved is not left behind quietly.
+async function leaveEditor(): Promise<boolean> {
+  try { await flushEdits(); } catch (error) { tell(said(error)); return false; }
+  window.clearTimeout(saveTimer);
+  window.clearTimeout(previewTimer);
+  await record();
+  writing = false;
+  return true;
+}
+
+async function goTo(next: Stage) {
+  if (stage === "editor" && next !== "editor") {
+    if (!await leaveEditor()) return;
+    current = null;
   }
   openRequest();
-  reviewRequest();
   vaultRequest();
-  view = next;
-  shell();
-  if (next === "lines") await drawLines();
+  stage = next;
+  nameTheView();
+  markOpenLine();
+  if (next === "welcome") drawWelcome();
   if (next === "editor") drawEditor();
-  if (next === "review") await drawReview();
-  if (next === "machine") await drawMachine();
+  if (next === "new-line") await drawNewLine();
   if (next === "vault") await drawVault();
+}
+
+/// The stage before a line is open.
+function drawWelcome() {
+  stageOf().innerHTML = `<div class="welcome">
+    <div class="welcome__mark">${brandMark()}</div>
+    <p class="welcome__group">${group ? escape(group) : "No group"}</p>
+    <p class="quiet">${group ? "Choose a line on the left, or start one." : "Sync this machine to bring your groups here."}</p>
+    ${group ? `<button id="welcome-start" class="primary">Start a line</button>` : ""}
+  </div>`;
+  const start = document.querySelector<HTMLButtonElement>("#welcome-start");
+  if (start) start.onclick = () => goTo("new-line");
 }
 
 /* ── Signing in ────────────────────────────────────────────────────── */
@@ -230,71 +398,56 @@ async function beginSignIn(server: string) {
   signInTimer = window.setTimeout(poll, Math.max(2, beginning.interval) * 1000);
 }
 
-/* ── Lines ─────────────────────────────────────────────────────────── */
-
-async function drawLines() {
-  const target = body();
-  target.innerHTML = `<div class="sheet"><section><p class="label">Lines on this machine</p><div id="known">Loading...</div></section><section id="new-line"></section></div>`;
-  await drawNewLine();
-  if (!target.isConnected) return;
-  try { known = await invoke<Known[]>("lines"); } catch (error) { say("#known", said(error)); return; }
-  if (!target.isConnected) return;
-  const listing = document.querySelector<HTMLDivElement>("#known");
-  if (!listing) return;
-  if (!known.length) { listing.innerHTML = `<p class="quiet">No lines are available. Create a line or sync with the instance.</p>`; return; }
-  listing.innerHTML = known.map((line) => `<div class="row">
-    <div>
-      <p class="row__name">${escape(line.title ?? line.name)}</p>
-      ${line.question ? `<p class="quiet">${escape(line.question)}</p>` : ""}
-      <p class="quiet identifier">${escape(line.group)} · ${escape(line.side === "private" ? "yours alone" : "shared")} · ${escape(line.name)}</p>
-    </div>
-    <div class="row__actions">
-      <button data-open="${escape(line.path)}">Open</button>
-      ${line.side === "private" ? `<button data-share="${escape(line.path)}">Share</button><button data-delete="${escape(line.path)}">Take out</button>` : ""}
-    </div>
-  </div>`).join("");
-  listing.querySelectorAll<HTMLButtonElement>("[data-open]").forEach((button) => button.onclick = () => open(button.dataset.open!));
-  listing.querySelectorAll<HTMLButtonElement>("[data-share]").forEach((button) => button.onclick = () => share(button.dataset.share!));
-  listing.querySelectorAll<HTMLButtonElement>("[data-delete]").forEach((button) => button.onclick = () => takeOut(button.dataset.delete!));
-}
+/* ── Starting a line ───────────────────────────────────────────────── */
 
 async function drawNewLine() {
-  const target = document.querySelector<HTMLElement>("#new-line")!;
-  let where: string[] = [];
-  try { where = await invoke<string[]>("groups"); } catch { where = []; }
-  if (!target.isConnected) return;
-  target.innerHTML = `<details class="starting"><summary>New line</summary>
-    ${where.length ? `<form id="start" class="stack">
-      <label>Group<select id="group">${where.map((group) => `<option>${escape(group)}</option>`).join("")}</select></label>
-      <label>Title<input type="text" id="title" required></label>
-      <label>The question<textarea id="question" rows="2" required></textarea>
+  const target = stageOf();
+  if (!group) { target.innerHTML = `<div class="pane"><p class="quiet">No groups are available on this machine.</p></div>`; return; }
+  target.innerHTML = `<div class="pane pane--narrow">
+    <h1>Start a line</h1>
+    <p class="quiet">A line is one question and the work of answering it. It begins on this machine.</p>
+    <form id="start" class="stack">
+      <label>Title<input type="text" id="title" required autofocus></label>
+      <label>The question<textarea id="question" rows="3" required></textarea>
         <span class="quiet">Describe the research question this line will address.</span></label>
       <fieldset><legend>Who can see it</legend>
         <label class="choice"><input type="radio" name="seen" value="me" checked><span>Only me</span></label>
-        <label class="choice"><input type="radio" name="seen" value="group"><span>The whole group</span></label>
+        <label class="choice"><input type="radio" name="seen" value="group"><span>Everybody in ${escape(group)}</span></label>
       </fieldset>
-      <button type="submit">Start the line</button>
-    </form>` : `<p class="quiet">No groups are available on this machine. Sync with the instance to update them.</p>`}</details>`;
-  const form = document.querySelector<HTMLFormElement>("#start");
-  if (!form) return;
-  form.onsubmit = async (event) => {
+      <div class="row__actions">
+        <button type="submit" class="primary">Start it</button>
+        <button type="button" id="not-now" class="quiet-button">Not now</button>
+      </div>
+    </form>
+  </div>`;
+  document.querySelector<HTMLButtonElement>("#not-now")!.onclick = () => goTo("welcome");
+  document.querySelector<HTMLFormElement>("#start")!.onsubmit = async (event) => {
     event.preventDefault();
-    const group = document.querySelector<HTMLSelectElement>("#group")!.value;
     const title = document.querySelector<HTMLInputElement>("#title")!.value;
     const question = document.querySelector<HTMLTextAreaElement>("#question")!.value;
     const shared = (document.querySelector<HTMLInputElement>('input[name="seen"]:checked')!).value === "group";
-    try { tell(await invoke<string>("new_line", { group, title, question, shared })); await bringIntoStep(); await go("lines"); }
-    catch (error) { tell(said(error)); }
+    try {
+      tell(await invoke<string>("new_line", { group, title, question, shared }));
+      await bringIntoStep();
+      await loadLines();
+      drawRail();
+      await goTo("welcome");
+    } catch (error) { tell(said(error)); }
   };
 }
 
-/// Sharing is a move, and it asks its two questions where the line is
-/// rather than in a dialogue box that says nothing about them.
+/* ── What the group sees of a line ─────────────────────────────────── */
+
+/// Sharing is a move, and it asks its two questions where the line is.
+///
+/// It belongs in the editor rather than beside a name in a list: what is
+/// being handed over is what is on the screen, and the decisions are
+/// about that text, not about a row.
 function share(path: string) {
-    const row = document.querySelector<HTMLElement>(`[data-share="${CSS.escape(path)}"]`)?.closest(".row");
-    if (!row || row.querySelector(".sharing")) return;
-    const panel = document.createElement("form");
-    panel.className = "sharing stack";
+  const host = document.querySelector<HTMLElement>("#privacy");
+  if (!host || host.querySelector(".sharing")) return;
+  const panel = document.createElement("form");
+  panel.className = "sharing stack";
   panel.innerHTML = `<p class="quiet">Move this line to the shared group repository.</p>
     <fieldset><legend>What the group sees of what you have written</legend>
       <label class="choice"><input type="radio" name="travels" value="today" checked><span>Today's state only</span></label>
@@ -305,21 +458,31 @@ function share(path: string) {
       <label class="choice"><input type="radio" name="writing" value="anyone"><span>Anybody in the group, one at a time</span></label>
     </fieldset>
     <div class="row__actions"><button type="submit">Move it to the group</button><button type="button" class="quiet-button">Not now</button></div>`;
-    row.append(panel);
-    panel.querySelector<HTMLButtonElement>("button.quiet-button")!.onclick = () => panel.remove();
-    panel.onsubmit = async (event) => {
-        event.preventDefault();
-        const history = (panel.querySelector<HTMLInputElement>('input[name="travels"]:checked')!).value === "everything";
-        const mine = (panel.querySelector<HTMLInputElement>('input[name="writing"]:checked')!).value === "author";
-        try { tell(await invoke<string>("share_line", { path, history, mineToWrite: mine })); await bringIntoStep(); await go("lines"); }
-        catch (error) { tell(said(error)); }
-    };
+  host.append(panel);
+  panel.querySelector<HTMLButtonElement>("button.quiet-button")!.onclick = () => panel.remove();
+  panel.onsubmit = async (event) => {
+    event.preventDefault();
+    const history = (panel.querySelector<HTMLInputElement>('input[name="travels"]:checked')!).value === "everything";
+    const mine = (panel.querySelector<HTMLInputElement>('input[name="writing"]:checked')!).value === "author";
+    try {
+      tell(await invoke<string>("share_line", { path, history, mineToWrite: mine }));
+      await bringIntoStep();
+      await loadLines();
+      drawRail();
+      await goTo("welcome");
+    } catch (error) { tell(said(error)); }
+  };
 }
 
 async function takeOut(path: string) {
   if (!window.confirm("Take this line out of your repository?\n\nEvery version of it stays in the history.")) return;
-  try { tell(await invoke<string>("delete_line", { path })); await bringIntoStep(); await go("lines"); }
-  catch (error) { tell(said(error)); }
+  try {
+    tell(await invoke<string>("delete_line", { path }));
+    await bringIntoStep();
+    await loadLines();
+    drawRail();
+    await goTo("welcome");
+  } catch (error) { tell(said(error)); }
 }
 
 /* ── Synchronising ─────────────────────────────────────────────────── */
@@ -362,11 +525,11 @@ async function open(path: string) {
     descent = null;
     choices = offers;
     spans = bridges;
-    await go("editor");
+    await goTo("editor");
     await takeClaim();
-    if (current !== opened || view !== "editor") return;
+    if (current !== opened || stage !== "editor") return;
     await drawParted();
-    if (current !== opened || view !== "editor") return;
+    if (current !== opened || stage !== "editor") return;
     drawNodes(opened);
     drawLauncher();
     await render();
@@ -386,11 +549,19 @@ async function audited(group: string): Promise<string[][]> {
 }
 
 function drawEditor() {
-  if (!current) { go("lines"); return; }
-  body().innerHTML = `<main class="apparatus">
-    <aside id="gutter" class="${current.entry.side === "private" ? "private" : ""}">
-      <p class="label">APPARATUS</p><div id="nodes"></div><div id="notation"></div><pre id="source-diagnostics"></pre>
-    </aside>
+  if (!current) { void goTo("welcome"); return; }
+  const mine = current.entry.side === "private";
+  stageOf().innerHTML = `<main class="apparatus">
+    <header class="line-head">
+      <div>
+        <p class="line-head__name">${escape(titleOf(current.entry))}</p>
+        <p class="quiet identifier">${escape(current.entry.group)} · ${escape(current.entry.name)}</p>
+      </div>
+      <span class="seen ${mine ? "seen--mine" : "seen--ours"}">${mine ? "Yours alone" : "Shared"}</span>
+      <span class="spacer"></span>
+      <span id="save" class="quiet">saved</span>
+      <div id="claim" class="line-head__claim">No active claim</div>
+    </header>
     <section class="writing"><textarea id="editor" spellcheck="false"></textarea></section>
     <section class="preview">
       <div class="tabs"><button data-pane="document" class="here">Document</button><button data-pane="descent">Descent</button></div>
@@ -398,20 +569,36 @@ function drawEditor() {
       <figure class="descent" hidden><canvas class="descent__canvas" role="img" aria-label="The descent of this line"></canvas></figure>
     </section>
     <aside id="register">
-      <section><p class="label">LINE</p><p class="row__name">${escape(current.entry.name)}</p><p class="quiet identifier">${escape(current.entry.group)} · ${escape(current.entry.side)}</p><span id="save" class="quiet">saved</span></section>
-      <section><p class="label">CLAIM</p><div id="claim">No active claim</div></section>
-      <section id="parted-block" hidden><p class="label">TWO VERSIONS</p><div id="parted"></div></section>
-      <section><p class="label">LAUNCH</p><div id="launcher"></div></section>
-      <section><p class="label">JOBS</p><div id="jobs">No jobs</div></section>
+      <section><p class="label">Apparatus</p><div id="nodes"></div><div id="notation"></div><pre id="source-diagnostics"></pre></section>
+      <section id="parted-block" hidden><p class="label">Two versions</p><div id="parted"></div></section>
+      <section><p class="label">Ask a machine</p><div id="launcher"></div></section>
+      <section><p class="label">Jobs</p><div id="jobs">No jobs</div></section>
+      <section id="privacy"><p class="label">Who can see it</p><div id="privacy-actions"></div></section>
     </aside>
   </main>`;
   const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
   editor.disabled = !writing;
   editor.value = current.source;
   editor.oninput = changed;
-  body().querySelectorAll<HTMLButtonElement>(".tabs button").forEach((button) => button.onclick = () => showPane(button.dataset.pane as "document" | "descent"));
+  stageOf().querySelectorAll<HTMLButtonElement>(".tabs button").forEach((button) => button.onclick = () => showPane(button.dataset.pane as "document" | "descent"));
+  drawPrivacy();
   showPane(showing);
   refreshJobs();
+}
+
+/// Where a line's reach is changed, beside the line itself.
+function drawPrivacy() {
+  const target = document.querySelector<HTMLDivElement>("#privacy-actions");
+  if (!target || !current) return;
+  const path = current.entry.path;
+  if (current.entry.side === "private") {
+    target.innerHTML = `<p class="quiet">Only you can read this line. Sharing moves it into the group's repository, and it cannot be taken back.</p>
+      <div class="row__actions"><button id="do-share">Share with the group</button><button id="do-remove" class="quiet-button">Take it out</button></div>`;
+    document.querySelector<HTMLButtonElement>("#do-share")!.onclick = () => share(path);
+    document.querySelector<HTMLButtonElement>("#do-remove")!.onclick = () => takeOut(path);
+    return;
+  }
+  target.innerHTML = `<p class="quiet">Everybody in ${escape(current.entry.group)} reads this line. One person writes it at a time.</p>`;
 }
 
 function editor() { return document.querySelector<HTMLTextAreaElement>("#editor")!; }
@@ -656,11 +843,97 @@ function rawOutputs(target: HTMLElement) {
   });
 }
 
-/* ── Review ────────────────────────────────────────────────────────── */
+/* ── Settings ──────────────────────────────────────────────────────── */
+
+/// Setting the machine up, and judging what it did.
+///
+/// A window painted over the work rather than a place in the rail: it is
+/// not where writing happens, you go in to do one thing, and you come
+/// back out to the line you were on. The work behind it stays exactly
+/// where it was, which is the point of not navigating away.
+function openPanel(which: Panel) {
+  panel = which;
+  const scrim = document.querySelector<HTMLDivElement>("#scrim");
+  if (!scrim) return;
+  scrim.hidden = false;
+  scrim.innerHTML = `<div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
+    <header class="panel__head">
+      <strong>Settings</strong>
+      <button id="panel-close" class="quiet-button" aria-label="Close settings">Done</button>
+    </header>
+    <div class="panel__body">
+      <nav class="panel__nav" aria-label="Settings">
+        <button data-panel="machine">This machine</button>
+        <button data-panel="reviews">Reviews<span id="panel-count"></span></button>
+        <button data-panel="account">Account</button>
+      </nav>
+      <div class="panel__pane" id="panel-pane"></div>
+    </div>
+  </div>`;
+  document.querySelector<HTMLButtonElement>("#panel-close")!.onclick = closePanel;
+  scrim.querySelectorAll<HTMLButtonElement>("[data-panel]").forEach((button) => {
+    button.onclick = () => showPanel(button.dataset.panel as Panel);
+  });
+  document.addEventListener("keydown", escapeCloses);
+  void showPanel(which);
+}
+
+function closePanel() {
+  panel = null;
+  const scrim = document.querySelector<HTMLDivElement>("#scrim");
+  if (scrim) { scrim.hidden = true; scrim.innerHTML = ""; }
+  document.removeEventListener("keydown", escapeCloses);
+}
+
+function escapeCloses(event: KeyboardEvent) {
+  if (event.key === "Escape") closePanel();
+}
+
+async function showPanel(which: Panel) {
+  panel = which;
+  document.querySelectorAll<HTMLButtonElement>("[data-panel]").forEach((button) => {
+    button.classList.toggle("here", button.dataset.panel === which);
+  });
+  countWaiting();
+  if (which === "machine") await drawMachine();
+  if (which === "reviews") await drawReview();
+  if (which === "account") drawAccount();
+}
+
+function pane() { return document.querySelector<HTMLDivElement>("#panel-pane"); }
+
+/* ── Settings · account ────────────────────────────────────────────── */
+
+function drawAccount() {
+  const target = pane();
+  if (!target) return;
+  target.innerHTML = `<h2>Account</h2>
+    <div class="field"><p class="label">Signed in as</p><p class="row__name">${signed ? escape(signed.user) : ""}</p></div>
+    <div class="field"><p class="label">Instance</p><p class="quiet identifier">${signed ? escape(signed.server) : ""}</p></div>
+    <div class="row__actions"><button id="sign-out">Sign out of this machine</button></div>
+    <p class="quiet">Signing out leaves your work on this machine. It is read again when you sign back in.</p>`;
+  document.querySelector<HTMLButtonElement>("#sign-out")!.onclick = async () => {
+    try {
+      if (stage === "editor" && !await leaveEditor()) return;
+      await invoke("sign_out");
+      window.clearInterval(renewalTimer);
+      window.clearTimeout(saveTimer);
+      window.clearTimeout(previewTimer);
+      closePanel();
+      current = null;
+      writing = false;
+      signed = null;
+      await boot();
+    } catch (error) { tell(said(error)); }
+  };
+}
+
+/* ── Settings · reviews ────────────────────────────────────────────── */
 
 async function drawReview() {
-  const target = body();
-  target.innerHTML = `<div class="sheet"><section><p class="label">Waiting for you</p><div id="waiting">Loading...</div></section><section id="reading"></section></div>`;
+  const target = pane();
+  if (!target) return;
+  target.innerHTML = `<h2>Reviews</h2><p class="quiet">What a machine proposed, waiting for somebody to judge it.</p><div id="waiting">Loading...</div><section id="reading"></section>`;
   try { waiting = await invoke<Waiting[]>("proposals"); } catch (error) { say("#waiting", said(error)); return; }
   if (!target.isConnected) return;
   countWaiting();
@@ -671,18 +944,24 @@ async function drawReview() {
     <div><p class="row__name">${escape(one.line)}</p><p class="quiet">${escape(one.task)} · ${escape(one.agent)} · ${escape(one.vendor)} ${escape(one.model)}</p></div>
     <div class="row__actions"><button data-read="${escape(one.proposal)}">Read it</button></div></div>`).join("");
   listing.querySelectorAll<HTMLButtonElement>("[data-read]").forEach((button) => button.onclick = () => read(button.dataset.read!));
-  countWaiting();
 }
 
-/// Keeps the number beside `Review` honest without redrawing the shell.
+/// Keeps the number on the settings button honest.
+///
+/// A count is on somebody's decision, so it sits where the decision is
+/// made — and on the door to it, because a judgement waiting behind a
+/// closed panel that says nothing is a judgement nobody makes.
 function countWaiting() {
-  const button = document.querySelector<HTMLButtonElement>('nav button[data-view="review"]');
-  if (button) button.innerHTML = `Review${waiting.length ? ` <span class="count">${waiting.length}</span>` : ""}`;
+  const mark = waiting.length ? `<span class="count">${waiting.length}</span>` : "";
+  const button = document.querySelector<HTMLSpanElement>("#settings-count");
+  if (button) button.innerHTML = mark;
+  const inside = document.querySelector<HTMLSpanElement>("#panel-count");
+  if (inside) inside.innerHTML = mark;
 }
 
 async function read(proposal: string) {
   const active = reviewRequest();
-  try { const next = await invoke<Review>("proposal", { proposal }); if (!active() || view !== "review") return; reading = next; } catch (error) { tell(said(error)); return; }
+  try { const next = await invoke<Review>("proposal", { proposal }); if (!active() || panel !== "reviews") return; reading = next; } catch (error) { tell(said(error)); return; }
   const target = document.querySelector<HTMLElement>("#reading");
   if (!target) return;
   const rows = reading.rows.map((row, at) => {
@@ -709,29 +988,47 @@ async function read(proposal: string) {
     try { tell(await invoke<string>("decide_proposal", { proposal, decision: button.dataset.decide })); }
     catch (error) { tell(said(error)); return; }
     if (button.dataset.decide === "accept") { try { tell(await invoke<string>("apply_proposal", { proposal })); } catch (error) { tell(`accepted, and not written here: ${said(error)}`); } }
-    await go("review");
+    await showPanel("reviews");
   });
   const write = document.querySelector<HTMLButtonElement>("#write-it");
   if (write) write.onclick = async () => { try { tell(await invoke<string>("apply_proposal", { proposal })); } catch (error) { tell(said(error)); } };
 }
 
-/* ── This machine ──────────────────────────────────────────────────── */
+/* ── Settings · this machine ───────────────────────────────────────── */
 
+/// Everything that makes this Mac a machine the group can use.
+///
+/// Installing the command line, running the daemon and offering the
+/// machine for work are three steps of one job, so they are one pane in
+/// the order somebody does them, and each says what it is for.
 async function drawMachine() {
-  const target = body();
-  target.innerHTML = `<div class="sheet"><section><p class="label">This machine</p><div id="panel">Loading...</div></section>
-    <section><p class="label">Offer it for work</p><div id="offer"></div></section>
-    <section><p class="label">Jobs</p><div id="jobs">No jobs</div></section></div>`;
-  let where: string[] = [];
-  try { where = await invoke<string[]>("groups"); } catch { where = []; }
-  if (!target.isConnected) return;
-  document.querySelector("#offer")!.innerHTML = `<form id="node" class="stack">
-    ${where.map((group) => `<label class="choice"><input type="checkbox" name="group" value="${escape(group)}" checked><span>${escape(group)}</span></label>`).join("") || `<p class="quiet">No groups are available on this machine.</p>`}
-    <div class="row__actions"><button type="submit">Offer this machine</button><button type="button" id="daemon">Install the daemon</button></div>
-    <p class="quiet">The background service accepts jobs while this machine is running.</p></form>
-    <div class="row"><div><p class="row__name">The command line</p>
-      <p class="quiet">Install the bundled <code>stemma</code> command to manage this workspace from a terminal.</p></div>
-      <div class="row__actions"><button id="install-cli">Install it</button></div></div>`;
+  const target = pane();
+  if (!target) return;
+  target.innerHTML = `<h2>This machine</h2>
+    <div id="panel-machine" class="field">Loading...</div>
+    <section class="field">
+      <p class="label">The command line</p>
+      <p class="quiet">Install the bundled <code>stemma</code> command to manage this workspace from a terminal.</p>
+      <div class="row__actions"><button id="install-cli">Install it</button></div>
+    </section>
+    <section class="field">
+      <p class="label">The background service</p>
+      <p class="quiet">The daemon accepts jobs while this machine is running, without the application open.</p>
+      <div class="row__actions"><button id="daemon">Install the daemon</button></div>
+    </section>
+    <section class="field">
+      <p class="label">Offer it for work</p>
+      <form id="node" class="stack">
+        <div id="node-groups"></div>
+        <div class="row__actions"><button type="submit">Offer this machine</button></div>
+      </form>
+    </section>
+    <section class="field"><p class="label">Jobs</p><div id="jobs">No jobs</div></section>`;
+
+  const where = document.querySelector<HTMLDivElement>("#node-groups")!;
+  where.innerHTML = allGroups.map((one) => `<label class="choice"><input type="checkbox" name="group" value="${escape(one)}" checked><span>${escape(one)}</span></label>`).join("")
+    || `<p class="quiet">No groups are available on this machine.</p>`;
+
   document.querySelector<HTMLFormElement>("#node")!.onsubmit = async (event) => {
     event.preventDefault();
     const groups = [...document.querySelectorAll<HTMLInputElement>('input[name="group"]:checked')].map((box) => box.value);
@@ -743,30 +1040,29 @@ async function drawMachine() {
   document.querySelector<HTMLButtonElement>("#install-cli")!.onclick = async () => {
     try { tell(await invoke<string>("install_cli")); } catch (error) { tell(said(error)); }
   };
+
   try {
-    const panel = await invoke<Machine>("machine");
+    const machine = await invoke<Machine>("machine");
     if (!target.isConnected) return;
-    const about = document.querySelector<HTMLDivElement>("#panel");
+    const about = document.querySelector<HTMLDivElement>("#panel-machine");
     const jobs = document.querySelector<HTMLDivElement>("#jobs");
     if (!about || !jobs) return;
-    about.innerHTML = `<p class="row__name">${escape(panel.label)}</p><p class="quiet">${escape(panel.presence)}</p>
-      ${panel.agents.map((agent) => `<div class="agent ${agent.reason ? "out" : ""}">${escape(agent.called)} <code>${escape(agent.reason ?? agent.availability)}</code></div>`).join("")}`;
-    jobs.innerHTML = panel.jobs.length ? panel.jobs.map(jobRow).join("") : "No jobs have been assigned to this machine.";
+    about.innerHTML = `<p class="row__name">${escape(machine.label)}</p><p class="quiet">${escape(machine.presence)}</p>
+      ${machine.agents.map((agent) => `<div class="agent ${agent.reason ? "out" : ""}">${escape(agent.called)} <code>${escape(agent.reason ?? agent.availability)}</code></div>`).join("")}`;
+    jobs.innerHTML = machine.jobs.length ? machine.jobs.map(jobRow).join("") : "No jobs have been assigned to this machine.";
     rawOutputs(jobs);
-  } catch (error) { say("#panel", said(error)); }
+  } catch (error) { say("#panel-machine", said(error)); }
 }
 
 /* ── The vault ─────────────────────────────────────────────────────── */
 
 async function drawVault() {
-  const target = body();
-  let where: string[] = [];
-  try { where = await invoke<string[]>("groups"); } catch { where = []; }
-  if (!target.isConnected) return;
-  if (!where.length) { target.innerHTML = `<div class="sheet"><p class="quiet">No groups are available on this machine.</p></div>`; return; }
-  target.innerHTML = `<div class="sheet">
-    <label>Group<select id="vault-group">${where.map((group) => `<option>${escape(group)}</option>`).join("")}</select></label>
-    <section><p class="label">Definitions</p><div id="vault-entries">Loading...</div></section>
+  const target = stageOf();
+  if (!group) { target.innerHTML = `<div class="pane"><p class="quiet">No groups are available on this machine.</p></div>`; return; }
+  target.innerHTML = `<div class="pane">
+    <h1>Definitions</h1>
+    <p class="quiet">What ${escape(group)} has admitted as settled, and the bridges between those statements.</p>
+    <section><p class="label">Admitted</p><div id="vault-entries">Loading...</div></section>
     <section><p class="label">Admit a definition</p><form id="admit" class="stack">
       <label>Siglum<input type="text" id="admit-siglum" placeholder="def:group" required></label>
       <label>Distinguishing name<input type="text" id="admit-name" required></label>
@@ -782,8 +1078,7 @@ async function drawVault() {
       <button type="submit">Admit the bridge</button>
       <p class="quiet">Bridges must be unconditional. Equivalences with hypotheses should be added as regular theorems.</p></form></section>
   </div>`;
-  const chosen = () => document.querySelector<HTMLSelectElement>("#vault-group")!.value;
-  document.querySelector<HTMLSelectElement>("#vault-group")!.onchange = () => showVault(chosen());
+  const chosen = () => group!;
   document.querySelector<HTMLFormElement>("#admit")!.onsubmit = async (event) => {
     event.preventDefault();
     try {
@@ -859,9 +1154,13 @@ async function boot() {
   try { signed = await invoke<Signed | null>("whoami"); } catch { signed = null; }
   if (!signed) { signInScreen(); return; }
   try { waiting = await invoke<Waiting[]>("proposals"); } catch { waiting = []; }
-  await go("lines");
+  shell();
+  await loadGroups();
+  await loadLines();
+  drawRail();
+  await goTo("welcome");
   window.clearInterval(renewalTimer);
-  renewalTimer = window.setInterval(() => { if (view === "editor" && current && writing) void takeClaim(); }, RENEW);
+  renewalTimer = window.setInterval(() => { if (stage === "editor" && current && writing) void takeClaim(); }, RENEW);
 }
 
 async function start() {

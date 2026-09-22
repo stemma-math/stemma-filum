@@ -728,27 +728,36 @@ select:focus {
     box-shadow: 0 0 0 3px rgb(45 109 231 / 10%);
 }
 
+/* ── The window ────────────────────────────────────────────────────────
+ *
+ * A bar, a rail of lines and the stage. The identity sits in the bar,
+ * where chrome belongs; the rail and the stage are working surfaces and
+ * stay calm, because what is read on them all day is mathematics.
+ */
+
 .app-shell {
     width: 100%;
     height: 100%;
     display: grid;
-    grid-template-columns: 224px minmax(0, 1fr);
+    grid-template-rows: 52px minmax(0, 1fr);
+    overflow: hidden;
 }
 
-.app-sidebar {
+.topbar {
     position: relative;
-    min-width: 0;
+    z-index: 3;
     display: flex;
-    flex-direction: column;
-    padding: 28px 17px 20px;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
     overflow: hidden;
     color: #dce9ff;
     background:
-        radial-gradient(circle at 0 100%, rgb(74 144 236 / 45%), transparent 48%),
-        linear-gradient(180deg, #06234c, var(--night-deep));
+        radial-gradient(circle at 0 100%, rgb(74 144 236 / 40%), transparent 62%),
+        linear-gradient(120deg, #06234c, var(--night-deep));
 }
 
-.app-sidebar::after,
+.topbar::after,
 .entrance-surface::after {
     content: "";
     position: absolute;
@@ -760,12 +769,59 @@ select:focus {
     mix-blend-mode: soft-light;
 }
 
-.app-sidebar > * { position: relative; z-index: 1; }
+.topbar > * { position: relative; z-index: 1; }
+
+.topbar__where {
+    min-width: 0;
+    overflow: hidden;
+    color: rgb(226 238 255 / 80%);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.topbar .brand { font-size: 15px; }
+.topbar .brand-mark { width: 24px; height: 24px; }
+
+.topbar button.ghost,
+.topbar button.account {
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 10px;
+    color: rgb(228 238 255 / 76%);
+    border: 0;
+    border-radius: 8px;
+    background: rgb(132 180 247 / 12%);
+    box-shadow: none;
+    font-size: 12px;
+}
+
+.topbar button.ghost:hover,
+.topbar button.account:hover,
+.topbar button.ghost:focus-visible,
+.topbar button.account:focus-visible {
+    color: #fff;
+    background: rgb(132 180 247 / 24%);
+    box-shadow: none;
+}
+
+.topbar .avatar { width: 24px; height: 24px; font-size: 10px; }
+
+.topbar .identity {
+    max-width: 150px;
+    color: inherit;
+    text-align: left;
+}
+
+.topbar .identity small { color: rgb(207 225 252 / 56%); }
 
 .brand {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
+    flex: 0 0 auto;
     color: inherit;
     font-size: 20px;
     font-weight: 600;
@@ -795,132 +851,12 @@ select:focus {
 .brand-mark__edge--right,
 .brand-mark__node--right { color: #72aaf2; }
 
-.instance-name {
-    min-height: 34px;
-    margin: 13px 8px 20px;
-    color: rgb(207 225 252 / 52%);
-    font: 11px/1.45 var(--mono);
-    overflow-wrap: anywhere;
-}
-
-.app-sidebar nav {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-}
-
-.app-sidebar nav button {
-    width: 100%;
-    min-height: 42px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    color: rgb(228 238 255 / 68%);
-    border: 0;
-    border-radius: 9px;
-    background: transparent;
-    box-shadow: none;
-    text-align: left;
-}
-
-.app-sidebar nav button:hover,
-.app-sidebar nav button.here {
-    color: #fff;
-    background: rgb(132 180 247 / 14%);
-    box-shadow: none;
-}
-
-.nav-icon {
-    width: 25px;
-    height: 25px;
-    display: grid;
-    place-items: center;
-    flex: 0 0 auto;
-    border: 1px solid rgb(183 211 251 / 16%);
-    border-radius: 7px;
-    font: 10px/1 var(--mono);
-}
-
-.app-sidebar nav button.here .nav-icon {
-    color: #071a39;
-    border-color: #9bc4ff;
-    background: #9bc4ff;
-    box-shadow: 0 0 12px rgb(105 167 255 / 38%);
-}
-
-.nav-label {
-    margin: 7px 10px 5px;
-    color: rgb(190 216 255 / 42%);
-    font: 600 9px/1 var(--sans);
-    letter-spacing: .14em;
-    text-transform: uppercase;
-}
-
-.nav-label--system { margin-top: 21px; }
-
-.count {
-    min-width: 18px;
-    margin-left: 6px;
-    padding: 1px 5px;
-    border: 0;
-    border-radius: 999px;
-    color: #06234c;
-    background: #a9ceff;
-}
-
-.app-workspace {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.app-topbar {
-    height: 70px;
-    flex: 0 0 70px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 0 clamp(18px, 2.5vw, 34px);
-    border-bottom: 1px solid var(--soft);
-    background: rgb(255 255 255 / 90%);
-}
-
-.app-topbar > div {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.app-topbar strong {
-    font-size: 16px;
-    font-weight: 600;
-    letter-spacing: -.025em;
-}
-
-.topbar-eyebrow,
-.entrance-kicker {
-    color: var(--quiet);
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: .13em;
-    text-transform: uppercase;
-}
-
-.sync-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-}
-
 .status-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--verified);
-    box-shadow: 0 0 0 3px rgb(12 122 102 / 10%);
+    background: #8fe3c8;
+    box-shadow: 0 0 0 3px rgb(143 227 200 / 18%);
 }
 
 .avatar {
@@ -928,6 +864,7 @@ select:focus {
     height: 34px;
     display: grid;
     place-items: center;
+    flex: 0 0 auto;
     border-radius: 50%;
     color: #fff;
     background: linear-gradient(145deg, #74aeff, #285fc5);
@@ -938,7 +875,7 @@ select:focus {
 .identity {
     display: flex;
     flex-direction: column;
-    max-width: 190px;
+    min-width: 0;
     color: var(--ink);
     font-size: 12px;
     line-height: 1.25;
@@ -952,122 +889,393 @@ select:focus {
     white-space: nowrap;
 }
 
-#said {
-    flex: 0 0 auto;
-    padding: 9px 28px;
-    border-color: #bfd4ee;
-    color: #245084;
-    background: #e9f3ff;
+.count {
+    min-width: 17px;
+    padding: 1px 5px;
+    border: 0;
+    border-radius: 999px;
+    color: #06234c;
+    background: #a9ceff;
+    font: 10px/1.5 var(--mono);
+    text-align: center;
 }
 
-#body {
-    min-width: 0;
+.app-main {
     min-height: 0;
+    display: grid;
+    grid-template-columns: 252px minmax(0, 1fr);
+}
+
+/* ── The rail ──────────────────────────────────────────────────────── */
+
+.rail {
+    position: relative;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--rule);
+    background: var(--sunk);
+}
+
+.rail__group {
+    width: 100%;
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 0;
+    border-bottom: 1px solid var(--rule);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+}
+
+.rail__group:hover,
+.rail__group:focus-visible {
+    background: var(--raise);
+    box-shadow: none;
+}
+
+.rail__group-name {
     flex: 1 1 auto;
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -.015em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Drawn, not typed: a glyph would sit on the font's baseline and turn
+ * about the wrong point. */
+.rail__chevron {
+    width: 0;
+    height: 0;
+    flex: 0 0 auto;
+    border-top: 4.5px solid var(--quiet);
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+}
+
+.menu {
+    position: absolute;
+    z-index: 4;
+    top: 57px;
+    left: 8px;
+    right: 8px;
+    padding: 5px;
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    background: var(--raise);
+    box-shadow: 0 12px 30px rgb(12 22 38 / 18%);
+}
+
+.menu button {
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 13px;
+    text-align: left;
+}
+
+.menu button:hover,
+.menu button:focus-visible,
+.menu button.here {
+    background: var(--sunk);
+    box-shadow: none;
+}
+
+.menu button.here { font-weight: 600; }
+
+.rail__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 10px 8px 16px;
     overflow: auto;
     overscroll-behavior: contain;
 }
 
-#body > .sheet {
+.rail__label {
+    margin: 16px 8px 5px;
+    color: var(--quiet);
+    font: 600 9px/1 var(--sans);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+}
+
+.rail__empty {
+    margin: 0 8px;
+    padding: 4px 0 6px;
+    color: var(--quiet);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+/* A line is a button. Reading one is the only thing clicking it does,
+ * so there is nothing else on it to aim at. */
+.line {
     width: 100%;
-    max-width: 1120px;
-    display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-    align-items: start;
-    gap: 20px;
-    padding: clamp(22px, 3vw, 38px);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 1px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
 }
 
-#body > .sheet > section,
-#body > .sheet > label {
-    grid-column: 1 / -1;
-}
-
-#body > .sheet > section {
-    min-width: 0;
-    padding: clamp(18px, 2.5vw, 26px);
-    border: 1px solid var(--soft);
-    border-radius: 14px;
+.line:hover,
+.line:focus-visible {
     background: var(--raise);
-    box-shadow: 0 7px 24px rgb(25 53 84 / 5%);
+    box-shadow: none;
 }
 
-#body > .sheet > section:first-child {
-    border-color: rgb(45 109 231 / 14%);
+.line--here,
+.line--here:hover {
+    background: var(--ditto);
+    box-shadow: none;
 }
 
-#body > .sheet > section .label:first-child {
-    margin-bottom: 18px;
-}
-
-.row {
-    padding: 15px 4px;
-}
-
-.row:hover {
-    background: #f8fbff;
-}
-
-.row__name {
-    color: var(--ink);
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: -.015em;
-}
-
-.label,
-.wordmark {
-    font-family: var(--sans);
-}
-
-.label {
-    color: #617087;
-    font-size: 9px;
-}
-
-.starting {
-    padding: 2px 0;
-}
-
-.starting summary {
-    color: var(--ditto);
-    font-family: var(--sans);
-}
-
-/* Editor panels own their scrolling; the window never does. */
-
-#body:has(.apparatus) {
+.line__name {
     overflow: hidden;
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-#body .apparatus {
+.line__question {
+    overflow: hidden;
+    color: var(--quiet);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.line--here .line__name,
+.line--here .line__question { color: #fff; }
+.line--here .line__question { color: rgb(255 255 255 / 68%); }
+
+.rail__entry {
     width: 100%;
-    height: 100%;
-    grid-template-columns: 10rem minmax(25rem, 1fr) minmax(24rem, 1fr) 19rem;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--ink-2);
+    font-size: 13px;
+    text-align: left;
+}
+
+.rail__entry:hover,
+.rail__entry:focus-visible {
+    color: var(--ink);
+    background: var(--raise);
+    box-shadow: none;
+}
+
+.rail__entry-mark {
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px dashed var(--rule);
+    border-radius: 6px;
+    font: 11px/1 var(--mono);
+    color: var(--ditto);
+}
+
+.rail__entry--make { color: var(--ditto); }
+
+.rail__foot {
+    flex: 0 0 auto;
+    padding: 8px;
+    border-top: 1px solid var(--rule);
+}
+
+.rail__foot .rail__entry-mark { border-style: solid; }
+
+/* ── The stage ─────────────────────────────────────────────────────── */
+
+.stage {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
     background: var(--paper);
 }
 
-#body .apparatus aside {
-    padding: 22px 17px;
-    background: #f8fbff;
+.stage:has(.apparatus) { overflow: hidden; }
+
+.pane {
+    width: 100%;
+    max-width: 58rem;
+    margin: 0 auto;
+    padding: clamp(24px, 4vw, 44px);
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
 }
 
-#gutter {
-    border-color: var(--soft);
+.pane--narrow { max-width: 34rem; }
+
+.pane h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -.03em;
 }
 
-#register {
-    border-color: var(--soft);
-    background: var(--raise) !important;
+.pane section {
+    padding-top: 18px;
+    border-top: 1px solid var(--soft);
 }
 
-.writing {
-    background: #fff;
+.welcome {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px;
+    text-align: center;
 }
 
-.preview {
-    background: #dce5ee;
+.welcome__mark {
+    width: 64px;
+    height: 64px;
+    opacity: .4;
 }
+
+.welcome__mark .brand-mark { width: 64px; height: 64px; color: var(--quiet); filter: none; }
+
+.welcome__group {
+    margin: 6px 0 0;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -.025em;
+}
+
+/* ── The editor ────────────────────────────────────────────────────── */
+
+.stage .apparatus {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: minmax(22rem, 1fr) minmax(20rem, 1fr) 19rem;
+    grid-template-rows: auto minmax(0, 1fr);
+    background: var(--paper);
+}
+
+.line-head {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    overflow: hidden;
+    padding: 10px clamp(14px, 2vw, 22px);
+    border-bottom: 1px solid var(--rule);
+    background: var(--raise);
+}
+
+.line-head > div { min-width: 0; }
+.line-head p { margin: 0; }
+
+.line-head__name {
+    overflow: hidden;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.line-head__claim {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--quiet);
+}
+
+/* In the bar the claim is one line, not a stack: the rail below has the
+ * room for a paragraph and the bar does not. */
+.line-head__claim .job {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.line-head__claim .job > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.line-head__claim .job > button { flex: 0 0 auto; }
+
+/* Who can see a line, said in a word rather than by a rule in a margin:
+ * in the bar over the text there is no margin to rule. */
+.seen {
+    flex: 0 0 auto;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font: 10px/1.7 var(--sans);
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.seen--mine {
+    color: #6b4b12;
+    background: #fbeccd;
+}
+
+.seen--ours {
+    color: #134a3f;
+    background: #cfeade;
+}
+
+.stage .apparatus aside {
+    padding: 18px 15px;
+    border-left: 1px solid var(--rule);
+    background: var(--raise);
+    overflow: auto;
+}
+
+#register section {
+    border-top: 1px solid var(--soft);
+    padding: 14px 0 18px;
+}
+
+#register section:first-child { border-top: 0; padding-top: 0; }
+
+.writing { background: #fff; }
+.preview { background: #dce5ee; }
 
 .tabs {
     position: sticky;
@@ -1098,6 +1306,165 @@ select:focus {
 .raw-output,
 .version {
     border-radius: 8px;
+}
+
+/* ── Settings, over everything ─────────────────────────────────────────
+ *
+ * Painted over the work rather than replacing it: you go in to set the
+ * machine up or to judge what it did, and you come back out to the line
+ * you were on, which is still exactly where you left it.
+ */
+
+.scrim {
+    position: fixed;
+    z-index: 10;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgb(8 18 34 / 46%);
+    backdrop-filter: blur(2px);
+}
+
+.scrim[hidden] { display: none; }
+
+.panel {
+    width: min(64rem, 100%);
+    height: min(46rem, 100%);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    background: var(--paper);
+    box-shadow: 0 26px 70px rgb(6 16 32 / 42%);
+}
+
+.panel__head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--raise);
+}
+
+.panel__head strong {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -.015em;
+}
+
+.panel__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 13rem minmax(0, 1fr);
+}
+
+.panel__nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 8px;
+    border-right: 1px solid var(--rule);
+    background: var(--sunk);
+}
+
+.panel__nav button {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 13px;
+    text-align: left;
+}
+
+.panel__nav button:hover,
+.panel__nav button:focus-visible {
+    background: var(--raise);
+    box-shadow: none;
+}
+
+.panel__nav button.here {
+    color: #fff;
+    background: var(--ditto);
+    box-shadow: none;
+}
+
+.panel__nav button.here .count { color: var(--ditto); background: #fff; }
+
+.panel__pane {
+    min-width: 0;
+    padding: 22px clamp(18px, 3vw, 30px) 34px;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.panel__pane h2 {
+    margin: 0 0 4px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -.025em;
+}
+
+.panel__pane .field {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--soft);
+}
+
+.panel__pane .field:first-of-type { border-top: 0; }
+
+.panel__pane .field p { margin: 0 0 6px; }
+
+.agent {
+    padding: 5px 0;
+    font-size: 13px;
+}
+
+.agent.out { color: var(--quiet); }
+
+/* ── What the window has to say ────────────────────────────────────── */
+
+#said {
+    position: fixed;
+    z-index: 8;
+    right: 18px;
+    bottom: 18px;
+    max-width: 30rem;
+    padding: 10px 14px;
+    border: 1px solid #bfd4ee;
+    border-radius: 10px;
+    color: #245084;
+    background: #e9f3ff;
+    box-shadow: 0 10px 28px rgb(12 22 38 / 18%);
+    font-size: 13px;
+}
+
+.row { padding: 15px 4px; }
+.row:hover { background: #f8fbff; }
+
+.row__name {
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -.015em;
+}
+
+.label,
+.wordmark { font-family: var(--sans); }
+
+.label {
+    color: #617087;
+    font-size: 9px;
 }
 
 /* First-run connection */
