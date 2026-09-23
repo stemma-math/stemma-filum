@@ -985,6 +985,30 @@ legend {
     white-space: pre;
 }
 
+/* A line's source, as it was written. It wraps rather than scrolls,
+ * because most of it is prose. */
+.source {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.source .identifier {
+    font-family: var(--mono);
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.source__text {
+    margin: 0;
+    font: var(--step-2) / 1.6 var(--mono);
+    background: var(--paper-sunk);
+    border: 1px solid var(--rule);
+    padding: var(--space-3);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .diff__row {
     display: grid;
     grid-template-columns: 3.5ch 3.5ch 2ch 1fr;

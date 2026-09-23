@@ -594,3 +594,121 @@ async fn a_line_can_be_read_the_moment_it_exists_and_says_what_is_missing() {
     assert!(line.says("Does every finite group split?"));
     assert!(line.says("This line does not contain any declarations yet"));
 }
+
+/// Writes a line on a machine and pushes it, as synchronising does.
+async fn write(harness: &Harness, who: Option<&str>, line: &str, text: &str) {
+    let who = who.map(str::to_owned);
+    let repositories = harness.instance.repositories();
+
+    let bare = harness
+        .instance
+        .read(move |connection| {
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
+
+            Ok(match &who {
+                Some(who) => {
+                    let user = users::by_login(connection, who)?.expect("the account");
+
+                    repositories.personal(&group.id, &user.id)
+                }
+                None => repositories.shared(&group.id),
+            })
+        })
+        .await
+        .unwrap();
+
+    let work = bare.with_extension("work");
+    let _ = std::fs::remove_dir_all(&work);
+
+    let git = |at: &std::path::Path, arguments: &[&str]| {
+        let output = std::process::Command::new("git")
+            .current_dir(at)
+            .args(arguments)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .env("GIT_AUTHOR_NAME", "Ana")
+            .env("GIT_AUTHOR_EMAIL", "ana@example.org")
+            .env("GIT_COMMITTER_NAME", "Ana")
+            .env("GIT_COMMITTER_EMAIL", "ana@example.org")
+            .output()
+            .expect("git runs");
+        assert!(
+            output.status.success(),
+            "git {arguments:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+
+    git(
+        bare.parent().unwrap(),
+        &[
+            "clone",
+            "-q",
+            bare.to_str().unwrap(),
+            work.to_str().unwrap(),
+        ],
+    );
+    std::fs::write(
+        work.join(repository::LINES)
+            .join(line)
+            .join(repository::ENTRY),
+        text,
+    )
+    .unwrap();
+    git(&work, &["commit", "-q", "-am", &format!("Write {line}")]);
+    git(&work, &["push", "-q", "origin", "main"]);
+
+    std::fs::remove_dir_all(&work).unwrap();
+}
+
+#[tokio::test]
+async fn what_a_machine_pushed_is_shown_as_it_was_written() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    start(&mut harness, "Quotient groups", "Does it split?", "me").await;
+
+    let started = source(&harness, Some("ana"), "quotient-groups")
+        .await
+        .expect("the line");
+    write(
+        &harness,
+        Some("ana"),
+        "quotient-groups",
+        &format!("{started}\nIt does, and here is why.\n"),
+    )
+    .await;
+
+    let line = harness.get("/g/algebra/private/quotient-groups").await;
+    assert!(line.says("It does, and here is why."));
+}
+
+#[tokio::test]
+async fn a_build_older_than_what_was_pushed_does_not_hide_it() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    start(&mut harness, "Quotient groups", "Does it split?", "group").await;
+
+    // A machine built the line while it was still empty.
+    let started = source(&harness, None, "quotient-groups")
+        .await
+        .expect("the line");
+    publish(&mut harness, &started).await;
+
+    write(
+        &harness,
+        None,
+        "quotient-groups",
+        &format!(
+            "{started}\n#theorem(id: \"thm:split\", name: \"Splitting\", central: true)[It splits.]\n"
+        ),
+    )
+    .await;
+
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    assert!(!line.says("This line does not contain any declarations yet"));
+    assert!(line.says("thm:split"));
+    assert!(line.says("It splits."));
+}

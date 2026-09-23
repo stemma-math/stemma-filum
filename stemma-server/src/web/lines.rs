@@ -5,9 +5,10 @@
 //! so what it can show is what the source declares: the definitions, the
 //! statements the line rests on, and the boxes between them.
 //!
-//! The prose is not here. It arrives with the composed document, which
-//! is a different artefact, and a page that showed a name where the
-//! mathematics should be would be pretending to be that document.
+//! The prose is shown as it was written: the source at the head of the
+//! repository, uncompiled. A composed document would be a different
+//! artefact, and a page that typeset the mathematics itself would be
+//! pretending to be that document.
 
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
@@ -39,16 +40,24 @@ pub async fn view(
         return Err(WebError::NotFound);
     };
 
+    let written = written(&instance, &group.id, side, &signed, &name).await?;
     let built = read(&instance, &group.id, &scope).await?;
-    let digest = match built.as_ref().and_then(|nodes| nodes.line(&name)).cloned() {
-        Some(digest) => digest,
+    let digest = match (&written, built.as_ref()) {
+        // A build of the commit the repository is at says everything the
+        // source does and more.
+        (Some(written), Some(nodes)) if nodes.commit == written.commit => nodes
+            .line(&name)
+            .cloned()
+            .unwrap_or_else(|| declared(&name, &written.source)),
         // Nothing has built it yet, which is the ordinary state of a
-        // line somebody started a minute ago. What the source declares
-        // is readable without compiling anything, so the line is here
-        // from the moment it exists — with everything a build adds, and
-        // only that, missing.
-        None => unbuilt(&instance, &group.id, side, &signed, &name)
-            .await?
+        // line somebody started a minute ago, or what was built is older
+        // than what was pushed since. What the source declares is
+        // readable without compiling anything, so the line is here as it
+        // stands — with everything a build adds, and only that, missing.
+        (Some(written), _) => declared(&name, &written.source),
+        (None, built) => built
+            .and_then(|nodes| nodes.line(&name))
+            .cloned()
             .ok_or(WebError::NotFound)?,
     };
     let nodes = match built {
@@ -122,6 +131,7 @@ pub async fn view(
             writing: writing.as_ref(),
             signed: &signed,
             bridges: &bridges,
+            written: written.as_ref(),
         }),
     )
     .into_response())
@@ -165,12 +175,6 @@ pub async fn unbuilt_in(
 }
 
 /// A line as its source declares it, for one nothing has built yet.
-///
-/// The instance compiles nothing and this does not either: reading the
-/// declarations is the same work the editor does between keystrokes.
-/// What is missing from the answer is everything a build would have
-/// added — the Lean result, the composed document — and the page says
-/// so where it would have shown them.
 async fn unbuilt(
     instance: &Instance,
     group: &GroupId,
@@ -178,6 +182,27 @@ async fn unbuilt(
     signed: &SignedIn,
     name: &Name,
 ) -> Result<Option<LineDigest>, WebError> {
+    Ok(written(instance, group, side, signed, name)
+        .await?
+        .map(|written| declared(name, &written.source)))
+}
+
+/// A line's source, exactly as it stands at the head of its repository.
+struct Written {
+    /// The commit it was read from.
+    commit: String,
+    /// What is in the line's entry file there.
+    source: String,
+}
+
+/// Reads a line's source at the head of its repository.
+async fn written(
+    instance: &Instance,
+    group: &GroupId,
+    side: Side,
+    signed: &SignedIn,
+    name: &Name,
+) -> Result<Option<Written>, WebError> {
     let repositories = instance.repositories();
     let path = match side {
         Side::Shared => repositories.shared(group),
@@ -189,29 +214,39 @@ async fn unbuilt(
         name,
         stemma_core::repository::ENTRY
     );
-    let name = name.clone();
 
     instance
         .on_disk(move || {
-            let Some(head) = crate::git::head_commit(&path) else {
+            let Some(commit) = crate::git::head_commit(&path) else {
                 return Ok(None);
             };
-            let Ok(source) = crate::git::show(&path, &head, &inside) else {
+            let Ok(source) = crate::git::show(&path, &commit, &inside) else {
                 return Ok(None);
             };
 
-            Ok(Some(LineDigest {
-                name,
-                title: stemma_core::source::title(&source),
-                question: stemma_core::source::question(&source),
-                // A source with a fault in it is still a line somebody
-                // is writing; what it declares so far is nothing.
-                line: stemma_core::line::Line::read(&source)
-                    .unwrap_or(stemma_core::line::Line { nodes: Vec::new() }),
-                lean: None,
-            }))
+            Ok(Some(Written { commit, source }))
         })
         .await
+}
+
+/// What a source declares, with nothing a build would have added.
+///
+/// The instance compiles nothing and this does not either: reading the
+/// declarations is the same work the editor does between keystrokes.
+/// What is missing from the answer is everything a build would have
+/// added — the Lean result, the composed document — and the page says
+/// so where it would have shown them.
+fn declared(name: &Name, source: &str) -> LineDigest {
+    LineDigest {
+        name: name.clone(),
+        title: stemma_core::source::title(source),
+        question: stemma_core::source::question(source),
+        // A source with a fault in it is still a line somebody is
+        // writing; what it declares so far is nothing.
+        line: stemma_core::line::Line::read(source)
+            .unwrap_or(stemma_core::line::Line { nodes: Vec::new() }),
+        lean: None,
+    }
 }
 
 /// Which repository was asked for, and whether this reader may have it.
@@ -335,6 +370,8 @@ struct Viewing<'a> {
     signed: &'a SignedIn,
     /// The audited substitutions between this line's definitions.
     bridges: &'a [(stemma_core::line::Siglum, stemma_core::line::Siglum)],
+    /// What is written, where the repository still has it.
+    written: Option<&'a Written>,
 }
 
 /// The line itself.
@@ -348,6 +385,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
         writing,
         signed,
         bridges,
+        written,
     } = *viewing;
     let boxes = digest.line.boxes();
     let central = digest.line.central();
@@ -432,6 +470,18 @@ fn body(viewing: &Viewing<'_>) -> Markup {
 
                 (claim_block(group, side, &digest.name, writing, signed))
                 (register(digest, &central, &boxes, nodes))
+            }
+        }
+
+        // What was written, prose and all, as it was written. It has the
+        // width of the page because most of it is prose.
+        @if let Some(written) = written {
+            div class="block source" {
+                p class="label" {
+                    "The source · "
+                    span class="identifier" { (short(&written.commit)) }
+                }
+                pre class="source__text" { (written.source) }
             }
         }
     }
