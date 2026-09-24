@@ -1,5 +1,7 @@
 //! A group's vault of admitted definitions and bridges.
 
+use stemma_core::vault::{AuditTarget, AuditVerb, BridgeKind};
+
 use crate::{Session, carried_out, said};
 
 #[tauri::command(async)]
@@ -28,11 +30,11 @@ pub fn vault_bridge(
     group: String,
     left: String,
     right: String,
-    kind: String,
+    kind: BridgeKind,
     lean: String,
 ) -> Result<String, String> {
     carried_out(|home, out| {
-        stemma::vault::bridge_text(home, &group, &left, &right, &kind, &lean, out)
+        stemma::vault::bridge_text(home, &group, &left, &right, kind, &lean, out)
     })
 }
 
@@ -40,12 +42,12 @@ pub fn vault_bridge(
 #[tauri::command(async)]
 pub fn vault_audit(
     group: String,
-    target_kind: String,
+    target_kind: AuditTarget,
     target: String,
-    action: String,
+    action: AuditVerb,
     note: String,
 ) -> Result<String, String> {
     carried_out(|home, out| {
-        stemma::vault::audit(home, &group, &target_kind, &target, &action, &note, out)
+        stemma::vault::audit(home, &group, target_kind, &target, action, &note, out)
     })
 }

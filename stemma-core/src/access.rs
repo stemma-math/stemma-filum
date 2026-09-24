@@ -5,9 +5,6 @@
 //! on a profile: operating the instance is a [`Grant`], which is given, can be
 //! revoked, and leaves a history behind.
 
-use std::fmt;
-use std::str::FromStr;
-
 use serde::{Deserialize, Serialize};
 
 use crate::id::UserId;
@@ -36,39 +33,6 @@ impl GroupRole {
     pub fn can_invite(self) -> bool {
         self.is_at_least(Self::Admin)
     }
-
-    /// The role as it appears on the wire and in the interface.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Member => "member",
-            Self::Admin => "admin",
-            Self::Owner => "owner",
-        }
-    }
-}
-
-impl fmt::Display for GroupRole {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// A string that names no role.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("`{0}` is not a group role: use `member`, `admin` or `owner`")]
-pub struct UnknownGroupRole(pub String);
-
-impl FromStr for GroupRole {
-    type Err = UnknownGroupRole;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "member" => Ok(Self::Member),
-            "admin" => Ok(Self::Admin),
-            "owner" => Ok(Self::Owner),
-            other => Err(UnknownGroupRole(other.to_owned())),
-        }
-    }
 }
 
 /// A permission held at the instance level rather than inside a group.
@@ -80,21 +44,6 @@ pub enum Grant {
     /// It conveys no access to the mathematics of a group the holder does not
     /// belong to, and the areas it opens ask for the password again.
     Maintainer,
-}
-
-impl Grant {
-    /// The grant as it appears on the wire and in the interface.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Maintainer => "maintainer",
-        }
-    }
-}
-
-impl fmt::Display for Grant {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
 }
 
 /// Who may write a line the group can see.
@@ -112,14 +61,6 @@ pub enum WhoWrites {
 }
 
 impl WhoWrites {
-    /// The word for it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Author => "author",
-            Self::Anyone => "anyone",
-        }
-    }
-
     /// What it says on screen.
     pub fn said(self) -> &'static str {
         match self {
@@ -137,28 +78,18 @@ impl WhoWrites {
     }
 }
 
-impl fmt::Display for WhoWrites {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+spelled!(GroupRole, UnknownGroupRole("`{0}` is not a group role: use `member`, `admin` or `owner`") {
+    Member => "member",
+    Admin => "admin",
+    Owner => "owner",
+});
 
-/// A string that names nobody who could write a line.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("`{0}` does not say who writes a line: use `author` or `anyone`")]
-pub struct UnknownWriter(pub String);
+spelled!(Grant { Maintainer => "maintainer" });
 
-impl FromStr for WhoWrites {
-    type Err = UnknownWriter;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input.trim() {
-            "author" => Ok(Self::Author),
-            "anyone" => Ok(Self::Anyone),
-            other => Err(UnknownWriter(other.to_owned())),
-        }
-    }
-}
+spelled!(WhoWrites, UnknownWriter("`{0}` does not say who writes a line: use `author` or `anyone`") {
+    Author => "author",
+    Anyone => "anyone",
+});
 
 #[cfg(test)]
 mod tests {

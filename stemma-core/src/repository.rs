@@ -7,7 +7,6 @@
 //! versions of the compiler, so a surface either respects the pin or
 //! refuses to compose.
 
-use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -40,38 +39,10 @@ pub enum Side {
     Private,
 }
 
-impl Side {
-    /// What it is called.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Shared => "shared",
-            Self::Private => "private",
-        }
-    }
-}
-
-impl fmt::Display for Side {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Why a string does not name one of a group's repositories.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("`{0}` is not one of a group's repositories")]
-pub struct BadSide(String);
-
-impl std::str::FromStr for Side {
-    type Err = BadSide;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "shared" => Ok(Self::Shared),
-            "private" => Ok(Self::Private),
-            other => Err(BadSide(other.to_owned())),
-        }
-    }
-}
+spelled!(Side, BadSide("`{0}` is not one of a group's repositories") {
+    Shared => "shared",
+    Private => "private",
+});
 
 /// What the group has pinned.
 ///

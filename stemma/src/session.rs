@@ -209,6 +209,13 @@ pub fn required(home: &Home) -> Result<Credentials> {
         .context("this machine is not signed in: run `stemma login`")
 }
 
+/// The credential this machine holds and the instance it is for.
+pub fn connect(home: &Home) -> Result<(Credentials, crate::api::Server)> {
+    let credentials = required(home)?;
+    let server = crate::api::Server::at(&credentials.server)?;
+    Ok((credentials, server))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

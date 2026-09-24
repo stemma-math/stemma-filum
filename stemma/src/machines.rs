@@ -9,14 +9,12 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::api::Server;
 use crate::home::Home;
 use crate::session;
 
 /// Lists the machines serving a group.
 pub fn list(home: &Home, at: &Path, group: Option<&str>, out: &mut impl Write) -> Result<()> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let group = match group {
         Some(named) => named.to_owned(),
         None => {

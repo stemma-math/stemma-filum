@@ -11,9 +11,6 @@
 //! their own machine. That is the general rule: omit an option only when
 //! its presence would imply something false.
 
-use std::fmt;
-use std::str::FromStr;
-
 use serde::{Deserialize, Serialize};
 
 use crate::agent::AgentFailure;
@@ -54,20 +51,6 @@ impl Presence {
             false => Self::Asleep,
         }
     }
-
-    /// The word for it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Awake => "awake",
-            Self::Asleep => "asleep",
-        }
-    }
-}
-
-impl fmt::Display for Presence {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
 }
 
 /// Whether one machine can run one agent, and why not when it cannot.
@@ -89,9 +72,18 @@ pub enum Availability {
     RateLimited,
 }
 
+spelled!(Presence { Awake => "awake", Asleep => "asleep" });
+
 impl Fact for Availability {
     const KIND: FactKind = FactKind::Condition;
 }
+
+spelled!(Availability, BadAvailability("`{0}` does not say whether an agent can be used") {
+    Ready => "ready",
+    NotInstalled => "not_installed",
+    NotSignedIn => "not_signed_in",
+    RateLimited => "rate_limited",
+});
 
 impl Availability {
     /// Whether a job may be given to this agent on this machine.
@@ -119,41 +111,6 @@ impl Availability {
             AgentFailure::AgentNotAuthenticated { .. } => Some(Self::NotSignedIn),
             AgentFailure::AgentRateLimited { .. } => Some(Self::RateLimited),
             AgentFailure::AgentError { .. } => None,
-        }
-    }
-
-    /// The word this is stored and sent as.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Ready => "ready",
-            Self::NotInstalled => "not_installed",
-            Self::NotSignedIn => "not_signed_in",
-            Self::RateLimited => "rate_limited",
-        }
-    }
-}
-
-impl fmt::Display for Availability {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Why a string does not name an availability.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("`{0}` does not say whether an agent can be used")]
-pub struct BadAvailability(String);
-
-impl FromStr for Availability {
-    type Err = BadAvailability;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "ready" => Ok(Self::Ready),
-            "not_installed" => Ok(Self::NotInstalled),
-            "not_signed_in" => Ok(Self::NotSignedIn),
-            "rate_limited" => Ok(Self::RateLimited),
-            other => Err(BadAvailability(other.to_owned())),
         }
     }
 }

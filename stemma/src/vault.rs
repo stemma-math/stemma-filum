@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use crate::api::Server;
+use stemma_core::vault::{AuditTarget, AuditVerb, BridgeKind};
+
 use crate::build;
 use crate::config::Config;
 use crate::home::Home;
@@ -13,8 +14,8 @@ use crate::session;
 
 /// Lists definitions and bridges, including withdrawn objects as history.
 pub fn list(home: &Home, group: &str, out: &mut impl Write) -> Result<()> {
-    let credentials = session::required(home)?;
-    let vault = Server::at(&credentials.server)?.vault(&credentials.token, group)?;
+    let (credentials, server) = session::connect(home)?;
+    let vault = server.vault(&credentials.token, group)?;
     writeln!(out, "Definitions")?;
     for entry in vault.entries {
         writeln!(
@@ -67,8 +68,8 @@ pub fn admit_text(
     out: &mut impl Write,
 ) -> Result<()> {
     let module = checked(home, group, lean)?;
-    let credentials = session::required(home)?;
-    let id = Server::at(&credentials.server)?.admit_vault_entry(
+    let (credentials, server) = session::connect(home)?;
+    let id = server.admit_vault_entry(
         &credentials.token, group,
         &serde_json::json!({"siglum": siglum, "name": name, "prose": prose, "formalization": module}),
     )?;
@@ -82,7 +83,7 @@ pub fn bridge(
     group: &str,
     left: &str,
     right: &str,
-    kind: &str,
+    kind: BridgeKind,
     lean: &Path,
     out: &mut impl Write,
 ) -> Result<()> {
@@ -98,13 +99,13 @@ pub fn bridge_text(
     group: &str,
     left: &str,
     right: &str,
-    kind: &str,
+    kind: BridgeKind,
     lean: &str,
     out: &mut impl Write,
 ) -> Result<()> {
     let module = checked(home, group, lean)?;
-    let credentials = session::required(home)?;
-    let id = Server::at(&credentials.server)?.admit_bridge(
+    let (credentials, server) = session::connect(home)?;
+    let id = server.admit_bridge(
         &credentials.token,
         group,
         &serde_json::json!({"left": left, "right": right, "kind": kind, "theorem": module}),
@@ -117,14 +118,14 @@ pub fn bridge_text(
 pub fn audit(
     home: &Home,
     group: &str,
-    target_kind: &str,
+    target_kind: AuditTarget,
     target: &str,
-    action: &str,
+    action: AuditVerb,
     note: &str,
     out: &mut impl Write,
 ) -> Result<()> {
-    let credentials = session::required(home)?;
-    let id = Server::at(&credentials.server)?.audit_vault(
+    let (credentials, server) = session::connect(home)?;
+    let id = server.audit_vault(
         &credentials.token, group,
         &serde_json::json!({"target_kind": target_kind, "target": target, "action": action, "note": note}),
     )?;

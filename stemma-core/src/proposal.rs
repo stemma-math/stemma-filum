@@ -56,6 +56,24 @@ pub struct Proposal {
     pub state: ProposalState,
 }
 
+/// What a reviewer decides about a proposal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Verdict {
+    /// Sign the words as the reviewer's own.
+    Accept,
+    /// Decline them.
+    Reject,
+    /// Decline them and queue the same question again.
+    AskAgain,
+}
+
+spelled!(Verdict, UnknownVerdict("`{0}` is not a decision: use `accept`, `reject` or `ask_again`") {
+    Accept => "accept",
+    Reject => "reject",
+    AskAgain => "ask_again",
+});
+
 /// A proposal's human decision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]

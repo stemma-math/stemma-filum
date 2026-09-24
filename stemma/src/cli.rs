@@ -4,7 +4,11 @@
 //! a node over SSH, a container — has to be able to do everything, or the
 //! product has been split in two.
 
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand};
+use stemma_core::reconcile::Keep;
+use stemma_core::vault::{AuditTarget, AuditVerb, BridgeKind};
 
 /// The program's arguments.
 #[derive(Debug, Parser)]
@@ -175,10 +179,10 @@ pub enum VaultCommand {
         name: String,
         /// File holding the exact prose.
         #[arg(long)]
-        prose: std::path::PathBuf,
+        prose: PathBuf,
         /// Complete Lean module to compile and admit.
         #[arg(long)]
-        lean: std::path::PathBuf,
+        lean: PathBuf,
     },
     /// Admits an unconditional bridge whose complete Lean module compiles locally.
     Bridge {
@@ -190,26 +194,26 @@ pub enum VaultCommand {
         /// Vault definition at the other end.
         #[arg(long)]
         right: String,
-        /// Predicate or structure equivalence.
+        /// The equivalence proved: `predicate` or `structure`.
         #[arg(long)]
-        kind: String,
+        kind: BridgeKind,
         /// Complete Lean module containing the unconditional theorem.
         #[arg(long)]
-        lean: std::path::PathBuf,
+        lean: PathBuf,
     },
     /// Attests or withdraws correspondence.
     Audit {
         /// Group slug.
         group: String,
-        /// Entry or bridge.
+        /// What is audited: `entry` or `bridge`.
         #[arg(long)]
-        target_kind: String,
+        target_kind: AuditTarget,
         /// Stable vault object identifier.
         #[arg(long)]
         target: String,
-        /// Attest or withdraw.
+        /// `attest` or `withdraw`.
         #[arg(long)]
-        action: String,
+        action: AuditVerb,
         /// What was checked or why the guarantee is withdrawn.
         #[arg(long)]
         note: String,
@@ -299,7 +303,7 @@ pub enum ConflictCommand {
     Resolve {
         /// Which version stands: `here` or `there`.
         #[arg(long)]
-        keep: String,
+        keep: Keep,
     },
 
     /// Asks an agent to reconcile them, which comes back as a proposal.

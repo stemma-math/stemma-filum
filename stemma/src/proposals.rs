@@ -7,19 +7,19 @@
 //! without being asked to.
 
 use std::io::Write;
+use stemma_core::proposal::Verdict;
 
 use anyhow::{Context, Result, bail};
 use stemma_core::id::ProposalId;
 use stemma_core::repository::{self, Side};
 
-use crate::api::Server;
 use crate::config::Config;
 use crate::home::Home;
+use crate::session;
 
 /// Says what is waiting for this person.
 pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
-    let credentials = crate::session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let waiting = server.proposals(&credentials.token)?;
 
     if waiting.is_empty() {
@@ -43,8 +43,7 @@ pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
 
 /// Shows one proposal: what moved, and what was checked.
 pub fn show(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
-    let credentials = crate::session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let offered = server.proposal(&credentials.token, proposal)?;
 
     writeln!(
@@ -122,14 +121,13 @@ pub fn show(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
 }
 
 /// Records a decision. Accepting makes the words the accepter's own.
-pub fn decide(home: &Home, proposal: &str, decision: &str, out: &mut impl Write) -> Result<()> {
-    let credentials = crate::session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+pub fn decide(home: &Home, proposal: &str, verdict: Verdict, out: &mut impl Write) -> Result<()> {
+    let (credentials, server) = session::connect(home)?;
 
-    server.decide_proposal(&credentials.token, proposal, decision)?;
+    server.decide_proposal(&credentials.token, proposal, verdict)?;
 
-    match decision {
-        "accept" => {
+    match verdict {
+        Verdict::Accept => {
             writeln!(out, "{proposal}  accepted")?;
             writeln!(
                 out,
@@ -137,13 +135,13 @@ pub fn decide(home: &Home, proposal: &str, decision: &str, out: &mut impl Write)
             )?;
             writeln!(out, "  `stemma proposal apply {proposal}` writes them here")?;
         }
-        "ask_again" => {
+        Verdict::AskAgain => {
             writeln!(
                 out,
                 "{proposal}  declined, and the same question is back in the queue"
             )?;
         }
-        _ => writeln!(out, "{proposal}  rejected")?,
+        Verdict::Reject => writeln!(out, "{proposal}  rejected")?,
     }
 
     Ok(())
@@ -154,8 +152,7 @@ pub fn apply(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
     let proposal: ProposalId = proposal
         .parse()
         .context("that is not a proposal identifier")?;
-    let credentials = crate::session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let accepted = server.accepted_proposal(&credentials.token, &proposal.to_string())?;
     stemma_core::id::Slug::parse(&accepted.group).context("the proposal names no group")?;
     let line = repository::check_line_name(&accepted.line).context("the proposal names no line")?;

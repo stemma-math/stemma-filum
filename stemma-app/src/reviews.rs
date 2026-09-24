@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use stemma_core::diff::{self, Change};
+use stemma_core::proposal::Verdict;
 
 use crate::{Session, carried_out, failed};
 
@@ -108,10 +109,10 @@ pub fn proposal(proposal: String) -> Result<Review, String> {
     })
 }
 
-/// Records `accept`, `reject` or `ask_again` for a proposal.
+/// Records the reviewer's decision about a proposal.
 #[tauri::command(async)]
-pub fn decide_proposal(proposal: String, decision: String) -> Result<String, String> {
-    carried_out(|home, out| stemma::proposals::decide(home, &proposal, &decision, out))
+pub fn decide_proposal(proposal: String, decision: Verdict) -> Result<String, String> {
+    carried_out(|home, out| stemma::proposals::decide(home, &proposal, decision, out))
 }
 
 /// Writes an accepted proposal into this machine's clone.

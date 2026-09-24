@@ -110,7 +110,10 @@ mod tests {
 
         assert_eq!(named.len(), FONTS.len());
         for file in named {
-            assert!(FONTS.iter().any(|(name, _)| *name == file), "{file} is missing");
+            assert!(
+                FONTS.iter().any(|(name, _)| *name == file),
+                "{file} is missing"
+            );
         }
     }
 }

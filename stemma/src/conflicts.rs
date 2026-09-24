@@ -16,6 +16,7 @@ use stemma_core::repository;
 
 use crate::git;
 use crate::home::Home;
+use crate::session;
 
 /// One line whose two versions have parted.
 #[derive(Debug, Clone)]
@@ -131,8 +132,7 @@ pub fn resolve(home: &Home, at: &Path, keep: Keep, out: &mut impl Write) -> Resu
 /// It runs here, on this machine, because this is the only machine that
 /// has both versions: the local one was never sent anywhere.
 pub fn reconcile(home: &Home, at: &Path, agent: &str, out: &mut impl Write) -> Result<()> {
-    let credentials = crate::session::required(home)?;
-    let server = crate::api::Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let clone = clone_at(home, at)?;
     git::fetch(&clone)?;
 

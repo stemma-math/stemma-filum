@@ -1,7 +1,8 @@
 //! The `stemma` command: the client researchers install on their own
-//! machine.
+//! machine. Everything it does lives in the library; this only dispatches.
 
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use anyhow::Result;
@@ -12,13 +13,17 @@ use stemma::cli::{
 };
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
-use stemma::session;
+use stemma::{
+    build, claims, conflicts, daemon, git_credential, jobs, lines, machines, node, proposals,
+    session, sync, vault,
+};
+use stemma_core::proposal::Verdict;
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
-        Ok(code) => code,
-        // Somebody piping this into `head` closes the output, and that is
-        // not a failure of the command they ran.
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
+        // A reader closing the pipe (as `head` does) is not a failure.
         Err(error) if is_broken_pipe(&error) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("stemma: {error:#}");
@@ -27,16 +32,6 @@ fn main() -> ExitCode {
     }
 }
 
-/// Which version a person said stands.
-fn which(keep: &str) -> Result<stemma_core::reconcile::Keep> {
-    match keep.trim() {
-        "here" => Ok(stemma_core::reconcile::Keep::Here),
-        "there" => Ok(stemma_core::reconcile::Keep::There),
-        other => anyhow::bail!("`{other}` is not a version: say `here` or `there`"),
-    }
-}
-
-/// Whether what went wrong is that nobody is reading any more.
 fn is_broken_pipe(error: &anyhow::Error) -> bool {
     error.chain().any(|cause| {
         cause
@@ -45,259 +40,156 @@ fn is_broken_pipe(error: &anyhow::Error) -> bool {
     })
 }
 
-/// Carries out one command.
-fn run(cli: Cli) -> Result<ExitCode> {
-    let home = Home::locate(&Environment::from_process());
-    let mut out = std::io::stdout().lock();
+/// The directory the command was run in, which names the line or group
+/// when no flag does.
+fn here() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| ".".into())
+}
+
+/// Carries out one command. Returns whether the answer was a success, for
+/// the commands whose output is a yes-or-no check.
+fn run(cli: Cli) -> Result<bool> {
+    let home = &Home::locate(&Environment::from_process());
+    let out = &mut std::io::stdout().lock();
 
     match cli.command {
         Command::Login { server } => {
-            session::log_in(&home, &server, &mut out)?;
-
-            Ok(ExitCode::SUCCESS)
+            session::log_in(home, &server, out)?;
         }
-
-        Command::Whoami => Ok(match session::whoami(&home, &mut out)? {
-            true => ExitCode::SUCCESS,
-            false => ExitCode::FAILURE,
-        }),
-
-        Command::Logout => {
-            session::log_out(&home, &mut out)?;
-
-            Ok(ExitCode::SUCCESS)
-        }
-
+        Command::Whoami => return session::whoami(home, out),
+        Command::Logout => session::log_out(home, out)?,
         Command::Sync => {
-            stemma::sync::run(&home, &mut out)?;
-
-            Ok(ExitCode::SUCCESS)
+            sync::run(home, out)?;
         }
-
+        Command::Status => {
+            sync::status(home, out)?;
+        }
         Command::Build => {
-            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
-            stemma::build::run(&home, &here, &mut out)?;
-
-            Ok(ExitCode::SUCCESS)
+            build::run(home, &here(), out)?;
         }
+        Command::Where => where_things_are(home, out)?,
+        Command::Machines { group } => machines::list(home, &here(), group.as_deref(), out)?,
 
-        Command::Line { command } => {
-            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        Command::Line { command } => match command {
+            LineCommand::New {
+                group,
+                title,
+                question,
+                shared,
+            } => lines::start(home, &group, &title, &question, shared, out)?,
+            LineCommand::Delete { line } => lines::delete(home, &here(), line.as_deref(), out)?,
+            LineCommand::Share {
+                line,
+                history,
+                mine_to_write,
+            } => lines::share(home, &here(), line.as_deref(), history, mine_to_write, out)?,
+        },
 
-            match command {
-                LineCommand::New {
-                    group,
-                    title,
-                    question,
-                    shared,
-                } => stemma::lines::start(&home, &group, &title, &question, shared, &mut out)?,
-                LineCommand::Delete { line } => {
-                    stemma::lines::delete(&home, &here, line.as_deref(), &mut out)?
-                }
-                LineCommand::Share {
-                    line,
-                    history,
-                    mine_to_write,
-                } => stemma::lines::share(
-                    &home,
-                    &here,
-                    line.as_deref(),
-                    history,
-                    mine_to_write,
-                    &mut out,
-                )?,
+        Command::Claim { command } => match command {
+            ClaimCommand::Take { line } => claims::take(home, &here(), line.as_deref(), out)?,
+            ClaimCommand::Ask { line } => claims::ask(home, &here(), line.as_deref(), out)?,
+            ClaimCommand::Release { line } => claims::release(home, &here(), line.as_deref(), out)?,
+            ClaimCommand::Status => claims::status(home, out)?,
+        },
+
+        Command::Conflict { command } => match command {
+            ConflictCommand::List => conflicts::list(home, &here(), out)?,
+            ConflictCommand::Resolve { keep } => conflicts::resolve(home, &here(), keep, out)?,
+            ConflictCommand::Reconcile { agent } => {
+                conflicts::reconcile(home, &here(), &agent, out)?
             }
-
-            Ok(ExitCode::SUCCESS)
-        }
-
-        Command::Claim { command } => {
-            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
-
-            match command {
-                ClaimCommand::Take { line } => {
-                    stemma::claims::take(&home, &here, line.as_deref(), &mut out)?
-                }
-                ClaimCommand::Ask { line } => {
-                    stemma::claims::ask(&home, &here, line.as_deref(), &mut out)?
-                }
-                ClaimCommand::Release { line } => {
-                    stemma::claims::release(&home, &here, line.as_deref(), &mut out)?
-                }
-                ClaimCommand::Status => stemma::claims::status(&home, &mut out)?,
-            }
-
-            Ok(ExitCode::SUCCESS)
-        }
-
-        Command::Conflict { command } => {
-            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
-
-            match command {
-                ConflictCommand::List => stemma::conflicts::list(&home, &here, &mut out)?,
-                ConflictCommand::Resolve { keep } => {
-                    stemma::conflicts::resolve(&home, &here, which(&keep)?, &mut out)?
-                }
-                ConflictCommand::Reconcile { agent } => {
-                    stemma::conflicts::reconcile(&home, &here, &agent, &mut out)?
-                }
-            }
-
-            Ok(ExitCode::SUCCESS)
-        }
+        },
 
         Command::Node { command } => match command {
             NodeCommand::Init { groups } => {
-                stemma::node::init(&home, &groups, &mut out)?;
-
-                Ok(ExitCode::SUCCESS)
+                node::init(home, &groups, out)?;
             }
-            NodeCommand::Status => Ok(match stemma::node::status(&home, &mut out)? {
-                true => ExitCode::SUCCESS,
-                false => ExitCode::FAILURE,
-            }),
+            NodeCommand::Status => return node::status(home, out),
         },
 
         Command::Daemon { command } => match command {
-            DaemonCommand::Run { once } => {
-                stemma::daemon::run(&home, once, &mut out)?;
-
-                Ok(ExitCode::SUCCESS)
-            }
-            DaemonCommand::Install => {
-                stemma::daemon::install(&home, &mut out)?;
-
-                Ok(ExitCode::SUCCESS)
-            }
+            DaemonCommand::Run { once } => daemon::run(home, once, out)?,
+            DaemonCommand::Install => daemon::install(home, out)?,
         },
 
         Command::Job { command } => match command {
             JobCommand::Run(asked) => {
-                let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
-
-                stemma::jobs::run(
-                    &home,
-                    &here,
-                    &stemma::jobs::Wanted {
-                        line: asked.line,
-                        task: asked.task,
-                        agent: asked.agent,
-                        machine: asked.machine,
-                        here: asked.here,
-                    },
-                    &mut out,
-                )?;
-
-                Ok(ExitCode::SUCCESS)
+                let wanted = jobs::Wanted {
+                    line: asked.line,
+                    task: asked.task,
+                    agent: asked.agent,
+                    machine: asked.machine,
+                    here: asked.here,
+                };
+                jobs::run(home, &here(), &wanted, out)?;
             }
-            JobCommand::List => {
-                stemma::jobs::list(&home, &mut out)?;
-
-                Ok(ExitCode::SUCCESS)
-            }
-            JobCommand::Output { job } => {
-                stemma::jobs::output(&home, &job, &mut out)?;
-
-                Ok(ExitCode::SUCCESS)
-            }
+            JobCommand::List => jobs::list(home, out)?,
+            JobCommand::Output { job } => jobs::output(home, &job, out)?,
         },
 
-        Command::Machines { group } => {
-            let here = std::env::current_dir().unwrap_or_else(|_| ".".into());
-            stemma::machines::list(&home, &here, group.as_deref(), &mut out)?;
-
-            Ok(ExitCode::SUCCESS)
-        }
-
-        Command::Proposal { command } => {
-            match command {
-                ProposalCommand::List => stemma::proposals::list(&home, &mut out)?,
-                ProposalCommand::Show { proposal } => {
-                    stemma::proposals::show(&home, &proposal, &mut out)?
-                }
-                ProposalCommand::Accept { proposal } => {
-                    stemma::proposals::decide(&home, &proposal, "accept", &mut out)?
-                }
-                ProposalCommand::Reject { proposal } => {
-                    stemma::proposals::decide(&home, &proposal, "reject", &mut out)?
-                }
-                ProposalCommand::AskAgain { proposal } => {
-                    stemma::proposals::decide(&home, &proposal, "ask_again", &mut out)?
-                }
-                ProposalCommand::Apply { proposal } => {
-                    stemma::proposals::apply(&home, &proposal, &mut out)?
-                }
+        Command::Proposal { command } => match command {
+            ProposalCommand::List => proposals::list(home, out)?,
+            ProposalCommand::Show { proposal } => proposals::show(home, &proposal, out)?,
+            ProposalCommand::Accept { proposal } => {
+                proposals::decide(home, &proposal, Verdict::Accept, out)?
             }
-
-            Ok(ExitCode::SUCCESS)
-        }
-
-        Command::Vault { command } => {
-            match command {
-                VaultCommand::List { group } => stemma::vault::list(&home, &group, &mut out)?,
-                VaultCommand::Admit {
-                    group,
-                    siglum,
-                    name,
-                    prose,
-                    lean,
-                } => stemma::vault::admit(&home, &group, &siglum, &name, &prose, &lean, &mut out)?,
-                VaultCommand::Bridge {
-                    group,
-                    left,
-                    right,
-                    kind,
-                    lean,
-                } => stemma::vault::bridge(&home, &group, &left, &right, &kind, &lean, &mut out)?,
-                VaultCommand::Audit {
-                    group,
-                    target_kind,
-                    target,
-                    action,
-                    note,
-                } => stemma::vault::audit(
-                    &home,
-                    &group,
-                    &target_kind,
-                    &target,
-                    &action,
-                    &note,
-                    &mut out,
-                )?,
+            ProposalCommand::Reject { proposal } => {
+                proposals::decide(home, &proposal, Verdict::Reject, out)?
             }
-            Ok(ExitCode::SUCCESS)
-        }
+            ProposalCommand::AskAgain { proposal } => {
+                proposals::decide(home, &proposal, Verdict::AskAgain, out)?
+            }
+            ProposalCommand::Apply { proposal } => proposals::apply(home, &proposal, out)?,
+        },
 
-        Command::Status => {
-            stemma::sync::status(&home, &mut out)?;
-
-            Ok(ExitCode::SUCCESS)
-        }
+        Command::Vault { command } => match command {
+            VaultCommand::List { group } => vault::list(home, &group, out)?,
+            VaultCommand::Admit {
+                group,
+                siglum,
+                name,
+                prose,
+                lean,
+            } => vault::admit(home, &group, &siglum, &name, &prose, &lean, out)?,
+            VaultCommand::Bridge {
+                group,
+                left,
+                right,
+                kind,
+                lean,
+            } => vault::bridge(home, &group, &left, &right, kind, &lean, out)?,
+            VaultCommand::Audit {
+                group,
+                target_kind,
+                target,
+                action,
+                note,
+            } => vault::audit(home, &group, target_kind, &target, action, &note, out)?,
+        },
 
         Command::Credential { action } => {
-            let input = std::io::stdin().lock();
-            stemma::credential::answer(&home, &action, input, &mut out)?;
-
-            Ok(ExitCode::SUCCESS)
-        }
-
-        Command::Where => {
-            let signed_in = Credentials::read(&home.credentials_file())?;
-
-            writeln!(out, "config     {}", home.config_file().display())?;
-            writeln!(out, "state      {}", home.state_dir().display())?;
-            writeln!(out, "cache      {}", home.cache_dir().display())?;
-            writeln!(out, "workspace  {}", home.workspace().display())?;
-            writeln!(
-                out,
-                "instance   {}",
-                match &signed_in {
-                    Some(credentials) => credentials.server.as_str(),
-                    None => "not signed in",
-                }
-            )?;
-
-            Ok(ExitCode::SUCCESS)
+            git_credential::answer(home, &action, std::io::stdin().lock(), out)?
         }
     }
+
+    Ok(true)
+}
+
+/// Prints where this machine keeps its configuration, state and work.
+fn where_things_are(home: &Home, out: &mut impl Write) -> Result<()> {
+    let signed_in = Credentials::read(&home.credentials_file())?;
+
+    writeln!(out, "config     {}", home.config_file().display())?;
+    writeln!(out, "state      {}", home.state_dir().display())?;
+    writeln!(out, "cache      {}", home.cache_dir().display())?;
+    writeln!(out, "workspace  {}", home.workspace().display())?;
+    writeln!(
+        out,
+        "instance   {}",
+        signed_in
+            .as_ref()
+            .map_or("not signed in", |credentials| credentials.server.as_str())
+    )?;
+
+    Ok(())
 }

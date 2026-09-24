@@ -14,7 +14,7 @@ use std::io::Write;
 use anyhow::{Context, Result};
 use stemma_core::machine::{Availability, Detected};
 
-use crate::api::{Node, Server};
+use crate::api::Node;
 use crate::config::Config;
 use crate::home::Home;
 use crate::session;
@@ -25,9 +25,8 @@ use crate::session;
 /// somebody who went to the trouble of registering a machine meant it to
 /// be useful, and turning one off later is a click.
 pub fn init(home: &Home, groups: &[String], out: &mut impl Write) -> Result<Node> {
-    let credentials = session::required(home)?;
+    let (credentials, server) = session::connect(home)?;
     let config = Config::read(&home.config_file())?;
-    let server = Server::at(&credentials.server)?;
 
     writeln!(out, "Looking for agents on this machine...")?;
     let agents = crate::agents::look(home, &config);
@@ -59,8 +58,7 @@ pub fn init(home: &Home, groups: &[String], out: &mut impl Write) -> Result<Node
 
 /// Says what the instance makes of this machine.
 pub fn status(home: &Home, out: &mut impl Write) -> Result<bool> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
 
     let Some(node) = server.node(&credentials.token)? else {
         writeln!(
