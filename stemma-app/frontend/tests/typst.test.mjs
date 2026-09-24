@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { highlightTree } from "@lezer/highlight";
-import { typst, typstHighlighter } from "../src/typst.ts";
+import { typst, typstHighlighter } from "../src/lib/typst.ts";
 
 /** The class each highlighted stretch of `source` is drawn with. */
 function classes(source) {

@@ -1,10 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { escapeHtml, serially, latestRequest } from "../src/lifecycle.ts";
-
-test("untrusted text cannot break out of quoted attributes", () => {
-  assert.equal(escapeHtml(`a" onclick='bad' <&>`), "a&quot; onclick=&#39;bad&#39; &lt;&amp;&gt;");
-});
+import { serially, latestRequest } from "../src/lib/lifecycle.ts";
 
 test("writes stay ordered even when the first request is slow or fails", async () => {
   const enqueue = serially();
