@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 stemma-core.workspace = true
+stemma-identity.workspace = true
 
 anyhow.workspace = true
 argon2.workspace = true

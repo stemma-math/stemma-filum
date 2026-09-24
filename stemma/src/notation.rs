@@ -16,10 +16,10 @@ use anyhow::{Context, Result};
 use stemma_core::notation::{NAME, NAMESPACE, VERSION};
 
 /// The package's own manifest, as Typst reads it.
-const MANIFEST: &str = include_str!("../../assets/notation/typst.toml");
+const MANIFEST: &str = include_str!("../../notation/typst.toml");
 
 /// What the environments are.
-const LIBRARY: &str = include_str!("../../assets/notation/lib.typ");
+const LIBRARY: &str = include_str!("../../notation/lib.typ");
 
 /// Where this version of the package goes.
 pub fn directory() -> Result<PathBuf> {

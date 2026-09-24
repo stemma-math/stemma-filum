@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["stemma", "stemma-app", "stemma-core", "stemma-server"]
+members = ["identity", "stemma", "stemma-app", "stemma-core", "stemma-server"]
 
 [workspace.package]
 version = "0.0.0"
@@ -12,6 +12,7 @@ authors = ["Enric Cosme Llópez", "Mario Vago Marzal"]
 
 [workspace.dependencies]
 stemma-core = { path = "stemma-core", version = "0.0.0" }
+stemma-identity = { path = "identity", version = "0.0.0" }
 
 anyhow = "1"
 argon2 = "0.6"

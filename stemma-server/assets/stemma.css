@@ -1,171 +1,8 @@
-/* The instance's own stylesheet.
+/* The web interface's stylesheet.
  *
- * Deep blue identifies the product and its navigation; cool paper-like
- * surfaces hold the work. Serif remains reserved for mathematics and signed
- * prose, grotesk for interface language and mono for verbatim material.
+ * Served after the identity's `fonts.css` and `tokens.css`, which define
+ * every custom property used here.
  */
-
-/* ── The faces ─────────────────────────────────────────────────────────
- *
- * Served by the instance itself and subset to the Latin these pages set.
- * `swap` because a page of mathematics is worth reading in a fallback for
- * the tenth of a second the real face takes to arrive.
- */
-
-@font-face {
-    font-family: "Libertinus Serif";
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url("/assets/fonts/libertinus-serif-400.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Libertinus Serif";
-    font-style: italic;
-    font-weight: 400;
-    font-display: swap;
-    src: url("/assets/fonts/libertinus-serif-400-italic.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Libertinus Serif";
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url("/assets/fonts/libertinus-serif-700.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Archivo";
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url("/assets/fonts/archivo-400.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Archivo";
-    font-style: italic;
-    font-weight: 400;
-    font-display: swap;
-    src: url("/assets/fonts/archivo-400-italic.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Archivo";
-    font-style: normal;
-    font-weight: 500;
-    font-display: swap;
-    src: url("/assets/fonts/archivo-500.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Archivo";
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url("/assets/fonts/archivo-600.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Archivo Narrow";
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url("/assets/fonts/archivo-narrow-400.woff2") format("woff2");
-}
-
-@font-face {
-    font-family: "Iosevka";
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url("/assets/fonts/iosevka-400.woff2") format("woff2");
-}
-
-:root {
-    --paper: #edeee8;
-    --paper-raise: #f6f7f3;
-    --paper-sunk: #e2e4dc;
-    --ink: #16191a;
-    --ink-2: #474d4c;
-    --ink-3: #636967;
-    --rule: #c5c8c0;
-    --rule-soft: #d7dad2;
-    --ditto: #463a85;
-    --verified: #1d5347;
-    --refuted: #93221b;
-
-    --serif: "Libertinus Serif", "Linux Libertine O", Georgia, serif;
-    --grotesk: "Archivo", "Archivo Narrow", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    --narrow: "Archivo Narrow", "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    --mono: "Iosevka", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-
-    --step-1: 12px;
-    --step-2: 13px;
-    --step-3: 15px;
-    --step-4: 17px;
-    --step-5: 21px;
-    --step-6: 27px;
-    --step-7: 34px;
-
-    --space-1: 4px;
-    --space-2: 8px;
-    --space-3: 12px;
-    --space-4: 16px;
-    --space-5: 24px;
-    --space-6: 32px;
-    --space-7: 48px;
-    --space-8: 64px;
-}
-
-.proposal pre {
-  white-space: pre-wrap;
-  font: 0.875rem/1.55 var(--mono);
-  border: 1px solid var(--rule);
-  padding: 1.5rem;
-  background: var(--paper-raise);
-}
-
-.findings {
-  font-family: var(--mono);
-  color: var(--ink-3);
-  list-style: none;
-  padding: 0;
-}
-
-/* The dark theme is selected, not inverted: the same green-biased neutral
- * run cold, with the earned colours re-stepped against the dark ground. */
-@media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-        --paper: #141715;
-        --paper-raise: #1c201d;
-        --paper-sunk: #0f1210;
-        --ink: #e4e6e0;
-        --ink-2: #aeb3ac;
-        --ink-3: #858b85;
-        --rule: #343833;
-        --rule-soft: #242824;
-        --ditto: #a395ee;
-        --verified: #5fae96;
-        --refuted: #e0705f;
-    }
-}
-
-:root[data-theme="dark"] {
-    --paper: #141715;
-    --paper-raise: #1c201d;
-    --paper-sunk: #0f1210;
-    --ink: #e4e6e0;
-    --ink-2: #aeb3ac;
-    --ink-3: #858b85;
-    --rule: #343833;
-    --rule-soft: #242824;
-    --ditto: #a395ee;
-    --verified: #5fae96;
-    --refuted: #e0705f;
-}
 
 *,
 *::before,
@@ -306,16 +143,6 @@ code,
     display: block;
 }
 
-.mark__edge {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 3;
-    stroke-linecap: round;
-}
-
-.mark__node {
-    fill: currentColor;
-}
 
 /* Navigation is words. The active destination takes a rule on the edge it
  * belongs to, never a filled shape. */
@@ -1077,29 +904,6 @@ legend {
  * above so the research views keep their semantics while sharing one shell.
  */
 
-:root,
-:root:not([data-theme="light"]),
-:root[data-theme="dark"],
-:root[data-theme="light"] {
-    --paper: #f1f5f9;
-    --paper-raise: #ffffff;
-    --paper-sunk: #e9eff6;
-    --ink: #101d2f;
-    --ink-2: #48566a;
-    --ink-3: #758298;
-    --rule: #d5dfea;
-    --rule-soft: #e6edf4;
-    --ditto: #2d6de7;
-    --verified: #0c7a66;
-    --refuted: #b33b4a;
-    --night: #031a3b;
-    --night-deep: #01122d;
-    --night-soft: #0b3972;
-    --blue: #69a7ff;
-    --blue-soft: #dceaff;
-    --panel-shadow: 0 12px 36px rgb(25 53 84 / 8%);
-}
-
 *,
 *::before,
 *::after {
@@ -1168,7 +972,7 @@ textarea:focus,
 select:focus {
     background: #fff;
     border-color: var(--blue);
-    box-shadow: 0 0 0 3px rgb(45 109 231 / 12%);
+    box-shadow: var(--focus-ring);
 }
 
 .label,
@@ -1214,7 +1018,7 @@ select:focus {
     letter-spacing: -0.02em;
 }
 
-.auth-page .mark {
+.auth-page .brand-mark {
     color: var(--ditto);
 }
 
@@ -1420,17 +1224,17 @@ html.surface-pending .auth-page .surface-transition,
     stroke-width: .34;
 }
 
-.doorway__constellation .mark {
+.doorway__constellation .brand-mark {
     color: #eff7ff;
     filter: drop-shadow(0 0 9px rgb(116 176 255 / 58%)) drop-shadow(0 0 25px rgb(45 112 214 / 48%));
 }
 
-.doorway__constellation .mark__edge--left { stroke: #f6fbff; }
-.doorway__constellation .mark__edge--base { stroke: #79b0f5; }
-.doorway__constellation .mark__edge--right { stroke: #96c5ff; }
-.doorway__constellation .mark__node--top { fill: #f9fcff; }
-.doorway__constellation .mark__node--left { fill: #eaf5ff; }
-.doorway__constellation .mark__node--right { fill: #74adf4; }
+.doorway__constellation .brand-mark__edge--left { stroke: #f6fbff; }
+.doorway__constellation .brand-mark__edge--base { stroke: #79b0f5; }
+.doorway__constellation .brand-mark__edge--right { stroke: #96c5ff; }
+.doorway__constellation .brand-mark__node--top { fill: #f9fcff; }
+.doorway__constellation .brand-mark__node--left { fill: #eaf5ff; }
+.doorway__constellation .brand-mark__node--right { fill: #74adf4; }
 
 .doorway__copy {
     display: flex;
@@ -1571,7 +1375,7 @@ html.surface-pending .auth-page .surface-transition,
     color: #dce9ff;
     background:
         radial-gradient(circle at 0 100%, rgb(74 144 236 / 44%), transparent 48%),
-        linear-gradient(180deg, #06234c, var(--night-deep));
+        linear-gradient(180deg, var(--navy), var(--night-deep));
     user-select: none;
 }
 
@@ -1602,21 +1406,21 @@ html.surface-pending .auth-page .surface-transition,
     letter-spacing: -.035em;
 }
 
-.sidebar .mark {
+.sidebar .brand-mark {
     width: 34px;
     height: 34px;
     color: #a9ceff;
     filter: drop-shadow(0 0 9px rgb(105 167 255 / 55%));
 }
 
-.sidebar .mark__edge--left,
-.sidebar .mark__node--top { color: #f1f8ff; }
+.sidebar .brand-mark__edge--left,
+.sidebar .brand-mark__node--top { color: var(--mark-top); }
 
-.sidebar .mark__edge--base,
-.sidebar .mark__node--left { color: #a9ceff; }
+.sidebar .brand-mark__edge--base,
+.sidebar .brand-mark__node--left { color: var(--mark-left); }
 
-.sidebar .mark__edge--right,
-.sidebar .mark__node--right { color: #72aaf2; }
+.sidebar .brand-mark__edge--right,
+.sidebar .brand-mark__node--right { color: var(--mark-right); }
 
 .sidebar__instance {
     margin: 14px 8px 34px;
@@ -1884,7 +1688,7 @@ html.surface-pending .auth-page .surface-transition,
     border: 0;
     background:
         radial-gradient(circle at 96% 120%, rgb(114 175 255 / 48%), transparent 42%),
-        linear-gradient(125deg, #06234c, #0b3b76);
+        linear-gradient(125deg, var(--navy), #0b3b76);
 }
 
 .product-page .sheet > .stack:first-child:not(.sheet--narrow) .quiet { color: rgb(218 233 255 / 65%); }
@@ -2061,4 +1865,19 @@ html.surface-pending .auth-page .surface-transition,
     .landing-page.surface-leaving .masthead,
     .landing-page.surface-leaving .sheet,
     .auth-page.surface-arriving::before { animation-duration: 1ms; }
+}
+
+.proposal pre {
+  white-space: pre-wrap;
+  font: 0.875rem/1.55 var(--mono);
+  border: 1px solid var(--rule);
+  padding: 1.5rem;
+  background: var(--paper-raise);
+}
+
+.findings {
+  font-family: var(--mono);
+  color: var(--ink-3);
+  list-style: none;
+  padding: 0;
 }

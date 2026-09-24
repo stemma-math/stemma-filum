@@ -1,8 +1,8 @@
 //! What the pages load besides themselves.
 //!
-//! Everything is served from the instance's own origin. A stylesheet or a
-//! face fetched from somewhere else would tell that somewhere else who is
-//! reading a research group's pages.
+//! Everything is served from the instance's own origin, so reading a group's
+//! pages never tells a third party who is reading them. Tokens, faces, the
+//! mark, the texture and the descent drawing come from `stemma-identity`.
 
 use std::sync::LazyLock;
 
@@ -15,97 +15,71 @@ use sha2::{Digest, Sha256};
 /// Where the stylesheet is served.
 pub const STYLESHEET_PATH: &str = "/assets/stemma.css";
 
-/// Where the faces are served, one path segment below.
+/// Where the faces are served. The stylesheet's `fonts/<file>` URLs resolve
+/// here because both live under `/assets/`.
 pub const FONT_PATH: &str = "/assets/fonts/{file}";
 
-/// Where the shared descent drawing is served.
+/// Where the descent drawing is served.
 pub const DESCENT_PATH: &str = "/assets/descent.js";
 
-/// Where the small surface-transition script is served.
+/// Where the front-door transition script is served.
 pub const SURFACE_PATH: &str = "/assets/surface.js";
 
-/// Where the subtle surface texture is served.
+/// Where the surface texture is served.
 pub const NOISE_PATH: &str = "/assets/noise.svg";
 
-/// The stylesheet itself.
-const STYLESHEET: &str = include_str!("../../assets/stemma.css");
+/// A file this build serves, with the entity tag that lets a browser ask
+/// whether it changed.
+struct Asset {
+    body: &'static [u8],
+    content_type: &'static str,
+    tag: String,
+}
 
-/// The drawing, which is the only script the web serves.
-///
-/// Everything else is rendered here; this draws the one thing a server
-/// cannot render as text without lying about it, and the page it is on
-/// keeps the list it would otherwise have shown. The application draws
-/// its graph with the same file, so that one change to the trace
-/// changes both.
-const DESCENT: &str = include_str!("../../../assets/descent.js");
+impl Asset {
+    fn new(body: &'static [u8], content_type: &'static str) -> Self {
+        Self {
+            body,
+            content_type,
+            tag: tag_of(body),
+        }
+    }
+}
 
-/// The front-door transition, kept deliberately independent of page logic.
-const SURFACE: &str = include_str!("../../assets/surface.js");
+const CSS: &str = "text/css; charset=utf-8";
+const JAVASCRIPT: &str = "text/javascript; charset=utf-8";
+const SVG: &str = "image/svg+xml; charset=utf-8";
+const WOFF2: &str = "font/woff2";
 
-/// The texture laid over blue product surfaces.
-const NOISE: &str = include_str!("../../assets/noise.svg");
+/// The identity's faces and tokens, then the web interface's own rules.
+static STYLESHEET: LazyLock<Asset> = LazyLock::new(|| {
+    let joined = [
+        stemma_identity::FONTS_CSS,
+        stemma_identity::TOKENS_CSS,
+        include_str!("../../assets/stemma.css"),
+    ]
+    .join("\n");
 
-/// The faces the design names, subset to the Latin these pages set.
-///
-/// They are built into the binary like the stylesheet, so an instance
-/// serves its own typography and a reader is never sent elsewhere for it.
-const FONTS: &[(&str, &[u8])] = &[
-    (
-        "libertinus-serif-400.woff2",
-        include_bytes!("../../assets/fonts/libertinus-serif-400.woff2"),
-    ),
-    (
-        "libertinus-serif-400-italic.woff2",
-        include_bytes!("../../assets/fonts/libertinus-serif-400-italic.woff2"),
-    ),
-    (
-        "libertinus-serif-700.woff2",
-        include_bytes!("../../assets/fonts/libertinus-serif-700.woff2"),
-    ),
-    (
-        "archivo-400.woff2",
-        include_bytes!("../../assets/fonts/archivo-400.woff2"),
-    ),
-    (
-        "archivo-400-italic.woff2",
-        include_bytes!("../../assets/fonts/archivo-400-italic.woff2"),
-    ),
-    (
-        "archivo-500.woff2",
-        include_bytes!("../../assets/fonts/archivo-500.woff2"),
-    ),
-    (
-        "archivo-600.woff2",
-        include_bytes!("../../assets/fonts/archivo-600.woff2"),
-    ),
-    (
-        "archivo-narrow-400.woff2",
-        include_bytes!("../../assets/fonts/archivo-narrow-400.woff2"),
-    ),
-    (
-        "iosevka-400.woff2",
-        include_bytes!("../../assets/fonts/iosevka-400.woff2"),
-    ),
-];
+    Asset::new(joined.leak().as_bytes(), CSS)
+});
 
-/// What this build's stylesheet is, so a browser can ask whether it has
-/// changed instead of fetching it again.
-static STYLESHEET_TAG: LazyLock<String> = LazyLock::new(|| tag_of(STYLESHEET.as_bytes()));
+static DESCENT: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(stemma_identity::DESCENT_JS.as_bytes(), JAVASCRIPT));
 
-/// The same, for the drawing.
-static DESCENT_TAG: LazyLock<String> = LazyLock::new(|| tag_of(DESCENT.as_bytes()));
+static SURFACE: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(include_bytes!("../../assets/surface.js"), JAVASCRIPT));
 
-/// The same, for the surface transition.
-static SURFACE_TAG: LazyLock<String> = LazyLock::new(|| tag_of(SURFACE.as_bytes()));
+static NOISE: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(stemma_identity::NOISE_SVG.as_bytes(), SVG));
 
-/// The same, for the surface texture.
-static NOISE_TAG: LazyLock<String> = LazyLock::new(|| tag_of(NOISE.as_bytes()));
+static FONTS: LazyLock<Vec<(&str, Asset)>> = LazyLock::new(|| {
+    stemma_identity::FONTS
+        .iter()
+        .map(|(name, face)| (*name, Asset::new(face, WOFF2)))
+        .collect()
+});
 
-/// The same, for each face.
-static FONT_TAGS: LazyLock<Vec<String>> =
-    LazyLock::new(|| FONTS.iter().map(|(_, face)| tag_of(face)).collect());
-
-/// The entity tag of a file this build serves.
+/// The entity tag of a file: the first eight bytes of its SHA-256, quoted.
 fn tag_of(content: &[u8]) -> String {
     let digest = Sha256::digest(content);
     let short: String = digest
@@ -119,63 +93,46 @@ fn tag_of(content: &[u8]) -> String {
 
 /// Serves the stylesheet.
 pub async fn stylesheet(headers: HeaderMap) -> Response {
-    serve(
-        &headers,
-        STYLESHEET.as_bytes(),
-        "text/css; charset=utf-8",
-        &STYLESHEET_TAG,
-    )
+    serve(&headers, &STYLESHEET)
 }
 
-/// Serves the drawing.
+/// Serves the descent drawing.
 pub async fn descent(headers: HeaderMap) -> Response {
-    serve(
-        &headers,
-        DESCENT.as_bytes(),
-        "text/javascript; charset=utf-8",
-        &DESCENT_TAG,
-    )
+    serve(&headers, &DESCENT)
 }
 
 /// Serves the front-door transition.
 pub async fn surface(headers: HeaderMap) -> Response {
-    serve(
-        &headers,
-        SURFACE.as_bytes(),
-        "text/javascript; charset=utf-8",
-        &SURFACE_TAG,
-    )
+    serve(&headers, &SURFACE)
 }
 
 /// Serves the surface texture.
 pub async fn noise(headers: HeaderMap) -> Response {
-    serve(
-        &headers,
-        NOISE.as_bytes(),
-        "image/svg+xml; charset=utf-8",
-        &NOISE_TAG,
-    )
+    serve(&headers, &NOISE)
 }
 
 /// Serves one face.
 pub async fn font(Path(file): Path<String>, headers: HeaderMap) -> Response {
-    let Some(index) = FONTS.iter().position(|(name, _)| *name == file) else {
-        return StatusCode::NOT_FOUND.into_response();
-    };
-
-    serve(&headers, FONTS[index].1, "font/woff2", &FONT_TAGS[index])
+    match FONTS.iter().find(|(name, _)| *name == file) {
+        Some((_, face)) => serve(&headers, face),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
-/// Answers with the file, or with "you already have it".
-fn serve(headers: &HeaderMap, body: &'static [u8], content_type: &str, tag: &str) -> Response {
+/// Answers with the file, or with 304 when the browser already has it.
+fn serve(headers: &HeaderMap, asset: &Asset) -> Response {
     let known = headers
         .get(IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.split(',').any(|candidate| candidate.trim() == tag));
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .any(|candidate| candidate.trim() == asset.tag)
+        });
 
     let head = [
-        (CONTENT_TYPE, content_type.to_owned()),
-        (ETAG, tag.to_owned()),
+        (CONTENT_TYPE, asset.content_type.to_owned()),
+        (ETAG, asset.tag.clone()),
         (
             CACHE_CONTROL,
             "public, max-age=60, must-revalidate".to_owned(),
@@ -186,12 +143,16 @@ fn serve(headers: &HeaderMap, body: &'static [u8], content_type: &str, tag: &str
         return (StatusCode::NOT_MODIFIED, head).into_response();
     }
 
-    (head, body).into_response()
+    (head, asset.body).into_response()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stylesheet() -> &'static str {
+        std::str::from_utf8(STYLESHEET.body).unwrap()
+    }
 
     #[test]
     fn the_tag_changes_with_the_file_and_not_otherwise() {
@@ -201,22 +162,22 @@ mod tests {
     }
 
     #[test]
-    fn the_stylesheet_is_built_into_the_binary() {
-        assert!(STYLESHEET.contains("--ditto"));
-        assert!(!STYLESHEET_TAG.is_empty());
+    fn the_stylesheet_carries_the_identity() {
+        assert!(stylesheet().contains("--ditto"));
+        assert!(stylesheet().contains("@font-face"));
     }
 
     #[test]
     fn every_face_the_stylesheet_asks_for_is_one_the_instance_has() {
-        for (name, face) in FONTS {
+        for (name, face) in FONTS.iter() {
             assert!(
-                STYLESHEET.contains(&format!("/assets/fonts/{name}")),
+                stylesheet().contains(&format!("fonts/{name}")),
                 "{name} is built in and nothing asks for it"
             );
-            assert!(face.starts_with(b"wOF2"), "{name} is not a woff2 file");
+            assert!(face.body.starts_with(b"wOF2"), "{name} is not a woff2 file");
         }
 
-        for asked in STYLESHEET.split("/assets/fonts/").skip(1) {
+        for asked in stylesheet().split("url(\"fonts/").skip(1) {
             let name = asked.split('"').next().unwrap_or_default();
 
             assert!(

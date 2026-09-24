@@ -1,0 +1,77 @@
+/* The four faces, subset to Latin. Each licence sits in `fonts/`.
+ *
+ * `swap`, because mathematics is worth reading in a fallback face for the
+ * moment the real one takes to arrive.
+ */
+
+@font-face {
+    font-family: "Libertinus Serif";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("fonts/libertinus-serif-400.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Libertinus Serif";
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url("fonts/libertinus-serif-400-italic.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Libertinus Serif";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("fonts/libertinus-serif-700.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("fonts/archivo-400.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Archivo";
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url("fonts/archivo-400-italic.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("fonts/archivo-500.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("fonts/archivo-600.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Archivo Narrow";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("fonts/archivo-narrow-400.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Iosevka";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("fonts/iosevka-400.woff2") format("woff2");
+}
