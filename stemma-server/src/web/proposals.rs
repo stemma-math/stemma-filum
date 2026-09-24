@@ -64,7 +64,7 @@ async fn against(instance: &Instance, proposal: &proposals::Proposal) -> Option<
     let commit = proposal.job.commit.clone();
 
     instance
-        .on_disk(move || Ok(crate::git::show(&path, &commit, &inside).ok()))
+        .blocking(move || Ok(crate::git::show(&path, &commit, &inside).ok()))
         .await
         .ok()
         .flatten()

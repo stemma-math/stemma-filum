@@ -188,7 +188,7 @@ pub async fn finish(
         let inside = format!("{}/{}/{}", repository::LINES, found.line, repository::ENTRY);
         let commit = found.commit.clone();
         let base = instance
-            .on_disk(move || crate::git::show(&repository, &commit, &inside))
+            .blocking(move || crate::git::show(&repository, &commit, &inside))
             .await?;
         proposal::preserves_central_statements(&base, &offer.source)
             .map_err(|error| WebError::BadRequest(error.to_string()))?;

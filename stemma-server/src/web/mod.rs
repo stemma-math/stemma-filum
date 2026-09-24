@@ -63,73 +63,37 @@ impl Instance {
         }
     }
 
-    /// Runs a read against the database.
-    ///
-    /// SQLite is not asynchronous, so the work goes to a thread that is
-    /// allowed to block rather than holding up the runtime.
+    /// Runs a read against the database on the blocking pool, since SQLite
+    /// calls block.
     pub async fn read<T, F>(&self, work: F) -> Result<T, WebError>
     where
         F: FnOnce(&Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
         let database = self.database.clone();
-
-        let outcome = tokio::task::spawn_blocking(move || {
-            let database = database.lock().map_err(|_| {
-                anyhow::anyhow!("the database is unusable because a request panicked holding it")
-            })?;
-
-            work(database.connection())
-        })
-        .await
-        .map_err(|error| WebError::Internal(anyhow::anyhow!("the work did not finish: {error}")))?;
-
-        outcome.map_err(WebError::Internal)
+        self.blocking(move || work(lock(&database)?.connection()))
+            .await
     }
 
-    /// Runs a write against the database, where the work needs a
-    /// transaction of its own.
+    /// Runs a write that needs a transaction of its own.
     pub async fn write<T, F>(&self, work: F) -> Result<T, WebError>
     where
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
         let database = self.database.clone();
-
-        let outcome = tokio::task::spawn_blocking(move || {
-            let mut database = database.lock().map_err(|_| {
-                anyhow::anyhow!("the database is unusable because a request panicked holding it")
-            })?;
-
-            work(database.connection_mut())
-        })
-        .await
-        .map_err(|error| WebError::Internal(anyhow::anyhow!("the work did not finish: {error}")))?;
-
-        outcome.map_err(WebError::Internal)
+        self.blocking(move || work(lock(&database)?.connection_mut()))
+            .await
     }
 
-    /// Runs work against the repositories.
-    ///
-    /// Git is a program, not a library here, so this also goes to a thread
-    /// that is allowed to block.
+    /// Runs work against the repositories, which shells out to git.
     pub async fn with_repositories<T, F>(&self, work: F) -> Result<T, WebError>
     where
         F: FnOnce(&crate::git::Repositories) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
         let repositories = self.repositories();
-
         self.blocking(move || work(&repositories)).await
-    }
-
-    /// Runs filesystem work without blocking an asynchronous worker.
-    pub async fn on_disk<T, F>(&self, work: F) -> Result<T, WebError>
-    where
-        F: FnOnce() -> Result<T> + Send + 'static,
-        T: Send + 'static,
-    {
-        self.blocking(work).await
     }
 
     /// Runs synchronous I/O or expensive computation on the blocking pool.
@@ -191,21 +155,50 @@ impl Instance {
     }
 }
 
-/// Every page the instance serves.
+/// Locks the database, failing if a panic poisoned it.
+fn lock(database: &Mutex<Database>) -> Result<std::sync::MutexGuard<'_, Database>> {
+    database.lock().map_err(|_| {
+        anyhow::anyhow!("the database is unusable because a request panicked holding it")
+    })
+}
+
+/// Everything the instance serves over HTTP.
 ///
-/// The state is left to the caller to attach, so that the routes that are
-/// not pages can be added beside these first.
+/// The state is attached by the caller, so routes that are not part of the
+/// web can be added beside these first.
 pub fn router() -> Router<Instance> {
+    Router::new()
+        .merge(pages())
+        .merge(api())
+        .merge(git())
+        .merge(assets())
+        .fallback(get(not_found))
+        .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))
+}
+
+/// Server-rendered pages and the forms they post.
+fn pages() -> Router<Instance> {
     Router::new()
         .route("/", get(front::door))
         .route("/login", get(auth::login_form).post(auth::log_in))
         .route("/register", get(auth::register_form).post(auth::register))
         .route("/logout", post(auth::log_out))
+        .route("/forgotten", get(reset::asking).post(reset::forgotten))
+        .route("/reset/{secret}", get(reset::form).post(reset::set))
+        .route("/device", get(device::form).post(device::answer))
+        .route("/invite/{secret}", get(invite::offer))
+        .route("/invite/{secret}/join", post(invite::join))
+        .route("/invite/{secret}/register", post(invite::join_and_register))
         .route(
             "/groups/new",
             get(groups::request_form).post(groups::request),
         )
         .route("/g/{slug}", get(groups::space))
+        .route("/g/{slug}/invitations", post(groups::invite))
+        .route(
+            "/g/{slug}/invitations/{id}/withdraw",
+            post(groups::withdraw),
+        )
         .route("/g/{slug}/lines/new", get(starting::form))
         .route("/g/{slug}/lines", post(starting::start))
         .route(
@@ -225,36 +218,30 @@ pub fn router() -> Router<Instance> {
             "/g/{slug}/{side}/{line}/claim/release",
             post(claims::hand_back),
         )
-        .route("/g/{slug}/invitations", post(groups::invite))
-        .route(
-            "/g/{slug}/invitations/{id}/withdraw",
-            post(groups::withdraw),
-        )
+        .route("/proposals/{id}", get(proposals::review))
+        .route("/proposals/{id}/decide", post(proposals::decide))
         .route("/machines/{id}", get(machines::panel))
         .route("/machines/{id}/serve", post(machines::serve))
         .route("/machines/{id}/retire", post(machines::retire))
         .route("/machines/{id}/jobs/{job}/clear", post(machines::clear))
-        .route("/invite/{secret}", get(invite::offer))
-        .route("/invite/{secret}/join", post(invite::join))
-        .route("/invite/{secret}/register", post(invite::join_and_register))
-        .route("/reset/{secret}", get(reset::form).post(reset::set))
-        .route("/forgotten", get(reset::asking).post(reset::forgotten))
-        .route("/device", get(device::form).post(device::answer))
+        .route("/admin", get(admin::area))
         .route(
-            "/git/{group}/{*rest}",
-            get(transport::serve).post(transport::serve),
+            "/admin/authenticate",
+            get(admin::authenticate_form).post(admin::authenticate),
         )
+        .route("/admin/settings", post(admin::save_settings))
+        .route("/admin/requests/{id}/approve", post(admin::approve))
+        .route("/admin/requests/{id}/decline", post(admin::decline))
+}
+
+/// The JSON API the client and the daemon speak.
+fn api() -> Router<Instance> {
+    Router::new()
         .route("/api/me", get(api::me))
+        .route("/api/logout", post(api::sign_out))
         .route("/api/workspace", get(api::workspace))
-        .route(
-            "/api/groups/{group}/{side}/artefacts/{kind}/{commit}",
-            get(artefacts::send).put(artefacts::receive),
-        )
-        .route(
-            "/api/machines",
-            get(machines::mine).post(machines::register),
-        )
-        .route("/api/machines/beat", post(machines::beat))
+        .route("/api/device/start", post(device::start))
+        .route("/api/device/collect", post(device::collect))
         .route("/api/lines", post(starting::api_start))
         .route("/api/lines/{slug}/{line}/share", post(starting::api_share))
         .route(
@@ -265,38 +252,45 @@ pub fn router() -> Router<Instance> {
         .route("/api/claims/renew", post(claims::renew))
         .route("/api/claims/release", post(claims::release))
         .route("/api/claims/ask", post(claims::ask))
+        .route(
+            "/api/machines",
+            get(machines::mine).post(machines::register),
+        )
+        .route("/api/machines/beat", post(machines::beat))
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
-        .route("/api/groups/{group}/machines", get(jobs::machine_choices))
-        .route("/api/groups/{group}/vault", get(vault::api_view))
-        .route("/api/groups/{group}/vault/entries", post(vault::api_admit))
-        .route("/api/groups/{group}/vault/bridges", post(vault::api_bridge))
-        .route("/api/groups/{group}/vault/audits", post(vault::api_audit))
         .route("/api/jobs/{id}/finish", post(jobs::finish))
         .route("/api/proposals", get(proposals::listing))
         .route("/api/proposals/{id}", get(proposals::accepted))
         .route("/api/proposals/{id}/review", get(proposals::offered))
         .route("/api/proposals/{id}/decide", post(proposals::api_decide))
-        .route("/proposals/{id}", get(proposals::review))
-        .route("/proposals/{id}/decide", post(proposals::decide))
-        .route("/api/logout", post(api::sign_out))
-        .route("/api/device/start", post(device::start))
-        .route("/api/device/collect", post(device::collect))
-        .route("/admin", get(admin::area))
+        .route("/api/groups/{group}/machines", get(jobs::machine_choices))
+        .route("/api/groups/{group}/vault", get(vault::api_view))
+        .route("/api/groups/{group}/vault/entries", post(vault::api_admit))
+        .route("/api/groups/{group}/vault/bridges", post(vault::api_bridge))
+        .route("/api/groups/{group}/vault/audits", post(vault::api_audit))
         .route(
-            "/admin/authenticate",
-            get(admin::authenticate_form).post(admin::authenticate),
+            "/api/groups/{group}/{side}/artefacts/{kind}/{commit}",
+            get(artefacts::send).put(artefacts::receive),
         )
-        .route("/admin/settings", post(admin::save_settings))
-        .route("/admin/requests/{id}/approve", post(admin::approve))
-        .route("/admin/requests/{id}/decline", post(admin::decline))
+}
+
+/// Git's smart HTTP transport for the group repositories.
+fn git() -> Router<Instance> {
+    Router::new().route(
+        "/git/{group}/{*rest}",
+        get(transport::serve).post(transport::serve),
+    )
+}
+
+/// Stylesheet, faces, scripts and textures.
+fn assets() -> Router<Instance> {
+    Router::new()
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
         .route(assets::DESCENT_PATH, get(assets::descent))
         .route(assets::SURFACE_PATH, get(assets::surface))
         .route(assets::NOISE_PATH, get(assets::noise))
         .route(assets::FONT_PATH, get(assets::font))
-        .fallback(get(not_found))
-        .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))
 }
 
 /// What became of a message.

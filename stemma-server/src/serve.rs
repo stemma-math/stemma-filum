@@ -40,16 +40,7 @@ pub fn serve(settings: Settings, service_user: &str) -> Result<()> {
         tracing::warn!("{}", finding.message);
     }
 
-    let database = Database::open(&settings.paths.database())?;
-
-    if !database.is_current()? {
-        bail!(
-            "the database is at schema version {} and this build needs {}: run \
-             `stemma-server migrate`",
-            database.version()?,
-            db::expected_version()
-        );
-    }
+    let database = Database::open_current(&settings.paths.database())?;
 
     let key = Key::read(&settings.paths.session_key())?;
     let instance = Instance::new(settings, database, key);

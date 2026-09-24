@@ -64,7 +64,7 @@ pub async fn receive(
         let commit = commit.clone();
 
         instance
-            .on_disk(move || {
+            .blocking(move || {
                 shelf
                     .put(&group, &scope, kind, &commit, &content)
                     .map(|_| ())
@@ -103,7 +103,7 @@ pub async fn send(
 
     let shelf = Shelf::new(instance.settings.paths.artefacts_dir());
     let found = instance
-        .on_disk(move || shelf.get(&group, &scope, kind, &commit))
+        .blocking(move || shelf.get(&group, &scope, kind, &commit))
         .await?;
 
     match found {

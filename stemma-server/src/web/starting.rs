@@ -154,7 +154,7 @@ async fn born(
         let author_email = who.email.clone();
 
         instance
-            .on_disk(move || {
+            .blocking(move || {
                 crate::git::start_line(
                     &path,
                     &name,
@@ -300,7 +300,7 @@ async fn moved(
     let author_email = who.email.clone();
 
     instance
-        .on_disk(move || {
+        .blocking(move || {
             // The group receives it first, so nothing can be lost
             // between the two commits.
             crate::git::bring_line(&ours, &theirs, &moving, history)?;
@@ -405,7 +405,7 @@ async fn gone(
         let author_email = who.email.clone();
 
         instance
-            .on_disk(move || {
+            .blocking(move || {
                 crate::git::drop_line(
                     &path,
                     &name,
@@ -446,7 +446,7 @@ async fn mine(
     let inside = format!("{}/{}/{}", repository::LINES, name, repository::ENTRY);
 
     instance
-        .on_disk(move || {
+        .blocking(move || {
             let head =
                 crate::git::head_commit(&path).ok_or_else(|| anyhow::anyhow!("nothing here"))?;
 
@@ -474,7 +474,7 @@ async fn held_back(
 
     let shared = instance.repositories().shared(group);
     let known: Vec<String> = instance
-        .on_disk(move || {
+        .blocking(move || {
             let Some(head) = crate::git::head_commit(&shared) else {
                 return Ok(Vec::new());
             };
