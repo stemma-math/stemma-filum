@@ -433,8 +433,6 @@ async function drawNewLine() {
     try {
       tell(await invoke<string>("new_line", { group, title, question, shared }));
       await bringIntoStep();
-      await loadLines();
-      drawRail();
       await goTo("welcome");
     } catch (error) { tell(said(error)); }
   };
@@ -471,8 +469,6 @@ function share(path: string) {
     try {
       tell(await invoke<string>("share_line", { path, history, mineToWrite: mine }));
       await bringIntoStep();
-      await loadLines();
-      drawRail();
       await goTo("welcome");
     } catch (error) { tell(said(error)); }
   };
@@ -483,17 +479,26 @@ async function takeOut(path: string) {
   try {
     tell(await invoke<string>("delete_line", { path }));
     await bringIntoStep();
-    await loadLines();
-    drawRail();
     await goTo("welcome");
   } catch (error) { tell(said(error)); }
 }
 
 /* ── Synchronising ─────────────────────────────────────────────────── */
 
+/// Syncs every repository, then shows what is on the disk afterwards.
+///
+/// A sync can clone a group this machine has never had, or leave one
+/// behind, so the groups and their lines are read again whatever it did,
+/// including when it failed halfway: what did arrive belongs on screen.
 async function bringIntoStep() {
   tell("Syncing this machine...");
-  try { stepped = await invoke<Stepped[]>("sync"); } catch (error) { tell(said(error)); return; }
+  let failed: unknown = null;
+  try { stepped = await invoke<Stepped[]>("sync"); } catch (error) { failed = error; }
+  await loadGroups();
+  await loadLines();
+  drawRail();
+  if (stage === "welcome") drawWelcome();
+  if (failed) { tell(said(failed)); return; }
   const parted = stepped.filter((one) => one.parted);
   const recorded = stepped.flatMap((one) => one.recorded);
   // Work still only on this machine. It is never nothing quietly: a
