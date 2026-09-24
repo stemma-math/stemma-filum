@@ -240,42 +240,14 @@ impl JobState {
     pub fn may_be_withdrawn(self) -> bool {
         matches!(self, Self::Queued)
     }
-
-    /// The word it is stored and shown as.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Running => "running",
-            Self::Done => "done",
-            Self::Withdrawn => "withdrawn",
-        }
-    }
 }
 
-impl fmt::Display for JobState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Why a string does not name a state.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("`{0}` is not a state a job can be in")]
-pub struct BadJobState(String);
-
-impl FromStr for JobState {
-    type Err = BadJobState;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "queued" => Ok(Self::Queued),
-            "running" => Ok(Self::Running),
-            "done" => Ok(Self::Done),
-            "withdrawn" => Ok(Self::Withdrawn),
-            other => Err(BadJobState(other.to_owned())),
-        }
-    }
-}
+spelled!(JobState, BadJobState("`{0}` is not a state a job can be in") {
+    Queued => "queued",
+    Running => "running",
+    Done => "done",
+    Withdrawn => "withdrawn",
+});
 
 /// How a job ended.
 ///

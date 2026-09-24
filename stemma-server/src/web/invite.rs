@@ -24,7 +24,7 @@ use crate::store::users::{self, NotCreated};
 /// What the form of somebody who already has an account sends.
 #[derive(Debug, Deserialize)]
 pub struct Joining {
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 

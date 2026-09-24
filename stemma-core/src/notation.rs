@@ -40,13 +40,8 @@ pub fn imported_by(source: &str) -> bool {
         .any(|line| line.contains("#import") && line.contains(&format!("@{NAMESPACE}/{NAME}")))
 }
 
-/// Whether a source uses the environments without saying where they
-/// come from.
-///
-/// This is what a line written before the package existed looks like.
-/// It is not a mistake anybody made: the environments used to be given
-/// to the document by whatever composed it, and a line from then is a
-/// line that never had an import to lose.
+/// Whether a source uses the environments without importing the package
+/// that defines them, and so cannot compose.
 pub fn missing_from(source: &str) -> bool {
     !imported_by(source)
         && crate::source::ENVIRONMENTS.iter().any(|environment| {
@@ -74,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    fn a_line_written_before_the_package_existed_is_recognised() {
+    fn a_source_using_environments_without_the_import_is_recognised() {
         let orphan = "= Hola\n\n#question[Adiós.]\n";
 
         assert!(missing_from(orphan));

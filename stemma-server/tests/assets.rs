@@ -47,12 +47,16 @@ async fn nothing_a_page_loads_comes_from_anywhere_else() {
     assert!(stylesheet.status.is_success());
 
     for reference in stylesheet.body.split("url(").skip(1) {
-        let address = reference.trim_start_matches('"');
+        let address = reference
+            .trim_start_matches('"')
+            .split(['"', ')'])
+            .next()
+            .unwrap_or_default();
+        let same_origin = address.starts_with("/assets/")
+            || address.starts_with("data:")
+            || address.starts_with('#')
+            || !(address.starts_with('/') || address.contains(':'));
 
-        assert!(
-            address.starts_with("/assets/"),
-            "the stylesheet sends a reader to {}",
-            address.split('"').next().unwrap_or_default()
-        );
+        assert!(same_origin, "the stylesheet sends a reader to {address}");
     }
 }

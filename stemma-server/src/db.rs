@@ -104,6 +104,23 @@ impl Database {
         Self::open_or_create(path)
     }
 
+    /// Opens the database at `path`, refusing one whose schema this build
+    /// does not match.
+    pub fn open_current(path: &Path) -> Result<Self> {
+        let database = Self::open(path)?;
+
+        if !database.is_current()? {
+            bail!(
+                "the database is at schema version {} and this build needs {}: run \
+                 `stemma-server migrate`",
+                database.version()?,
+                expected_version()
+            );
+        }
+
+        Ok(database)
+    }
+
     /// Opens the database at `path`, creating an empty one if there is none.
     pub fn open_or_create(path: &Path) -> Result<Self> {
         let connection = Connection::open(path)

@@ -19,6 +19,7 @@ use crate::credentials::Credentials;
 use crate::git;
 use crate::home::Home;
 use crate::program;
+use crate::session;
 use crate::workspace::Side;
 
 /// What happened to one repository.
@@ -97,8 +98,7 @@ pub struct Report {
 
 /// Brings every group this machine can work in into step.
 pub fn run(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
-    let credentials = crate::session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let listing = server.workspace(&credentials.token)?;
 
     // Validate the complete listing before using remote names as local paths.

@@ -151,7 +151,7 @@ pub async fn unbuilt_in(
     };
 
     let names: Vec<Name> = instance
-        .on_disk(move || {
+        .blocking(move || {
             let Some(head) = crate::git::head_commit(&path) else {
                 return Ok(Vec::new());
             };
@@ -216,7 +216,7 @@ async fn written(
     );
 
     instance
-        .on_disk(move || {
+        .blocking(move || {
             let Some(commit) = crate::git::head_commit(&path) else {
                 return Ok(None);
             };
@@ -311,7 +311,7 @@ pub async fn read(
     };
 
     let content = instance
-        .on_disk(move || shelf.get(&group, &scope, Kind::Nodes, &built.commit))
+        .blocking(move || shelf.get(&group, &scope, Kind::Nodes, &built.commit))
         .await?;
 
     let Some(content) = content else {

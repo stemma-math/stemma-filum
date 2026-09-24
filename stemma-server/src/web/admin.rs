@@ -31,7 +31,7 @@ pub struct Proof {
     /// Where the maintainer was going.
     #[serde(default)]
     pub next: Option<String>,
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 
@@ -41,7 +41,7 @@ pub struct Decision {
     /// What the maintainer wants to say about it.
     #[serde(default)]
     pub note: String,
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 
@@ -62,7 +62,7 @@ pub struct InstanceSettings {
     pub group_requests_open: Option<String>,
     /// How many days an invitation lasts.
     pub invitation_ttl_days: String,
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 

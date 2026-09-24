@@ -738,12 +738,17 @@ impl Server {
         self.read(token, &format!("/api/proposals/{proposal}/review"))
     }
 
-    /// Records a decision: `accept`, `reject` or `ask_again`.
-    pub fn decide_proposal(&self, token: &str, proposal: &str, decision: &str) -> Result<()> {
+    /// Records a reviewer's decision about a proposal.
+    pub fn decide_proposal(
+        &self,
+        token: &str,
+        proposal: &str,
+        decision: stemma_core::proposal::Verdict,
+    ) -> Result<()> {
         let _: serde_json::Value = self.ask(
             token,
             &format!("/api/proposals/{proposal}/decide"),
-            &serde_json::json!({ "decision": decision }),
+            &serde_json::json!({ "decision": decision.as_str() }),
         )?;
 
         Ok(())

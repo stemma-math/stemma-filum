@@ -33,6 +33,11 @@ pub enum Keep {
     There,
 }
 
+spelled!(Keep, UnknownKeep("`{0}` is not a version: say `here` or `there`") {
+    Here => "here",
+    There => "there",
+});
+
 /// Which part of a statement a piece of source is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

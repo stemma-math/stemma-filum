@@ -9,7 +9,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::api::{Server, Sharing, Starting};
+use crate::api::{Sharing, Starting};
 use crate::home::Home;
 use crate::session;
 
@@ -22,8 +22,7 @@ pub fn start(
     shared: bool,
     out: &mut impl Write,
 ) -> Result<()> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
 
     let placed = server.start_line(
         &credentials.token,
@@ -54,8 +53,7 @@ pub fn start(
 
 /// Takes a line of one's own out of the repository.
 pub fn delete(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
 
     let clone = crate::git::containing(at)
         .context("this is not inside a clone: run it from a group's repository")?;
@@ -87,8 +85,7 @@ pub fn share(
     author_writes: bool,
     out: &mut impl Write,
 ) -> Result<()> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
 
     let clone = crate::git::containing(at)
         .context("this is not inside a clone: run it from a group's repository")?;

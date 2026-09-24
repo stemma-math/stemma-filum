@@ -73,6 +73,41 @@ pub enum BridgeKind {
     Structure,
 }
 
+spelled!(BridgeKind, UnknownBridgeKind("`{0}` is not a kind of bridge: use `predicate` or `structure`") {
+    Predicate => "predicate",
+    Structure => "structure",
+});
+
+/// Which kind of vault object an audit is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditTarget {
+    /// An admitted definition.
+    Entry,
+    /// A bridge between two definitions.
+    Bridge,
+}
+
+spelled!(AuditTarget, UnknownAuditTarget("`{0}` is not something that is audited: use `entry` or `bridge`") {
+    Entry => "entry",
+    Bridge => "bridge",
+});
+
+/// What an audit request asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuditVerb {
+    /// Vouch that prose and formalization correspond.
+    Attest,
+    /// Take back an earlier guarantee.
+    Withdraw,
+}
+
+spelled!(AuditVerb, UnknownAuditVerb("`{0}` is not an audit: use `attest` or `withdraw`") {
+    Attest => "attest",
+    Withdraw => "withdraw",
+});
+
 /// Why a bridge exists.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "origin", rename_all = "snake_case")]

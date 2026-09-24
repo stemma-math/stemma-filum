@@ -6,6 +6,7 @@
 //! the product — weight is commitment — and literally a descent tree.
 
 use maud::{DOCTYPE, Markup, PreEscaped, html};
+use stemma_identity::{MARK_CENTRE, MARK_ORBIT};
 
 use super::assets::{DESCENT_PATH, STYLESHEET_PATH, SURFACE_PATH};
 use super::visitor::SignedIn;
@@ -374,46 +375,19 @@ fn foot(chrome: &Chrome) -> Markup {
     }
 }
 
-/// The hidden field that says a form came from a page we served.
+/// The hidden CSRF field every form posted by a signed-in visitor carries.
 pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
     html! {
         input type="hidden" name="form_token" value=(signed.session.csrf_token);
     }
 }
 
-/// The centre of the mark's box, in the mark's own units.
-pub const MARK_CENTRE: f64 = 32.0;
-
-/// How far the mark's nodes sit from that centre.
-///
-/// It is also the radius of the ring [`constellation`] draws, which is what
-/// makes the ring the node orbit rather than a circle that resembles it.
-pub const NODE_ORBIT: f64 = 24.0;
-
-/// How far past the orbit the construction rules reach.
+/// How far past the mark's orbit the construction rules reach.
 const RULE_REACH: f64 = 1.18;
 
-/// The mark: three nodes held together by one continuous descent.
-///
-/// The nodes sit on a circle of radius [`NODE_ORBIT`] about the centre of
-/// the 64-unit box, a third of a turn apart: twelve o'clock, then four and
-/// eight. Three equal steps around a circle is an equilateral triangle, so
-/// the weight falls evenly however the mark is scaled.
-///
-/// Written out rather than built element by element, because the elements
-/// of an SVG close themselves and the HTML ones around them do not.
+/// The mark, from the identity.
 pub fn mark() -> Markup {
-    PreEscaped(
-        r#"<svg class="mark" width="32" height="32" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <path class="mark__edge mark__edge--left" d="M32 8 C32 20 28 27 20 32 C15 35.2 11.8 38.5 11.22 44" />
-            <path class="mark__edge mark__edge--base" d="M11.22 44 C20 39.5 26 41.5 32 43.6 C40 46.4 47 46.2 52.78 44" />
-            <path class="mark__edge mark__edge--right" d="M52.78 44 C55.5 30 47 15 32 8" />
-            <circle class="mark__node mark__node--top" cx="32" cy="8" r="6.5" />
-            <circle class="mark__node mark__node--left" cx="11.22" cy="44" r="5.9" />
-            <circle class="mark__node mark__node--right" cx="52.78" cy="44" r="5.9" />
-        </svg>"#
-            .to_owned(),
-    )
+    PreEscaped(stemma_identity::MARK_SVG.to_owned())
 }
 
 /// The construction the front door draws behind the mark.
@@ -427,9 +401,9 @@ pub fn mark() -> Markup {
 /// Each rule fades out at both ends rather than stopping, which is what a
 /// drawn construction line does and a border cannot.
 pub fn constellation() -> Markup {
-    let reach = NODE_ORBIT * RULE_REACH;
+    let reach = MARK_ORBIT * RULE_REACH;
     let (near, far) = (MARK_CENTRE - reach, MARK_CENTRE + reach);
-    let top = MARK_CENTRE - NODE_ORBIT;
+    let top = MARK_CENTRE - MARK_ORBIT;
 
     // The rule at the top node's height is shorter: it is that node's own
     // line, not one of the axes.
@@ -467,7 +441,7 @@ pub fn constellation() -> Markup {
     PreEscaped(format!(
         r#"<svg class="construction" viewBox="0 0 64 64" fill="none" aria-hidden="true">
             <defs>{fades}</defs>
-            <circle class="construction__ring" cx="{MARK_CENTRE}" cy="{MARK_CENTRE}" r="{NODE_ORBIT}" />
+            <circle class="construction__ring" cx="{MARK_CENTRE}" cy="{MARK_CENTRE}" r="{MARK_ORBIT}" />
             {lines}
         </svg>"#
     ))
@@ -516,47 +490,6 @@ mod tests {
             .collect()
     }
 
-    /// Clockwise from straight up, in degrees.
-    fn bearing((x, y): (f64, f64)) -> f64 {
-        x.atan2(-y).to_degrees()
-    }
-
-    /// The three nodes are the same distance out, and that distance is the
-    /// radius the construction draws its ring at.
-    #[test]
-    fn the_marks_nodes_all_sit_on_one_orbit() {
-        let nodes = nodes();
-        assert_eq!(nodes.len(), 3, "the mark is three nodes");
-
-        for (x, y) in &nodes {
-            let orbit = x.hypot(*y);
-
-            assert!(
-                (orbit - NODE_ORBIT).abs() < 0.01,
-                "the node at ({x}, {y}) is {orbit} out, not {NODE_ORBIT}"
-            );
-        }
-    }
-
-    /// A third of a turn apart, starting from straight up. Three equal
-    /// steps around a circle is what makes the triangle equilateral.
-    #[test]
-    fn the_marks_nodes_are_a_third_of_a_turn_apart() {
-        let [top, left, right] = nodes()[..] else {
-            panic!("the mark is three nodes")
-        };
-
-        assert!(bearing(top).abs() < 0.01, "the first is straight up");
-        assert!(
-            (bearing(left) + 120.0).abs() < 0.01,
-            "the second is a third on"
-        );
-        assert!(
-            (bearing(right) - 120.0).abs() < 0.01,
-            "the third is another"
-        );
-    }
-
     /// The ring is the orbit, not a circle that looks like it.
     #[test]
     fn the_construction_draws_its_ring_on_the_node_orbit() {
@@ -570,8 +503,8 @@ mod tests {
             .expect("the ring should carry a radius");
 
         assert!(
-            (radius - NODE_ORBIT).abs() < f64::EPSILON,
-            "the ring is drawn at {radius}, and the nodes sit at {NODE_ORBIT}"
+            (radius - MARK_ORBIT).abs() < f64::EPSILON,
+            "the ring is drawn at {radius}, and the nodes sit at {MARK_ORBIT}"
         );
 
         for (x, y) in nodes() {

@@ -1,0 +1,13 @@
+[package]
+name = "stemma-identity"
+description = "Stemma's visual identity: design tokens, faces, the mark and shared drawings."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+include = ["src", "*.css", "*.js", "*.svg", "fonts"]
+
+[lints]
+workspace = true

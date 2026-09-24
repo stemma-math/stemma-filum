@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="brand-mark" width="32" height="32" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+  <path class="brand-mark__edge brand-mark__edge--left" d="M32 8 C32 20 28 27 20 32 C15 35.2 11.8 38.5 11.22 44"/>
+  <path class="brand-mark__edge brand-mark__edge--base" d="M11.22 44 C20 39.5 26 41.5 32 43.6 C40 46.4 47 46.2 52.78 44"/>
+  <path class="brand-mark__edge brand-mark__edge--right" d="M52.78 44 C55.5 30 47 15 32 8"/>
+  <circle class="brand-mark__node brand-mark__node--top" cx="32" cy="8" r="6.5"/>
+  <circle class="brand-mark__node brand-mark__node--left" cx="11.22" cy="44" r="5.9"/>
+  <circle class="brand-mark__node brand-mark__node--right" cx="52.78" cy="44" r="5.9"/>
+</svg>

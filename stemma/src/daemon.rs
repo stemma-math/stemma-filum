@@ -38,8 +38,7 @@ const AFTER_TROUBLE: Duration = Duration::from_secs(30);
 /// With `once`, it takes at most one job and returns, which is what a
 /// machine woken by something else wants and what a test can watch.
 pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let config = Config::read(&home.config_file())?;
 
     if server.node(&credentials.token)?.is_none() {

@@ -5,6 +5,9 @@
 //! client links it to write mathematics, the server links it to serve them,
 //! and neither depends on the other.
 
+#[macro_use]
+mod spelled;
+
 pub mod access;
 pub mod actor;
 pub mod agent;

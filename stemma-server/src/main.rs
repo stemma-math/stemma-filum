@@ -215,18 +215,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
 
 /// Opens the database, refusing one this build does not understand.
 fn open_database(settings: &Settings) -> Result<db::Database> {
-    let database = db::Database::open(&settings.paths.database())?;
-
-    if !database.is_current()? {
-        bail!(
-            "the database is at schema version {} and this build needs {}: run \
-             `stemma-server migrate`",
-            database.version()?,
-            db::expected_version()
-        );
-    }
-
-    Ok(database)
+    db::Database::open_current(&settings.paths.database())
 }
 
 /// Brings the database up to date, keeping a copy of what it was.

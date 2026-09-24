@@ -43,8 +43,7 @@ pub struct Wanted {
 
 /// Puts a job in the queue.
 pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Result<String> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
 
     let clone = git::containing(at)
         .context("this is not inside a clone: run it from a group's repository")?;
@@ -102,8 +101,7 @@ pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Res
 
 /// Says what is in the queue for this person's machines.
 pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let jobs = server.jobs(&credentials.token)?;
 
     if jobs.is_empty() {

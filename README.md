@@ -4,6 +4,20 @@ Stemma is a working platform for mathematics research groups. This repository
 contains the Rust client and daemon, the central server, the shared domain
 model, and the Tauri desktop application.
 
+## Layout
+
+| Path | What it is |
+|---|---|
+| `stemma-core/` | Domain vocabulary and the versioned HTTP protocol, shared by client and server |
+| `stemma/` | The `stemma` client: command line, daemon, group repositories, Typst and Lean tooling |
+| `stemma-server/` | The `stemma-server` binary: API, web interface, database, git remotes, job queue |
+| `stemma-app/` | The Tauri desktop application; its Svelte frontend is in `stemma-app/frontend` |
+| `identity/` | The visual identity: design tokens, faces, the mark, icons and the descent drawing |
+| `notation/` | The `@stemma/notation` Typst package every line imports |
+
+Dependencies point one way: `stemma` and `stemma-server` depend on
+`stemma-core`, never on each other, and the app depends on `stemma`.
+
 ## Requirements
 
 - macOS 12 or newer to build the macOS application
@@ -54,22 +68,21 @@ command. Set `STEMMA_HOME` to an absolute directory to isolate a test account:
 STEMMA_HOME="$PWD/.test-state/client" just app-dev
 ```
 
-## Shared assets
+## Visual identity
 
-`assets/` holds what both surfaces draw with. The descent — the line as a
-stemma codicum — is drawn by one file there: the server serves it to the
-browser, and the desktop application imports the same file. Two drawings
-of the same graph would start to differ the first time either was
-touched.
+`identity/` is the single source of Stemma's look. It is both a Rust crate
+(`stemma-identity`), which the server embeds, and an npm package
+(`@stemma-math/identity`), which the desktop frontend imports:
 
-## Typefaces
-
-The server carries the four faces the interface is set in — Libertinus Serif,
-Archivo, Archivo Narrow and Iosevka — in `stemma-server/assets/fonts`, subset
-to Latin and built into the binary, so an instance never sends a reader to
-somebody else's font host. All four are under the SIL Open Font License; each
-licence sits beside the files. The desktop application takes the same faces
-from its own npm dependencies.
+- `tokens.css` defines every colour, face, type step and spacing as custom
+  properties. Neither stylesheet defines tokens of its own.
+- `fonts.css` and `fonts/` carry Libertinus Serif, Archivo, Archivo Narrow and
+  Iosevka, subset to Latin, each beside its SIL Open Font License. The server
+  serves them from its own origin, so no page sends a reader to a font host.
+- `mark.svg`, `noise.svg` and `icons/` are the mark, the surface texture and
+  the application icons.
+- `descent.js` draws a line's descent. The server serves it to the browser and
+  the app imports it, so both surfaces draw the same graph.
 
 ## Verification
 
@@ -79,8 +92,9 @@ The normal pre-commit suite is:
 just check
 ```
 
-It checks formatting, runs Clippy with warnings denied, tests, type-checks and
-builds the frontend, and runs the complete Rust workspace test suite. The
+It checks formatting, tests, type-checks and builds the frontend, builds the
+Rust documentation, runs Clippy with warnings denied, and runs the complete Rust
+workspace test suite. The
 client HTTP tests and repository transport integration tests bind loopback TCP
 ports. Run the suite with local network permission if a sandbox blocks binding.
 The repository transport tests can also be run separately:

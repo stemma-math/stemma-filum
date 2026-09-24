@@ -36,6 +36,14 @@ pub fn command_line() -> Result<PathBuf> {
         })
 }
 
+/// The command line the application carries beside its own binary, when
+/// the running program has one there.
+pub fn carried() -> Option<PathBuf> {
+    let running = std::env::current_exe().ok()?;
+    let beside = running.parent()?.join(NAME);
+    is_a_program(&beside).then_some(beside)
+}
+
 /// The command line as reached from the program that is running.
 ///
 /// Either this is it, or this is the application and it is beside it:

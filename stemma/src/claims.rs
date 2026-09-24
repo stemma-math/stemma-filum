@@ -73,8 +73,7 @@ pub fn ask(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> 
 
 /// Says which lines are being written, and on what.
 pub fn status(home: &Home, out: &mut impl Write) -> Result<()> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
     let writing = server.claims(&credentials.token)?;
 
     if writing.is_empty() {
@@ -137,8 +136,7 @@ fn lapsing(left: u64) -> String {
 
 /// The instance, the credential, and which line the command is about.
 fn addressed(home: &Home, at: &Path, line: Option<&str>) -> Result<(Server, String, About)> {
-    let credentials = session::required(home)?;
-    let server = Server::at(&credentials.server)?;
+    let (credentials, server) = session::connect(home)?;
 
     let clone = git::containing(at)
         .context("this is not inside a clone: run it from a group's repository")?;

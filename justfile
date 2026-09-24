@@ -19,11 +19,16 @@ format:
 alias fmt := format
 
 [group("test")]
-[doc("Type-check and build the frontend.")]
+[doc("Test, type-check and build the frontend.")]
 frontend:
   npm test --prefix {{frontend_dir}}
   npm run check --prefix {{frontend_dir}}
   npm run build --prefix {{frontend_dir}}
+
+[group("test")]
+[doc("Build the Rust documentation, failing on broken links.")]
+docs:
+  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 [group("test")]
 [doc("Run all Rust tests.")]
@@ -32,11 +37,8 @@ test:
 
 [group("test")]
 [doc("Test the desktop shell and frontend.")]
-test-app:
-  npm test --prefix {{frontend_dir}}
+test-app: frontend
   cargo test -p stemma-app
-  npm run check --prefix {{frontend_dir}}
-  npm run build --prefix {{frontend_dir}}
 
 [group("test")]
 [doc("Test the server.")]
@@ -50,7 +52,7 @@ test-repositories:
 
 [group("test")]
 [doc("Run the complete pre-commit verification suite.")]
-check: format frontend
+check: format frontend docs
   cargo clippy --workspace --all-targets -- -D warnings
   cargo test --workspace
 
