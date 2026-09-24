@@ -387,18 +387,63 @@ aside {
     background: var(--raise);
 }
 
-textarea#editor {
-    width: min(68ch, 100%);
-    min-height: 100%;
-    display: block;
-    margin: auto;
-    resize: none;
-    border: 0;
-    outline: 0;
-    background: transparent;
+/* The editor scrolls itself, so that the line numbers stay beside the
+ * text; the section around it only gives it its place in the grid. */
+.writing:has(.cm-editor) {
+    overflow: hidden;
+    padding: 0;
+}
+
+.writing .cm-editor {
+    height: 100%;
     color: var(--ink);
+    background: transparent;
     font: 17px/1.65 var(--serif);
 }
+
+.writing .cm-editor.cm-focused { outline: 0; }
+.writing .cm-scroller { font: inherit; line-height: inherit; }
+
+.writing .cm-content {
+    max-width: 68ch;
+    padding: 32px 24px 32px 12px;
+    caret-color: var(--ink);
+}
+
+.writing .cm-gutters {
+    border: 0;
+    color: var(--quiet);
+    background: transparent;
+    font: 12px/calc(17px * 1.65) var(--mono);
+}
+
+.writing .cm-lineNumbers .cm-gutterElement { padding: 0 6px 0 18px; }
+.writing .cm-activeLineGutter { color: var(--ink); background: transparent; }
+
+.writing .cm-panels { color: var(--ink); background: var(--raise); border-color: var(--rule); font: 12px var(--sans); }
+.writing .cm-search { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px; }
+.writing .cm-search input,
+.writing .cm-search button { width: auto; min-height: 28px; margin: 0; padding: 3px 8px; font-size: 12px; }
+.writing .cm-search button { background: var(--raise); background-image: none; }
+.writing .cm-search input[type="checkbox"] { min-height: 0; accent-color: var(--ditto); }
+.writing .cm-search label { flex-direction: row; align-items: center; gap: 4px; font-size: 12px; }
+.writing .cm-search button[name="close"] { border: 0; box-shadow: none; background: transparent; }
+
+.tt-hash,
+.tt-call,
+.tt-keyword,
+.tt-marker { color: var(--ditto); }
+.tt-argument,
+.tt-punctuation,
+.tt-dollar { color: var(--quiet); }
+.tt-value { color: var(--verified); }
+.tt-math { color: #6a3fa0; }
+.tt-escape { color: #8a5a12; }
+.tt-comment { color: var(--quiet); font-style: italic; }
+.tt-heading,
+.tt-strong { font-weight: 600; }
+.tt-emphasis { font-style: italic; }
+.tt-raw { font-family: var(--mono); font-size: .85em; }
 
 .preview {
     background: #353430;

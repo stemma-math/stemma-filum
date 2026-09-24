@@ -4,6 +4,7 @@ import "@fontsource/iosevka/latin-400.css";
 import "@fontsource/libertinus-serif/latin-400.css";
 import "./style.css";
 import { escapeHtml as escape, serially, latestRequest } from "./lifecycle";
+import { sourceEditor, type SourceEditor } from "./editor";
 import { draw } from "../../../assets/descent.js";
 
 declare global {
@@ -90,6 +91,7 @@ let stepped: Stepped[] = [];
 let current: OpenLine | null = null;
 let choices: Offer[] = [];
 let writing = false;
+let source: SourceEditor | null = null;
 let decisions = new Map<string, "here" | "there">();
 let saveTimer = 0;
 let savesInFlight = 0;
@@ -322,6 +324,8 @@ async function goTo(next: Stage) {
   if (stage === "editor" && next !== "editor") {
     if (!await leaveEditor()) return;
     current = null;
+    source?.destroy();
+    source = null;
   }
   openRequest();
   vaultRequest();
@@ -562,7 +566,7 @@ function drawEditor() {
       <span id="save" class="quiet">saved</span>
       <div id="claim" class="line-head__claim">No active claim</div>
     </header>
-    <section class="writing"><textarea id="editor" spellcheck="false"></textarea></section>
+    <section class="writing"></section>
     <section class="preview">
       <div class="tabs"><button data-pane="document" class="here">Document</button><button data-pane="descent">Descent</button></div>
       <div id="page"><p class="empty">The composed document will appear here.</p></div>
@@ -576,10 +580,9 @@ function drawEditor() {
       <section id="privacy"><p class="label">Who can see it</p><div id="privacy-actions"></div></section>
     </aside>
   </main>`;
-  const editor = document.querySelector<HTMLTextAreaElement>("#editor")!;
-  editor.disabled = !writing;
-  editor.value = current.source;
-  editor.oninput = changed;
+  source?.destroy();
+  source = sourceEditor(stageOf().querySelector<HTMLElement>(".writing")!, current.source, changed);
+  source.writable(writing);
   stageOf().querySelectorAll<HTMLButtonElement>(".tabs button").forEach((button) => button.onclick = () => showPane(button.dataset.pane as "document" | "descent"));
   drawPrivacy();
   showPane(showing);
@@ -601,7 +604,8 @@ function drawPrivacy() {
   target.innerHTML = `<p class="quiet">Everybody in ${escape(current.entry.group)} reads this line. One person writes it at a time.</p>`;
 }
 
-function editor() { return document.querySelector<HTMLTextAreaElement>("#editor")!; }
+/// The editor on the stage, if the stage is showing one.
+function editor() { return source?.dom.isConnected ? source : null; }
 
 /// The composed document, or the shape of the line. Both are of what
 /// is in the editor right now, not of the last thing a machine built.
@@ -621,11 +625,13 @@ async function drawDescent() {
   const figure = document.querySelector<HTMLElement>(".descent");
   if (!figure || !current) return;
   const active = descentRequest();
-  const source = editor().value;
+  const input = editor();
+  if (!input) return;
+  const text = input.text();
   const verified = current.lean?.compiled ? current.lean.statements : [];
   try {
-    const next = await invoke<unknown>("descent", { source: editor().value, verified, bridges: spans });
-    if (!active() || !figure.isConnected || editor().value !== source) return;
+    const next = await invoke<unknown>("descent", { source: text, verified, bridges: spans });
+    if (!active() || !figure.isConnected || input.text() !== text) return;
     // Handing the previous one over is what lets the drawing part a
     // box when a lemma has just been promoted out of it.
     draw(figure, next, descent);
@@ -643,19 +649,19 @@ function changed() {
 }
 
 async function save() {
-  const input = document.querySelector<HTMLTextAreaElement>("#editor");
-  if (!current || !input || (input.value === current.source && savesInFlight === 0)) return;
+  const input = editor();
+  if (!current || !input || (input.text() === current.source && savesInFlight === 0)) return;
   const path = current.entry.path;
-  const source = input.value;
+  const text = input.text();
   window.clearTimeout(saveTimer);
   savesInFlight += 1;
   try {
-    const opened = await enqueueSave(() => invoke<OpenLine>("save_line", { path, source }));
-    if (!input.isConnected || current?.entry.path !== path) return;
+    const opened = await enqueueSave(() => invoke<OpenLine>("save_line", { path, source: text }));
+    if (!input.dom.isConnected || current?.entry.path !== path) return;
     current = opened;
-    if (input.value === source) { drawNodes(opened); saved("saved"); }
+    if (input.text() === text) { drawNodes(opened); saved("saved"); }
   } catch (error) {
-    if (input.isConnected) saved("not saved");
+    if (input.dom.isConnected) saved("not saved");
     throw error;
   } finally {
     savesInFlight -= 1;
@@ -679,8 +685,8 @@ async function record() {
 
 /** Navigation must also save edits made while an earlier write was in flight. */
 async function flushEdits() {
-  const input = document.querySelector<HTMLTextAreaElement>("#editor");
-  while (input?.isConnected && current && (input.value !== current.source || savesInFlight > 0)) await save();
+  const input = editor();
+  while (input?.dom.isConnected && current && (input.text() !== current.source || savesInFlight > 0)) await save();
 }
 
 async function render() {
@@ -688,10 +694,12 @@ async function render() {
   const page = document.querySelector<HTMLDivElement>("#page");
   if (!page) return;
   const active = previewRequest();
-  const source = editor().value;
+  const input = editor();
+  if (!input) return;
+  const text = input.text();
   try {
-    const preview = await invoke<{ svg: string; diagnostics: string[] }>("preview", { path: current.entry.path, source: editor().value });
-    if (!active() || !page.isConnected || editor().value !== source) return;
+    const preview = await invoke<{ svg: string; diagnostics: string[] }>("preview", { path: current.entry.path, source: text });
+    if (!active() || !page.isConnected || input.text() !== text) return;
     page.innerHTML = preview.svg + (preview.diagnostics.length ? `<pre class="diagnostic">${escape(preview.diagnostics.join("\n"))}</pre>` : "");
   } catch (error) { if (!active() || !page.isConnected) return; page.innerHTML = `<pre class="diagnostic">${escape(said(error))}</pre>`; }
 }
@@ -730,8 +738,7 @@ function drawNotation(opened: OpenLine) {
       const next = await invoke<OpenLine>("add_notation", { path });
       if (current?.entry.path !== path) return;
       current = next;
-      const input = document.querySelector<HTMLTextAreaElement>("#editor");
-      if (input) input.value = next.source;
+      editor()?.replace(next.source);
       drawNodes(next);
       await render();
       tell("The notation import was added to this line.");
@@ -750,7 +757,7 @@ async function askAbout(command: string) {
     const claim = await invoke<Claim>(command, { path: current.entry.path });
     if (!target.isConnected) return;
     writing = claim.standing === "writing";
-    editor().disabled = !writing;
+    editor()?.writable(writing);
     if (current) drawNotation(current);
     const minutes = claim.left === null ? "" : `<span class="quiet">it lapses in ${Math.max(1, Math.ceil(claim.left / 60))} minutes</span>`;
     const action = claim.standing === "open" ? `<button id="take-claim">Write this line</button>` : writing ? `<button id="let-go">Let it go</button>` : `<button id="ask-for-it"${claim.asked ? " disabled" : ""}>${claim.asked ? "Asked for" : "Ask for it"}</button>`;
@@ -764,7 +771,7 @@ async function askAbout(command: string) {
   } catch (error) {
     if (!target.isConnected) return;
     writing = false;
-    editor().disabled = true;
+    editor()?.writable(false);
     target.textContent = said(error);
   }
 }
@@ -1168,14 +1175,14 @@ async function start() {
   await window.__TAURI__?.window?.getCurrentWindow().onCloseRequested(async (event) => {
     if (closing) { event.preventDefault(); return; }
     closing = true;
-    const input = document.querySelector<HTMLTextAreaElement>("#editor");
-    if (input) input.readOnly = true;
+    const input = editor();
+    input?.writable(false);
     try {
       await flushEdits();
       await record();
     } catch (error) {
       event.preventDefault();
-      if (input) input.readOnly = false;
+      input?.writable(writing);
       tell(`The window remains open because your changes could not be saved: ${said(error)}`);
     } finally {
       closing = false;
