@@ -18,8 +18,6 @@
 
 body {
     margin: 0;
-    background: var(--paper);
-    color: var(--ink);
 }
 
 /* ── The shell ─────────────────────────────────────────────────────── */
@@ -34,18 +32,11 @@ header {
     background: var(--paper-raise);
 }
 
-.wordmark,
 .label {
     font: 600 11px/1 var(--mono);
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--ink-3);
     margin: 0 0 8px;
-}
-
-.wordmark {
-    color: var(--ink);
-    margin: 0;
 }
 
 header nav {
@@ -58,20 +49,7 @@ header nav {
 }
 
 #said {
-    padding: 8px 16px;
     border-bottom: 1px solid var(--rule);
-    background: var(--paper-sunk);
-    font-size: 13px;
-    color: var(--ink-2);
-}
-
-.sheet {
-    max-width: 62rem;
-    margin: 0 auto;
-    padding: 28px 24px 64px;
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
 }
 
 section {
@@ -114,16 +92,11 @@ code {
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    padding: 12px 0;
     border-top: 1px solid var(--rule-soft);
 }
 
 .row p {
     margin: 0 0 3px;
-}
-
-.row__name {
-    font-size: 15px;
 }
 
 .row:has(.sharing),
@@ -148,8 +121,6 @@ code {
 .count {
     font-family: var(--mono);
     font-size: 11px;
-    border: 1px solid var(--rule);
-    padding: 0 4px;
 }
 
 /* ── Controls ──────────────────────────────────────────────────────── */
@@ -160,7 +131,6 @@ input,
 textarea {
     font: 13px var(--grotesk);
     color: var(--ink);
-    background: var(--paper-raise);
     border: 1px solid var(--rule);
     padding: 7px 10px;
 }
@@ -169,19 +139,9 @@ button {
     cursor: pointer;
 }
 
-button:hover,
-button:focus-visible {
-    border-color: var(--ink);
-}
-
 button.here {
     border-color: var(--ditto);
     color: var(--ditto);
-}
-
-button.primary {
-    border-color: var(--ink);
-    background: var(--paper-sunk);
 }
 
 button.kept {
@@ -202,7 +162,6 @@ button:disabled {
 input,
 textarea,
 select {
-    background: var(--paper-sunk);
     width: min(38rem, 100%);
 }
 
@@ -261,17 +220,12 @@ textarea:focus-visible {
 /* ── Signing in ────────────────────────────────────────────────────── */
 
 .entrance {
-    max-width: 30rem;
-    margin: 12vh auto;
-    padding: 0 24px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
     align-items: flex-start;
 }
 
 .entrance h1 {
-    font-size: 27px;
     font-weight: 600;
     margin: 0;
 }
@@ -314,24 +268,10 @@ aside {
     border-left: 1px solid var(--rule);
 }
 
-#register section {
-    border-top: 1px solid var(--rule);
-    padding: 14px 0 20px;
-}
-
-#register section:first-child {
-    border-top: 0;
-    padding-top: 0;
-}
-
 .writing,
 .preview {
     overflow: auto;
     padding: 32px 24px;
-}
-
-.writing {
-    background: var(--paper-raise);
 }
 
 /* The editor scrolls itself, so that the line numbers stay beside the
@@ -391,10 +331,6 @@ aside {
 .tt-strong { font-weight: 600; }
 .tt-emphasis { font-style: italic; }
 .tt-raw { font-family: var(--mono); font-size: .85em; }
-
-.preview {
-    background: #353430;
-}
 
 .tabs {
     display: flex;
@@ -461,10 +397,6 @@ aside {
     margin-bottom: 12px;
     font-size: 13px;
     font-variant-numeric: tabular-nums;
-}
-
-.agent.out {
-    color: var(--ink-3);
 }
 
 #source-diagnostics,
@@ -549,19 +481,6 @@ aside {
     background-size: 7px 1px, 7px 1px;
     background-position: 0 100%, 100% 100%;
     background-repeat: no-repeat;
-}
-
-.starting summary {
-    font: 600 11px/1 var(--mono);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    cursor: pointer;
-    padding: 8px 0;
-}
-
-.starting[open] summary {
-    color: var(--ditto);
 }
 
 .diff__at {
@@ -1384,10 +1303,8 @@ select:focus {
     letter-spacing: -.015em;
 }
 
-.label,
-.wordmark { font-family: var(--grotesk); }
-
 .label {
+    font-family: var(--grotesk);
     color: #617087;
     font-size: 9px;
 }

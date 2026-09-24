@@ -8,7 +8,6 @@
 *::before,
 *::after {
     box-sizing: border-box;
-    border-radius: 0;
 }
 
 [hidden] {
@@ -17,8 +16,6 @@
 
 body {
     margin: 0;
-    background: var(--paper);
-    color: var(--ink);
     font-family: var(--grotesk);
     font-size: var(--step-3);
     line-height: 1.5;
@@ -30,13 +27,11 @@ h2,
 h3 {
     font-family: var(--grotesk);
     font-weight: 600;
-    letter-spacing: -0.01em;
     text-wrap: balance;
     margin: 0;
 }
 
 h1 {
-    font-size: var(--step-6);
     line-height: 1.2;
 }
 
@@ -86,10 +81,8 @@ code,
 
 /* An eyebrow labels a block. It is never a heading and never a link. */
 .label {
-    font-family: var(--narrow);
     font-size: var(--step-1);
     line-height: 1.2;
-    letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--ink-3);
     margin: 0;
@@ -142,7 +135,6 @@ code,
 .wordmark svg {
     display: block;
 }
-
 
 /* Navigation is words. The active destination takes a rule on the edge it
  * belongs to, never a filled shape. */
@@ -243,7 +235,6 @@ code,
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-3);
-    padding: var(--space-3) 0;
     border-top: 1px solid var(--rule-soft);
 }
 
@@ -288,7 +279,6 @@ select {
     font-family: inherit;
     font-size: var(--step-3);
     color: var(--ink);
-    background: var(--paper-sunk);
     border: 1px solid var(--rule);
     padding: var(--space-2) var(--space-3);
     width: 100%;
@@ -300,7 +290,6 @@ input[name="slug"] {
 }
 
 textarea {
-    min-height: 6rem;
     resize: vertical;
 }
 
@@ -309,12 +298,10 @@ textarea {
     font-size: var(--step-3);
     font-weight: 500;
     color: var(--ink);
-    background: var(--paper-raise);
     border: 1px solid var(--ink);
     padding: var(--space-2) var(--space-4);
     cursor: pointer;
     text-decoration: none;
-    display: inline-block;
     align-self: flex-start;
 }
 
@@ -412,12 +399,6 @@ th.numeric {
 
 /* The instance's name is the largest type on the page because it is a fact,
  * not a slogan. Nothing in the product is larger than 34px. */
-.doorway__name {
-    font-size: var(--step-7);
-    line-height: 1.1;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-}
 
 .doorway__operator {
     color: var(--ink-2);
