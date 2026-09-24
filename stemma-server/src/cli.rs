@@ -245,7 +245,7 @@ impl SettingsArgs {
 
 /// The variable that names the configuration file.
 ///
-/// It is written out rather than built from [`ENV_PREFIX`], because the
+/// It is written out rather than built from [`crate::config::ENV_PREFIX`], because the
 /// attribute that declares it takes a literal. A test keeps the two in step.
 pub const CONFIG_ENV: &str = "STEMMA_SERVER_CONFIG";
 

@@ -10,9 +10,8 @@
 // and calls it while somebody types. Two drawings of the same graph
 // would start to differ the first time either was touched.
 //
-// With this switched off the page keeps the list of what would have
-// been drawn, which is why the list is taken away only once the
-// drawing is actually on screen.
+// Without JavaScript the page keeps its list of what would be drawn;
+// `start` marks a figure `descent--drawn` only once it is on screen.
 
 const LEVEL = 78;
 const CELL = 168;
@@ -20,33 +19,37 @@ const NODE = 132;
 const BAND = 22;
 const EDGE = 16;
 
-/// How long the one animation in the product lasts.
-///
-/// Promoting a lemma out of a box splits that box in two, and the
-/// reader has to follow which half is which. It is the only motion here
-/// that explains something rather than decorating an arrival.
+/**
+ * How long the one animation in the product lasts.
+ *
+ * Promoting a lemma out of a box splits that box in two, and the
+ * reader has to follow which half is which. It is the only motion here
+ * that explains something rather than decorating an arrival.
+ */
 const SPLIT = 300;
 
-/// The ink this theme is drawn in, read from the stylesheet so the
-/// drawing is never a second opinion about the palette.
+/**
+ * Colours and faces read from the identity's tokens, with the same
+ * values as fallbacks.
+ */
 const palette = (figure) => {
     const styles = getComputedStyle(figure);
-    const ink = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
+    const token = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
 
     return {
-        ink: ink("--ink", "#16191a"),
-        quiet: ink("--ink-3", ink("--quiet", "#636967")),
-        rule: ink("--rule", "#c5c8c0"),
-        soft: ink("--rule-soft", ink("--soft", "#d7dad2")),
-        ditto: ink("--ditto", "#463a85"),
-        verified: ink("--verified", "#1d5347"),
-        paper: ink("--paper", "#edeee8"),
-        mono: ink("--mono", "monospace"),
-        grotesk: ink("--grotesk", ink("--sans", "sans-serif")),
+        ink: token("--ink", "#101d2f"),
+        quiet: token("--ink-3", "#758298"),
+        rule: token("--rule", "#d5dfea"),
+        soft: token("--rule-soft", "#e6edf4"),
+        ditto: token("--ditto", "#2d6de7"),
+        verified: token("--verified", "#0c7a66"),
+        paper: token("--paper", "#f1f5f9"),
+        mono: token("--mono", "monospace"),
+        grotesk: token("--grotesk", "sans-serif"),
     };
 };
 
-/// Where one placed thing sits on the canvas.
+/** Where one placed thing sits on the canvas. */
 const box = (placed) => {
     const step = Math.max(CELL, NODE + 24);
 
@@ -58,11 +61,11 @@ const box = (placed) => {
     };
 };
 
-/// What a descent rests on, by siglum.
+/** What a descent rests on, by siglum. */
 const central = (descent) =>
     descent.placed.filter((placed) => placed.what.shown === "central").map((placed) => placed.what.siglum);
 
-/// Everything inside a box, which the graph never shows.
+/** Everything inside a box, which the graph never shows. */
 const interior = (descent) =>
     new Set(
         descent.placed.flatMap((placed) =>
@@ -70,10 +73,12 @@ const interior = (descent) =>
         ),
     );
 
-/// The statement that was just promoted out of a box, if one was.
-///
-/// One statement, central now and inside a box before: that is a
-/// promotion and nothing else is.
+/**
+ * The statement that was just promoted out of a box, if one was.
+ *
+ * One statement, central now and inside a box before: that is a
+ * promotion and nothing else is.
+ */
 const promoted = (before, after) => {
     const was = new Set(central(before));
     const gained = central(after).filter((siglum) => !was.has(siglum));
@@ -87,13 +92,15 @@ const promoted = (before, after) => {
     );
 };
 
-/// Whether this reader asked for no motion.
+/** Whether this reader asked for no motion. */
 const still = () =>
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/// Draws a descent, and parts the band when a lemma has just been
-/// promoted out of it.
+/**
+ * Draws a descent, and parts the band when a lemma has just been
+ * promoted out of it.
+ */
 const animations = new WeakMap();
 
 export function draw(figure, descent, previous) {
@@ -135,11 +142,13 @@ export function draw(figure, descent, previous) {
     animations.set(figure, window.requestAnimationFrame(step));
 }
 
-/// One frame.
-///
-/// `through` runs from nothing to one while a box is parting; `parting`
-/// is the statement arriving between its halves. At rest they are one
-/// and nothing.
+/**
+ * One frame.
+ *
+ * `through` runs from nothing to one while a box is parting; `parting`
+ * is the statement arriving between its halves. At rest they are one
+ * and nothing.
+ */
 function paint(figure, descent, through, parting) {
     const canvas = figure.querySelector(".descent__canvas");
     if (!canvas) return;
@@ -282,7 +291,7 @@ function paint(figure, descent, through, parting) {
     });
 }
 
-/// A black box: a hatched band between its two fixed statements.
+/** A black box: a hatched band between its two fixed statements. */
 function hatch(pen, colours, where, state) {
     const angle = state === "filled_by_agent" ? -1 : 1;
 
@@ -316,7 +325,7 @@ function hatch(pen, colours, where, state) {
     );
 }
 
-/// A registration frame: four corner marks and no box.
+/** A registration frame: four corner marks and no box. */
 function corners(pen, colours, x, y, width, height) {
     const arm = 5;
     pen.strokeStyle = colours.quiet;
@@ -335,7 +344,7 @@ function corners(pen, colours, x, y, width, height) {
     });
 }
 
-/// Draws whatever placements a page carries.
+/** Draws whatever placements a page carries. */
 export function start() {
     document.querySelectorAll(".descent").forEach((figure) => {
         const block = figure.querySelector(".descent__placement");

@@ -5,11 +5,8 @@ import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { typst, typstHighlighter } from "./typst";
 
-/// The source of a line, as the person writing it sees it.
-///
-/// Whether it can be written in is the claim's business and is set from
-/// outside; what is in it is read back whenever the line is saved,
-/// composed or drawn.
+/** The CodeMirror view holding a line's source. Whether it is writable
+ * follows the claim and is set by the caller. */
 export type SourceEditor = {
   readonly dom: HTMLElement;
   text(): string;
@@ -18,9 +15,10 @@ export type SourceEditor = {
   destroy(): void;
 };
 
-/// Marks text put in by the application, which is not an edit to save.
+/** Marks text the application replaced, which is not an edit to save. */
 const replaced = Annotation.define<boolean>();
 
+/** Mounts a Typst source editor in `parent`; `changed` fires on user edits. */
 export function sourceEditor(parent: HTMLElement, text: string, changed: () => void): SourceEditor {
   const access = new Compartment();
   const allowed = (yes: boolean) => [EditorView.editable.of(yes), EditorState.readOnly.of(!yes)];

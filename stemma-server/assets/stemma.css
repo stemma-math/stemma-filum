@@ -878,11 +878,10 @@ legend {
     white-space: pre-wrap;
     word-break: break-word;
 }
-/* ── Stemma surface 2026 ───────────────────────────────────────────────
- * The public face carries the deep blue identity. Product pages place the
- * same colour in a persistent rail and use calm, cool panels for focused
- * work. These rules intentionally sit after the document-specific grammar
- * above so the research views keep their semantics while sharing one shell.
+/* ── Product surfaces ──────────────────────────────────────────────────
+ * The front door carries the deep blue identity; product pages keep it in
+ * a persistent rail and hold work in cool panels. These rules must follow
+ * the document grammar above, which they restyle for the shared shell.
  */
 
 *,

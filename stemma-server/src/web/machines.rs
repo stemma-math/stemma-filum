@@ -200,7 +200,7 @@ pub struct Change {
     /// Whether the machine is to serve it.
     #[serde(default)]
     pub serve: String,
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 

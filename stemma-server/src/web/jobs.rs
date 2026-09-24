@@ -426,7 +426,7 @@ pub struct Launched {
     pub task: String,
     /// The commit the reader was looking at.
     pub commit: String,
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 

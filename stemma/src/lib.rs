@@ -1,9 +1,9 @@
 //! The Stemma client.
 //!
-//! What a researcher installs on their own machine: the command line, and
-//! in time the daemon, the repositories and the compilers. The library
-//! holds all of it, and the binary beside it only parses arguments, so
-//! that the desktop application and a test can use the same code.
+//! What a researcher installs on their own machine: the command line, the
+//! daemon, the group repositories and the Typst and Lean tooling. The
+//! library holds all of it and the binary only parses arguments, so the
+//! desktop application and the tests use the same code.
 
 pub mod agents;
 pub mod api;

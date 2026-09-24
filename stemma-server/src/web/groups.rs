@@ -29,7 +29,7 @@ pub struct Asked {
     pub slug: String,
     /// Why it should exist.
     pub reason: String,
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 
@@ -205,14 +205,14 @@ pub struct Invite {
     pub email: String,
     /// What they will be able to do in the group.
     pub role: String,
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 
 /// What a withdrawal sends.
 #[derive(Debug, Deserialize)]
 pub struct Withdrawal {
-    /// What says the form came from a page we served.
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
 

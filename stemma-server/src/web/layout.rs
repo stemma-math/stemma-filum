@@ -375,7 +375,7 @@ fn foot(chrome: &Chrome) -> Markup {
     }
 }
 
-/// The hidden field that says a form came from a page we served.
+/// The hidden CSRF field every form posted by a signed-in visitor carries.
 pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
     html! {
         input type="hidden" name="form_token" value=(signed.session.csrf_token);
