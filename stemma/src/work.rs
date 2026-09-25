@@ -279,6 +279,9 @@ fn nothing_found(task: &Task) -> &'static str {
         Task::Formalize { .. } => "no formalization was found",
         Task::Verify { .. } => "no Lean argument was found",
         Task::Promote { .. } => "no justified promotion was found",
+        Task::Prove { .. } => "no proof was found",
+        Task::Rewrite { .. } => "no better statement was found",
+        Task::Develop { .. } => "nothing was developed",
         Task::Explore => "nothing to suggest",
         Task::Reconcile => "no reconciliation was found",
     }
@@ -449,6 +452,23 @@ fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
             "Promote `{statement}` out of its black box by setting `\"central\": true`. \
              Do not change its claim. Explain why it deserves a stable name; promotion freezes \
              it, splits the surrounding box, and reserves a human correspondence audit."
+        ),
+        Task::Prove { statement } => format!(
+            "Write the proof of `{statement}` in its proof block, or finish the one there. \
+             Do not change the statement. Add the lemmas the proof needs as new blocks \
+             before it, each with its own proof. If you find no proof, say so rather than \
+             offering an incomplete one as complete."
+        ),
+        Task::Rewrite { statement } => format!(
+            "Rewrite `{statement}` so that it is correct and precise, keeping what it means. \
+             Keep its block identifier. Adjust what uses it only where the new statement \
+             requires it, and explain every change of meaning."
+        ),
+        Task::Develop { block } => format!(
+            "The prose block `{block}` describes mathematics informally. Develop it: replace \
+             or follow it with the definitions, statements and proofs it describes, so that \
+             it bridges what comes before it and what comes after. Keep the intuition as \
+             prose where it helps a reader."
         ),
         Task::Explore => "Say where this line could go next: what is worth stating, \
                           and why it follows from what is already here."

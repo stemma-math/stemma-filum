@@ -29,7 +29,7 @@
   {#each lines as line (line.path)}
     <button class="line" class:line--here={line.path === here} onclick={() => app.open(line.path)}>
       <span class="line__name">{line.title ?? line.name}</span>
-      {#if line.question}<span class="line__question">{line.question}</span>{/if}
+      {#if line.description}<span class="line__description">{line.description}</span>{/if}
     </button>
   {:else}
     <p class="rail__empty">{empty}</p>

@@ -12,14 +12,14 @@
     <div class="job">
       <span>{claim.said}</span>
       {#if claim.left !== null}
-        <span class="quiet">it lapses in {Math.max(1, Math.ceil(claim.left / 60))} minutes</span>
+        <span class="quiet">expires in {Math.max(1, Math.ceil(claim.left / 60))} min</span>
       {/if}
       {#if claim.standing === "open"}
-        <button onclick={() => line.takeClaim()}>Write this line</button>
+        <button onclick={() => line.takeClaim()}>Claim</button>
       {:else if line.writing}
-        <button onclick={() => line.letGo()}>Let it go</button>
+        <button onclick={() => line.release()}>Release</button>
       {:else}
-        <button disabled={claim.asked} onclick={() => line.askForLine()}>{claim.asked ? "Asked for" : "Ask for it"}</button>
+        <button disabled={claim.asked} onclick={() => line.requestClaim()}>{claim.asked ? "Requested" : "Request"}</button>
       {/if}
     </div>
   {:else}

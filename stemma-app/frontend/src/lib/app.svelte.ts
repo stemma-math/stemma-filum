@@ -1,7 +1,7 @@
 // Application-wide state: who is signed in, which group and view are
 // showing, the open line, and moving between them.
 
-import { api, auditedBridges, said } from "./api";
+import { api, said } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
 import { tell } from "./status.svelte";
@@ -121,17 +121,14 @@ class App {
     try {
       await leaving?.save();
       const opened = await api.openLine(path);
-      const [offers, bridges] = await Promise.all([
-        api.offers(opened.entry.group).catch(() => []),
-        auditedBridges(opened.entry.group),
-      ]);
+      const offers = await api.offers(opened.entry.group).catch(() => []);
       if (!active()) return;
       if (leaving) {
         await leaving.flush();
         await leaving.record();
         if (!active()) return;
       }
-      this.line = new LineSession(opened, offers, bridges);
+      this.line = new LineSession(opened, offers);
       this.stage = "editor";
     } catch (error) {
       tell(said(error));
