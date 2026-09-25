@@ -67,7 +67,7 @@ pub async fn take(
                 crate::store::lines::by_name(connection, &group, side, &line, &owner)?
                 && (side == Side::Private && started.author != owner || !started.admits(&owner))
             {
-                anyhow::bail!("its author writes this line; everybody else proposes")
+                anyhow::bail!("only its author can edit this line; others send proposals")
             }
 
             if let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)? {
@@ -308,7 +308,9 @@ fn nothing_here(error: WebError) -> WebError {
 /// The same, plus the one refusal that is worth saying out loud.
 fn refused(error: WebError) -> WebError {
     match error {
-        WebError::Internal(reason) if reason.to_string().starts_with("its author writes") => {
+        WebError::Internal(reason)
+            if reason.to_string().starts_with("only its author can edit") =>
+        {
             WebError::Forbidden(capitalised(&reason.to_string()))
         }
         other => nothing_here(other),

@@ -57,8 +57,8 @@ export const api = {
   preview: (path: string, document: LineDocument) => call<Preview>("preview", { path, document }),
 
   claim: (path: string) => call<Claim>("claim", { path }),
-  release: (path: string) => call<Claim>("let_go", { path }),
-  requestClaim: (path: string) => call<Claim>("ask_for_line", { path }),
+  release: (path: string) => call<Claim>("release", { path }),
+  requestClaim: (path: string) => call<Claim>("request_claim", { path }),
   parted: (path: string) => call<Conflict[]>("parted", { path }),
   settle: (path: string, decisions: Decision[]) => call<string[]>("settle", { path, decisions }),
 

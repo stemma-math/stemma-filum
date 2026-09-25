@@ -57,7 +57,7 @@
 </script>
 
 <h2>Reviews</h2>
-<p class="quiet">What a machine proposed, waiting for somebody to judge it.</p>
+<p class="quiet">Agent proposals waiting for review.</p>
 <div>
   {#if problem}
     {problem}
@@ -70,7 +70,7 @@
           <p class="row__name">{one.line}</p>
           <p class="quiet">{one.task} · {one.agent} · {one.vendor} {one.model}</p>
         </div>
-        <div class="row__actions"><button onclick={() => read(one.proposal)}>Read it</button></div>
+        <div class="row__actions"><button onclick={() => read(one.proposal)}>Open</button></div>
       </div>
     {:else}
       <p class="quiet">There are no proposals awaiting your review.</p>
@@ -112,7 +112,7 @@
       <p class="quiet">Accepting records you as the reviewer and preserves the model information.</p>
     {:else}
       <p class="quiet">This proposal was {review.state}.</p>
-      <button onclick={() => write(review.proposal)}>Write it to this machine</button>
+      <button onclick={() => write(review.proposal)}>Apply</button>
     {/if}
   {/if}
 </section>

@@ -262,7 +262,7 @@ async fn somebody_elses_line_is_not_theirs_to_hand_back() {
 
     assert!(line.says("ana's laptop is writing it"));
     assert!(
-        !line.says("Hand it back"),
+        !line.says(">Release<"),
         "somebody else's machine is not theirs to put down"
     );
 

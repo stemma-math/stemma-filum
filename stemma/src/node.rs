@@ -63,10 +63,10 @@ pub fn status(home: &Home, out: &mut impl Write) -> Result<bool> {
     let Some(node) = server.node(&credentials.token)? else {
         writeln!(
             out,
-            "This machine is signed in to {} and is not offered for work.",
+            "This machine is signed in to {} and is not registered to run jobs.",
             credentials.server
         )?;
-        writeln!(out, "Run `stemma node init` to offer it.")?;
+        writeln!(out, "Run `stemma node init` to register it.")?;
 
         return Ok(false);
     };
@@ -86,7 +86,7 @@ fn report(node: &Node, server: &str, out: &mut impl Write) -> Result<()> {
         out,
         "  works for {}",
         match node.groups.is_empty() {
-            true => "no group yet".to_owned(),
+            true => "no groups yet".to_owned(),
             false => node.groups.join(", "),
         }
     )?;
@@ -112,7 +112,7 @@ fn described(agent: &Detected) -> String {
     let said = match (&agent.availability, &agent.version) {
         (Availability::Ready, Some(version)) => version.clone(),
         (Availability::Ready, None) => "here".to_owned(),
-        (other, _) => other.reason().unwrap_or("out of reach").to_owned(),
+        (other, _) => other.reason().unwrap_or("unreachable").to_owned(),
     };
 
     format!("{:<12} {called:<16} {said}", agent.agent.as_str())

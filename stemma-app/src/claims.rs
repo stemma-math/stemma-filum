@@ -29,16 +29,16 @@ pub fn claim(path: String) -> Result<Claim, String> {
 /// ahead even if recording fails: a claim that cannot be released is worse
 /// than one released with work still uncommitted.
 #[tauri::command(async)]
-pub fn let_go(path: String) -> Result<Claim, String> {
+pub fn release(path: String) -> Result<Claim, String> {
     if let Ok(line) = LineAt::admit(&path) {
         let _ = stemma::writing::record(&line.path);
     }
     with_claim(&path, Server::release_claim)
 }
 
-/// Asks the machine holding the line to hand it back.
+/// Asks the machine holding the claim to release it.
 #[tauri::command(async)]
-pub fn ask_for_line(path: String) -> Result<Claim, String> {
+pub fn request_claim(path: String) -> Result<Claim, String> {
     with_claim(&path, Server::ask_for_claim)
 }
 

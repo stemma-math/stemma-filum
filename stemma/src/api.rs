@@ -475,7 +475,7 @@ impl Server {
         response
             .body_mut()
             .read_json()
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// Asks whether somebody has answered yet.
@@ -491,14 +491,14 @@ impl Server {
         let answer: serde_json::Value = response
             .body_mut()
             .read_json()
-            .context("the instance answered with something this build does not understand")?;
+            .context("the server sent an answer this build does not understand")?;
 
         if response.status() == 200 {
             let field = |name: &str| {
                 answer[name]
                     .as_str()
                     .map(str::to_owned)
-                    .ok_or_else(|| anyhow!("the instance's answer left out `{name}`"))
+                    .ok_or_else(|| anyhow!("the server's answer is missing `{name}`"))
             };
 
             return Ok(Answer::Admitted {
@@ -535,7 +535,7 @@ impl Server {
                 .body_mut()
                 .read_json()
                 .map(Some)
-                .context("the instance answered with something this build does not understand"),
+                .context("the server sent an answer this build does not understand"),
             403 | 401 => Ok(None),
             status => bail!("{} answered with {status}", self.address),
         }
@@ -556,7 +556,7 @@ impl Server {
             200 => response
                 .body_mut()
                 .read_json()
-                .context("the instance answered with something this build does not understand"),
+                .context("the server sent an answer this build does not understand"),
             403 | 401 => bail!(
                 "{} no longer accepts this machine's credential: run `stemma login` again",
                 self.address
@@ -646,7 +646,7 @@ impl Server {
                 .body_mut()
                 .read_json()
                 .map(Some)
-                .context("the instance answered with something this build does not understand"),
+                .context("the server sent an answer this build does not understand"),
             // Not registered is an answer and not a failure: this
             // machine has signed in and has not offered itself.
             403 => Ok(None),
@@ -670,7 +670,7 @@ impl Server {
                 .body_mut()
                 .read_json()
                 .map(Some)
-                .context("the instance answered with something this build does not understand"),
+                .context("the server sent an answer this build does not understand"),
             204 => Ok(None),
             403 => bail!(
                 "{} does not know this machine: run `stemma node init`",
@@ -712,7 +712,7 @@ impl Server {
         response
             .body_mut()
             .read_json()
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// Puts a job in the queue.
@@ -722,7 +722,7 @@ impl Server {
         answer["job"]
             .as_str()
             .map(str::to_owned)
-            .context("the instance did not say which job it made")
+            .context("the server did not say which job it created")
     }
 
     /// What this person still has to review.
@@ -730,7 +730,7 @@ impl Server {
         let answer: serde_json::Value = self.read(token, "/api/proposals")?;
 
         serde_json::from_value(answer["proposals"].clone())
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// One proposal, with the version it would replace.
@@ -806,7 +806,7 @@ impl Server {
         let answer: serde_json::Value = self.read(token, "/api/claims")?;
 
         serde_json::from_value(answer["claims"].clone())
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// Reads something the instance offers to a machine.
@@ -827,7 +827,7 @@ impl Server {
         response
             .body_mut()
             .read_json()
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// What this machine has in the queue.
@@ -848,10 +848,10 @@ impl Server {
         let answer: serde_json::Value = response
             .body_mut()
             .read_json()
-            .context("the instance answered with something this build does not understand")?;
+            .context("the server sent an answer this build does not understand")?;
 
         serde_json::from_value(answer["jobs"].clone())
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// Machines serving a group, for a conscious launcher choice.
@@ -869,7 +869,7 @@ impl Server {
         Ok(response
             .body_mut()
             .read_json::<MachineChoices>()
-            .context("the instance answered with something this build does not understand")?
+            .context("the server sent an answer this build does not understand")?
             .machines)
     }
 
@@ -892,7 +892,7 @@ impl Server {
         response
             .body_mut()
             .read_json()
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// Admits a locally verified definition.
@@ -907,7 +907,7 @@ impl Server {
         answer["entry"]
             .as_str()
             .map(str::to_owned)
-            .context("the instance did not identify the vault entry")
+            .context("the server did not identify the vault entry")
     }
 
     /// Admits a locally compiled unconditional bridge.
@@ -922,7 +922,7 @@ impl Server {
         answer["bridge"]
             .as_str()
             .map(str::to_owned)
-            .context("the instance did not identify the bridge")
+            .context("the server did not identify the bridge")
     }
 
     /// Records a signed correspondence action.
@@ -937,7 +937,7 @@ impl Server {
         answer["audit"]
             .as_str()
             .map(str::to_owned)
-            .context("the instance did not identify the audit")
+            .context("the server did not identify the audit")
     }
 
     /// Sends something as this machine, and reads the answer.
@@ -972,7 +972,7 @@ impl Server {
         response
             .body_mut()
             .read_json()
-            .context("the instance answered with something this build does not understand")
+            .context("the server sent an answer this build does not understand")
     }
 
     /// Gives a credential back.
@@ -1062,7 +1062,7 @@ fn normalise(address: &str) -> Result<String> {
     let address = address.trim();
 
     if address.is_empty() {
-        bail!("that is not the address of an instance");
+        bail!("that is not the address of a Stemma server");
     }
 
     let address = match address.contains("://") {
@@ -1076,7 +1076,7 @@ fn normalise(address: &str) -> Result<String> {
         bail!("`{address}` is not an http or https address");
     }
 
-    let parsed = url::Url::parse(&address).context("that is not the address of an instance")?;
+    let parsed = url::Url::parse(&address).context("that is not the address of a Stemma server")?;
     if parsed.host_str().is_none()
         || !parsed.username().is_empty()
         || parsed.password().is_some()
@@ -1084,7 +1084,7 @@ fn normalise(address: &str) -> Result<String> {
         || parsed.fragment().is_some()
     {
         bail!(
-            "an instance address needs a host and must not include credentials, a query or a fragment"
+            "a server address needs a host and must not include credentials, a query or a fragment"
         );
     }
 

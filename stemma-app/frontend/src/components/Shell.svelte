@@ -27,7 +27,7 @@
     <Brand />
     <span class="topbar__where">{where}</span>
     <span class="spacer"></span>
-    <button class="ghost" title="Bring this machine into step with the instance" onclick={() => app.sync()}>
+    <button class="ghost" title="Sync with the server" onclick={() => app.sync()}>
       <span class="status-dot"></span>Sync
     </button>
     <button class="ghost" onclick={() => (app.panel = "machine")}>Settings<Count n={app.waiting.length} /></button>

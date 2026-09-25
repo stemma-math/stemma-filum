@@ -396,8 +396,8 @@ fn body(
                                       value=@if *serving { "no" } @else { "yes" };
                                 button class="button button--quiet" type="submit" {
                                     @match serving {
-                                        true => "Stop",
-                                        false => "Serve",
+                                        true => "Stop running jobs",
+                                        false => "Run jobs",
                                     }
                                 }
                             }
@@ -481,7 +481,7 @@ fn job_list(signed: &SignedIn, machine: &Machine, ran: &[jobs::Job], owed: usize
                                               (job.id) "/clear" } {
                                     (signature(signed))
                                     button class="button button--quiet" type="submit" {
-                                        "I have dealt with it"
+                                        "Mark as resolved"
                                     }
                                 }
                             }

@@ -167,7 +167,7 @@ pub fn log_out(home: &Home, out: &mut impl Write) -> Result<()> {
         Server::at(&credentials.server).and_then(|server| server.sign_out(&credentials.token));
     Credentials::forget(&path)?;
     if let Err(error) = revocation {
-        writeln!(out, "The instance could not be told: {error:#}")?;
+        writeln!(out, "The server could not be notified: {error:#}")?;
     }
 
     writeln!(out, "This machine is no longer signed in.")?;

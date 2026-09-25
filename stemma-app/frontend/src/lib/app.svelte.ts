@@ -107,7 +107,7 @@ class App {
   }
 
   /** Switches the rail to another group; the open line belongs to the old
-   * one, so it is put down first. */
+   * one, so it is closed first. */
   async chooseGroup(next: string) {
     if (next === this.group) return;
     if (!(await this.goTo("welcome"))) return;
@@ -190,10 +190,10 @@ function syncReport(stepped: Stepped[]): string {
   }
   const dirty = stepped.filter((one) => one.dirty);
   if (dirty.length) {
-    return `${dirty.map(where).join(", ")}: there is work here that is not in the history yet, so it has not gone anywhere. A line you are writing is written when you let it go.`;
+    return `${dirty.map(where).join(", ")}: uncommitted changes were not synced. A line is committed when you release it.`;
   }
   const recorded = stepped.flatMap((one) => one.recorded);
-  if (recorded.length) return `Written into history before syncing: ${recorded.join(", ")}.`;
+  if (recorded.length) return `Committed before syncing: ${recorded.join(", ")}.`;
   return stepped.map((one) => `${where(one)}: ${one.outcome}`).join(" · ") || "Everything is up to date.";
 }
 

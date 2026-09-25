@@ -15,7 +15,7 @@ use stemma_core::vault::{AuditTarget, AuditVerb, BridgeKind};
 #[command(
     name = "stemma",
     version,
-    about = "Work with a Stemma instance from this machine.",
+    about = "Work with a Stemma server from this machine.",
     disable_help_subcommand = true
 )]
 pub struct Cli {
@@ -27,91 +27,91 @@ pub struct Cli {
 /// What a researcher runs.
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Signs this machine in to an instance.
+    /// Signs this machine in to a server.
     Login {
-        /// The instance's address, such as `stemma.example.org`.
+        /// The server's address, such as `stemma.example.org`.
         server: String,
     },
 
-    /// Says who this machine acts for.
+    /// Shows the signed-in account.
     Whoami,
 
-    /// Gives the credential back and forgets it.
+    /// Signs this machine out.
     Logout,
 
-    /// Brings every group this machine can work in into step.
+    /// Syncs every group with the server.
     Sync,
 
-    /// Reads what the sources here declare.
+    /// Checks the lines here and publishes what they declare.
     Build,
 
-    /// Starts a line, or moves one to the group.
+    /// Creates, deletes or shares lines.
     Line {
         /// What to do with it.
         #[command(subcommand)]
         command: LineCommand,
     },
 
-    /// Says what machines a group has, and what each of them can run.
+    /// Lists a group's machines and their agents.
     Machines {
         /// Which group, when it is not the one this is run inside.
         #[arg(long)]
         group: Option<String>,
     },
 
-    /// Says who is writing a line, and takes it or lets it go.
+    /// Shows, takes or releases the claim on a line.
     Claim {
         /// What to do with it.
         #[command(subcommand)]
         command: ClaimCommand,
     },
 
-    /// Works with two versions of a line that have parted.
+    /// Resolves conflicts between this machine and the server.
     Conflict {
         /// What to do about them.
         #[command(subcommand)]
         command: ConflictCommand,
     },
 
-    /// Offers this machine, or says what the instance makes of it.
+    /// Registers this machine to run jobs, or shows its status.
     Node {
         /// What to do with it.
         #[command(subcommand)]
         command: NodeCommand,
     },
 
-    /// Runs the loop that takes work, or installs it.
+    /// Runs or installs the background service.
     Daemon {
         /// What to do with it.
         #[command(subcommand)]
         command: DaemonCommand,
     },
 
-    /// Asks a machine for something.
+    /// Starts and lists agent jobs.
     Job {
         /// What to do.
         #[command(subcommand)]
         command: JobCommand,
     },
 
-    /// Applies source already accepted in the review screen.
+    /// Reviews and applies agent proposals.
     Proposal {
         /// What to do with it.
         #[command(subcommand)]
         command: ProposalCommand,
     },
 
-    /// Works with a group's immutable definitions and correspondence audits.
+    /// Manages a group's verified definitions and audits.
     Vault {
         /// What to do in it.
         #[command(subcommand)]
         command: VaultCommand,
     },
 
-    /// Says what this machine has, without asking the instance.
+    /// Shows this machine's state without contacting the server.
     Status,
 
-    /// Says where this machine keeps its things.
+    /// Shows where this machine keeps its files.
     Where,
 
     /// Answers git when it asks for a credential.
@@ -125,34 +125,34 @@ pub enum Command {
 /// What can be done with a proposal.
 #[derive(Debug, Subcommand)]
 pub enum ProposalCommand {
-    /// Says what is waiting for you to read it.
+    /// Lists proposals waiting for review.
     List,
 
-    /// Shows what one proposal would change, and what was checked.
+    /// Shows a proposal's changes and checks.
     Show {
         /// The proposal to read.
         proposal: String,
     },
 
-    /// Signs the words as yours.
+    /// Accepts a proposal.
     Accept {
         /// The proposal to accept.
         proposal: String,
     },
 
-    /// Declines them.
+    /// Rejects a proposal.
     Reject {
         /// The proposal to reject.
         proposal: String,
     },
 
-    /// Declines them and puts the same question back in the queue.
+    /// Rejects a proposal and runs the same task again.
     AskAgain {
         /// The proposal to decline.
         proposal: String,
     },
 
-    /// Writes and commits an accepted proposal on this machine.
+    /// Applies an accepted proposal on this machine.
     Apply {
         /// The accepted proposal to write.
         proposal: String,
@@ -223,7 +223,7 @@ pub enum VaultCommand {
 /// What can be done with a line itself.
 #[derive(Debug, Subcommand)]
 pub enum LineCommand {
-    /// Starts one.
+    /// Creates a line.
     New {
         /// Which group it belongs to.
         #[arg(long)]
@@ -237,29 +237,29 @@ pub enum LineCommand {
         #[arg(long)]
         description: Option<String>,
 
-        /// Let the whole group see it. Left out, it is yours alone.
+        /// Share it with the group. Without this, it is private.
         #[arg(long)]
         shared: bool,
     },
 
-    /// Takes one of yours out of the repository.
+    /// Deletes one of your private lines. Its history is kept.
     Delete {
         /// Which line, when it is not the one this is run inside.
         #[arg(long)]
         line: Option<String>,
     },
 
-    /// Moves one of yours to the group.
+    /// Shares one of your private lines with the group.
     Share {
         /// Which line, when it is not the one this is run inside.
         #[arg(long)]
         line: Option<String>,
 
-        /// Send everything you wrote getting here, not only today's state.
+        /// Share the full history, not only the current state.
         #[arg(long)]
         history: bool,
 
-        /// Keep the writing to yourself; everybody else proposes.
+        /// Only you can edit it; others send proposals.
         #[arg(long)]
         mine_to_write: bool,
     },
@@ -268,45 +268,45 @@ pub enum LineCommand {
 /// What can be done with the claim on a line.
 #[derive(Debug, Subcommand)]
 pub enum ClaimCommand {
-    /// Takes the line for this machine.
+    /// Claims the line for this machine.
     Take {
         /// Which line, when it is not the one this is run inside.
         #[arg(long)]
         line: Option<String>,
     },
 
-    /// Asks whichever machine has the line to hand it back.
-    Ask {
+    /// Asks the machine holding the claim to release it.
+    Request {
         /// Which line, when it is not the one this is run inside.
         #[arg(long)]
         line: Option<String>,
     },
 
-    /// Lets the line go.
+    /// Releases the claim.
     Release {
         /// Which line, when it is not the one this is run inside.
         #[arg(long)]
         line: Option<String>,
     },
 
-    /// Says which lines are being written, and on what.
+    /// Lists claimed lines and where.
     Status,
 }
 
 /// What can be done about two versions that have parted.
 #[derive(Debug, Subcommand)]
 pub enum ConflictCommand {
-    /// Says what the two versions disagree about.
+    /// Lists the conflicting blocks.
     List,
 
-    /// Brings them together, keeping one side wherever they disagree.
+    /// Merges, keeping one side wherever they conflict.
     Resolve {
         /// Which version stands: `here` or `there`.
         #[arg(long)]
         keep: Keep,
     },
 
-    /// Asks an agent to reconcile them, which comes back as a proposal.
+    /// Asks an agent to merge them; the result is a proposal.
     Reconcile {
         /// Which agent is to do it.
         #[arg(long)]
@@ -317,7 +317,7 @@ pub enum ConflictCommand {
 /// What can be done with this machine as a node.
 #[derive(Debug, Subcommand)]
 pub enum NodeCommand {
-    /// Offers this machine to the instance as one that runs work.
+    /// Registers this machine to run jobs.
     Init {
         /// A group to work for. Given none, it works for every group
         /// this account is in.
@@ -325,31 +325,31 @@ pub enum NodeCommand {
         groups: Vec<String>,
     },
 
-    /// Says what the instance makes of this machine.
+    /// Shows this machine as the server sees it.
     Status,
 }
 
 /// What can be done with the daemon.
 #[derive(Debug, Subcommand)]
 pub enum DaemonCommand {
-    /// Takes work until it is stopped.
+    /// Runs jobs until stopped.
     Run {
         /// Take at most one job and stop.
         #[arg(long)]
         once: bool,
     },
 
-    /// Puts it under whatever supervises this machine.
+    /// Installs it as a user service.
     Install,
 }
 
 /// What can be done with jobs.
 #[derive(Debug, Subcommand)]
 pub enum JobCommand {
-    /// Asks for something to be done.
+    /// Starts a job.
     Run(JobRun),
 
-    /// Says what has been asked of this account's machines.
+    /// Lists this account's jobs.
     List,
 
     /// Prints the raw output kept on this machine for one job.
@@ -362,8 +362,9 @@ pub enum JobCommand {
 /// What a job asks for, and of whom.
 #[derive(Debug, Args)]
 pub struct JobRun {
-    /// What to ask for: `fill`, `refute@thm:main`, `formalize@thm:main`,
-    /// `verify@thm:main` or `explore`.
+    /// The task: `fill`, `refute@thm:main`, `formalize@thm:main`,
+    /// `verify@thm:main`, `prove@thm:main`, `rewrite@lem:step`,
+    /// `develop@blk:…` or `explore`.
     #[arg(long)]
     pub task: String,
 

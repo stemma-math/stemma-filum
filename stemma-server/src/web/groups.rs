@@ -579,7 +579,7 @@ fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
                                         // A ruled margin means "not
                                         // shared"; in a list the word
                                         // does the same work.
-                                        Side::Private => "yours alone",
+                                        Side::Private => "private",
                                     }
                                 }
                                 span class="register__aside numeric" {

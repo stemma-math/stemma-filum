@@ -452,7 +452,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             div class="apparatus__register" {
                 @if side == Side::Private {
                     div class="block" {
-                        p class="label" { "Yours alone" }
+                        p class="label" { "Private" }
                         p {
                             a href={ "/g/" (group.slug()) "/private/" (digest.name) "/share" } {
                                 "Share it with the group"
@@ -467,7 +467,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                                       "/delete" } {
                             (signature(signed))
                             button class="button button--quiet" type="submit" {
-                                "Take this line out"
+                                "Delete this line"
                             }
                         }
                         p class="quiet" {
@@ -636,7 +636,7 @@ fn claim_block(
                         form method="post"
                              action={ "/g/" (group.slug()) "/" (side) "/" (line) "/claim/release" } {
                             (signature(signed))
-                            button type="submit" { "Hand it back" }
+                            button type="submit" { "Release" }
                         }
                     }
                 }

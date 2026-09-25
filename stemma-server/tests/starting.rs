@@ -302,7 +302,7 @@ async fn nothing_shared_may_lean_on_something_only_its_author_can_see() {
         .get("/g/algebra/private/quotient-groups/share")
         .await;
 
-    assert!(form.says("leans on work nobody else can see"));
+    assert!(form.says("depends on private work"));
     assert!(form.says("../notation/main.typ"));
 
     let refused = harness
@@ -317,7 +317,7 @@ async fn nothing_shared_may_lean_on_something_only_its_author_can_see() {
         .await;
 
     assert_eq!(refused.status, StatusCode::OK);
-    assert!(refused.says("may lean on something only you can"));
+    assert!(refused.says("cannot depend on private work"));
     assert_eq!(source(&harness, None, "quotient-groups").await, None);
 }
 
@@ -363,7 +363,7 @@ async fn a_line_its_author_kept_is_not_taken_by_somebody_elses_machine() {
         .await;
 
     assert_eq!(refused.status, StatusCode::FORBIDDEN);
-    assert!(refused.says("everybody else proposes"));
+    assert!(refused.says("others send proposals"));
 
     // And her own machine still writes it.
     sign_in(&mut harness, "ana").await;
@@ -514,7 +514,7 @@ async fn a_line_of_your_own_can_be_taken_out_and_its_history_stays() {
     start(&mut harness, "Quotient groups", "Does it split?", "me").await;
 
     let line = harness.get("/g/algebra/private/quotient-groups").await;
-    assert!(line.says("Take this line out"));
+    assert!(line.says("Delete this line"));
 
     let gone = harness
         .post(

@@ -46,7 +46,7 @@ pub fn start(
             _ => "only you can see it",
         }
     )?;
-    writeln!(out, "  `stemma sync` brings it down to this machine")?;
+    writeln!(out, "  run `stemma sync` to get it on this machine")?;
 
     Ok(())
 }
@@ -66,12 +66,9 @@ pub fn delete(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) 
         name.as_str(),
     )?;
 
-    writeln!(out, "{name}  taken out")?;
-    writeln!(
-        out,
-        "  every version of it stays in the repository's history"
-    )?;
-    writeln!(out, "  `stemma sync` takes it out of this machine too")?;
+    writeln!(out, "{name}  deleted")?;
+    writeln!(out, "  its history is kept")?;
+    writeln!(out, "  run `stemma sync` to remove it from this machine")?;
 
     Ok(())
 }
@@ -111,21 +108,21 @@ pub fn share(
     writeln!(out, "{}/{}/{}", placed.group, placed.side, placed.line)?;
     writeln!(
         out,
-        "  the group has it{}",
+        "  shared with the group{}",
         match history {
-            true => ", with everything you wrote getting there",
-            false => ", as it stands today",
+            true => ", with its full history",
+            false => ", current state only",
         }
     )?;
     writeln!(
         out,
         "  {}",
         match author_writes {
-            true => "you write it; everybody else proposes",
-            false => "anybody in the group writes it, one at a time",
+            true => "only you can edit it; others send proposals",
+            false => "anyone in the group can edit it, one at a time",
         }
     )?;
-    writeln!(out, "  `stemma sync` moves it in this machine's clones too")?;
+    writeln!(out, "  run `stemma sync` to update this machine")?;
 
     Ok(())
 }

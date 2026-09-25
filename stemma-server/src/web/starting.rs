@@ -271,7 +271,7 @@ async fn moved(
 
     if !held.is_empty() {
         return Err(WebError::BadRequest(
-            "Nothing the group can see may lean on something only you can.".to_owned(),
+            "A shared line cannot depend on private work.".to_owned(),
         ));
     }
 
@@ -526,7 +526,7 @@ fn asked(
                 }
 
                 fieldset {
-                    legend class="label" { "Who can see it" }
+                    legend class="label" { "Visibility" }
 
                     label class="choice" {
                         input type="radio" name="seen_by" value="me" checked[!shared];
@@ -587,7 +587,7 @@ fn offered(
 
             @if !held.is_empty() {
                 div class="block" {
-                    p class="label" { "This line leans on work nobody else can see" }
+                    p class="label" { "This line depends on private work" }
                     ul class="register" {
                         @for path in held {
                             li { span class="identifier" { (path) } }
@@ -605,7 +605,7 @@ fn offered(
                 (signature(signed))
 
                 fieldset {
-                    legend class="label" { "What the group sees of what you have written" }
+                    legend class="label" { "History to share" }
 
                     label class="choice" {
                         input type="radio" name="travels" value="today" checked;
@@ -622,11 +622,11 @@ fn offered(
 
                     label class="choice" {
                         input type="radio" name="writing" value="author" checked;
-                        span { "Only me. Everybody else proposes" }
+                        span { "Only me; others send proposals" }
                     }
                     label class="choice" {
                         input type="radio" name="writing" value="anyone";
-                        span { "Anybody in the group, one at a time" }
+                        span { "Anyone in the group, one at a time" }
                     }
                 }
 
@@ -648,7 +648,7 @@ fn offered(
                 }
 
                 button class="button" type="submit" disabled[!held.is_empty()] {
-                    "Move it to the group"
+                    "Share"
                 }
             }
         }

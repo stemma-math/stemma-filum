@@ -30,7 +30,7 @@ pub fn take(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) ->
     if !claimed.may_write() {
         writeln!(
             out,
-            "  ask for it with `stemma claim ask`, or wait: a claim lapses on its own"
+            "  request it with `stemma claim request`, or wait for the claim to expire"
         )?;
     }
 
@@ -51,18 +51,18 @@ pub fn release(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write)
     match crate::writing::record(at) {
         Ok(Some(recorded)) => writeln!(out, "{recorded}")?,
         Ok(None) => {}
-        Err(error) => writeln!(out, "  it is not in the history yet: {error:#}")?,
+        Err(error) => writeln!(out, "  it is not committed yet: {error:#}")?,
     }
 
     server.release_claim(&token, &about)?;
 
-    writeln!(out, "{}  nobody is writing it now", about.line)?;
+    writeln!(out, "{}  released", about.line)?;
 
     Ok(())
 }
 
 /// Asks whichever machine has the line to hand it back.
-pub fn ask(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
+pub fn request(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
     let (server, token, about) = addressed(home, at, line)?;
     let claimed = server.ask_for_claim(&token, &about)?;
 
@@ -77,7 +77,7 @@ pub fn status(home: &Home, out: &mut impl Write) -> Result<()> {
     let writing = server.claims(&credentials.token)?;
 
     if writing.is_empty() {
-        writeln!(out, "No line is being written anywhere you work.")?;
+        writeln!(out, "No lines are claimed.")?;
 
         return Ok(());
     }
@@ -98,7 +98,7 @@ pub fn status(home: &Home, out: &mut impl Write) -> Result<()> {
             "  {}{}",
             lapsing(line.left),
             match line.asked {
-                true => ", and it has been asked for",
+                true => ", release requested",
                 false => "",
             }
         )?;
@@ -113,7 +113,7 @@ fn say(about: &About, claimed: &Claimed, out: &mut impl Write) -> Result<()> {
         out,
         "{}  {}",
         about.line,
-        claimed.said.as_deref().unwrap_or("nobody is writing it")
+        claimed.said.as_deref().unwrap_or("not claimed")
     )?;
 
     if let Some(left) = claimed.left {
