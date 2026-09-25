@@ -705,46 +705,6 @@ th.numeric {
     }
 }
 
-/* ── The descent ───────────────────────────────────────────────────────
- *
- * A stemma codicum: the line's definitions, what it rests on, and the
- * boxes between them. The drawing is done on the canvas; the list below
- * it is what a reader with nothing running gets instead, so it is only
- * taken away once the drawing is actually there.
- */
-
-.descent {
-    margin: 0 0 var(--space-6);
-    padding: var(--space-4) 0 var(--space-5);
-    border-top: 1px solid var(--rule);
-    border-bottom: 1px solid var(--rule);
-    overflow-x: auto;
-}
-
-.descent figcaption {
-    margin-bottom: var(--space-4);
-}
-
-.descent__canvas {
-    display: block;
-    max-width: none;
-}
-
-.descent__list {
-    margin: var(--space-4) 0 0;
-    padding: 0;
-    list-style: none;
-    font-size: var(--step-2);
-    color: var(--ink-3);
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-5);
-}
-
-.descent--drawn .descent__list {
-    display: none;
-}
-
 /* A set of choices where exactly one holds: the question is the legend,
  * and each answer is a whole line, so the words are the target and not
  * the eight pixels of the control. */
