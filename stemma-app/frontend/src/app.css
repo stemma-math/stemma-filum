@@ -1151,6 +1151,27 @@ select:focus {
     font-size: 12px;
 }
 
+.block__grip {
+    cursor: grab;
+    padding: 0 2px;
+    color: var(--ink-3);
+    letter-spacing: -2px;
+    user-select: none;
+}
+
+.block__grip--off { cursor: default; opacity: .4; }
+.block--drop-above { box-shadow: 0 -3px 0 var(--ditto); }
+.block--drop-below { box-shadow: 0 3px 0 var(--ditto); }
+
+.history { display: flex; gap: 2px; }
+
+.history .icon,
+.line-head .icon {
+    min-width: 30px;
+    min-height: 30px;
+    padding: 2px 6px;
+}
+
 .block__select { width: auto; min-height: 0 !important; accent-color: var(--ditto); }
 
 .block__kind {

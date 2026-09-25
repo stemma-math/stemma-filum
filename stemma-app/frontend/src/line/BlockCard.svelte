@@ -17,6 +17,7 @@
     proves,
     pair,
     onask,
+    onmove,
   }: {
     line: LineSession;
     block: Block;
@@ -29,7 +30,35 @@
     /** The colour it shares with its statement or its proof. */
     pair: number | undefined;
     onask: (tasks: string[]) => void;
+    /** Moves a dragged block to a position, counted before the move. */
+    onmove: (id: string, to: number) => void;
   } = $props();
+
+  /** Where a block dragged over this one would land. */
+  let dropping = $state<"above" | "below" | null>(null);
+
+  const DRAGGED = "application/x-stemma-block";
+
+  function dragStart(event: DragEvent) {
+    event.dataTransfer?.setData(DRAGGED, block.id);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  }
+
+  function dragOver(event: DragEvent) {
+    if (!line.editable || !event.dataTransfer?.types.includes(DRAGGED)) return;
+    event.preventDefault();
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    dropping = event.clientY < box.top + box.height / 2 ? "above" : "below";
+  }
+
+  function drop(event: DragEvent) {
+    const dragged = event.dataTransfer?.getData(DRAGGED);
+    const where = dropping;
+    dropping = null;
+    if (!dragged || !where || !line.editable) return;
+    event.preventDefault();
+    onmove(dragged, where === "above" ? at : at + 1);
+  }
 
   const statement = $derived(isStatement(block) ? block : null);
   const node = $derived(line.nodeOf(block.kind === "proof" ? block.of : block.id));
@@ -57,7 +86,7 @@
       writable: untrack(() => line.editable),
       changed: (text) => {
         block.content = text;
-        line.changed();
+        line.changed({ typing: true });
       },
     });
     return () => {
@@ -69,6 +98,12 @@
   $effect(() => {
     const yes = line.editable;
     editor?.writable(yes);
+  });
+
+  // Undo and redo change the content from outside the editor.
+  $effect(() => {
+    const content = block.content;
+    if (editor && editor.text() !== content) editor.replace(content);
   });
 
   function heading(): string {
@@ -136,9 +171,24 @@
   class:block--central={statement?.central}
   class:block--selected={selected}
   class:block--faulty={faults.length > 0 || diagnostics.some((one) => one.error)}
+  class:block--drop-above={dropping === "above"}
+  class:block--drop-below={dropping === "below"}
   style:--pair={pair === undefined ? null : `var(--pair-${pair % 6})`}
+  ondragover={dragOver}
+  ondragleave={() => (dropping = null)}
+  ondrop={drop}
 >
   <div class="block__head">
+    <span
+      class="block__grip"
+      class:block__grip--off={!line.editable}
+      draggable={line.editable}
+      role="button"
+      tabindex="-1"
+      title="Drag to move"
+      aria-label="Drag to move"
+      ondragstart={dragStart}
+    >⋮⋮</span>
     <input
       type="checkbox"
       class="block__select"

@@ -1,11 +1,13 @@
-import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap } from "@codemirror/commands";
 import { bracketMatching, syntaxHighlighting } from "@codemirror/language";
 import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { difference } from "./difference";
 import { typst, typstHighlighter } from "./typst";
 
 /** The CodeMirror view holding one block's Typst content. Whether it is
- * writable follows the claim and is set by the caller. */
+ * writable follows the claim and is set by the caller. It keeps no undo
+ * history of its own: undo belongs to the whole line. */
 export type BlockEditor = {
   readonly dom: HTMLElement;
   text(): string;
@@ -32,14 +34,13 @@ export function blockEditor(
     state: EditorState.create({
       doc: text,
       extensions: [
-        history(),
         bracketMatching(),
         typst,
         syntaxHighlighting(typstHighlighter),
         EditorView.lineWrapping,
         placeholder(options.empty),
         EditorView.contentAttributes.of({ spellcheck: "false", "aria-label": options.label }),
-        keymap.of([...historyKeymap, ...defaultKeymap]),
+        keymap.of(defaultKeymap),
         access.of(allowed(options.writable)),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !update.transactions.some((one) => one.annotation(replaced))) {
@@ -52,9 +53,10 @@ export function blockEditor(
   return {
     dom: view.dom,
     text: () => view.state.doc.toString(),
-    replace: (next) => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next }, annotations: replaced.of(true) }),
+    replace: (next) => view.dispatch({ changes: difference(view.state.doc.toString(), next), annotations: replaced.of(true) }),
     writable: (yes) => view.dispatch({ effects: access.reconfigure(allowed(yes)) }),
     focus: () => view.focus(),
     destroy: () => view.destroy(),
   };
 }
+

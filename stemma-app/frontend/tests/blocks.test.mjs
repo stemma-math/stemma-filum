@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  blockId, cited, insert, move, pairs, proofOf, references, remove, setProof, siglumPrefix,
+  blockId, cited, insert, move, moveTo, pairs, proofOf, references, remove, setProof, siglumPrefix,
 } from "../src/lib/blocks.ts";
 
 const line = () => ({ format: 1, title: "A line", blocks: [] });
@@ -106,4 +106,19 @@ test("the siglum prefix follows the environment", () => {
   assert.equal(siglumPrefix({ kind: "definition", environment: "Construction" }), "def");
   assert.equal(siglumPrefix({ kind: "theorem", environment: "Lemma" }), "lem");
   assert.equal(siglumPrefix({ kind: "theorem", environment: "Claim" }), "thm");
+});
+
+test("a dragged block lands where it was dropped", () => {
+  const document = line();
+  const [a, b, c] = [0, 1, 2].map((at) => insert(document, at, "prose"));
+  const order = () => document.blocks.map((block) => block.id);
+
+  moveTo(document, a.id, 3);
+  assert.deepEqual(order(), [b.id, c.id, a.id]);
+  moveTo(document, a.id, 0);
+  assert.deepEqual(order(), [a.id, b.id, c.id]);
+  moveTo(document, c.id, 1);
+  assert.deepEqual(order(), [a.id, c.id, b.id]);
+  moveTo(document, c.id, 2);
+  assert.deepEqual(order(), [a.id, c.id, b.id], "dropping a block next to itself leaves it there");
 });

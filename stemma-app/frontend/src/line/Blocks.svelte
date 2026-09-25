@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DEFINITION_ENVIRONMENTS, THEOREM_ENVIRONMENTS, isStatement, pairs } from "../lib/blocks";
+  import { DEFINITION_ENVIRONMENTS, THEOREM_ENVIRONMENTS, isStatement, moveTo, pairs } from "../lib/blocks";
   import type { LineSession } from "../lib/line.svelte";
   import type { LineDocument } from "../lib/types";
   import AddBlock from "./AddBlock.svelte";
@@ -86,6 +86,7 @@
         proves={block.kind === "proof" ? called(block.of) : null}
         pair={colours.get(block.id)}
         {onask}
+        onmove={(id, to) => edit(() => moveTo(document, id, to))}
       />
     {/each}
     <div class="blocks__end">

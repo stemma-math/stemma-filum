@@ -3,12 +3,15 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api, said } from "./api";
+import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
 import { tell } from "./status.svelte";
 import type { Claim, Diagnostic, LineDocument, Node, Offer, OpenLine, Preview } from "./types";
 
 const SAVE_AFTER = 450;
 const PREVIEW_AFTER = 650;
+/** How long a pause in typing has to be to close one step of the history. */
+const STEP_AFTER = 600;
 
 export type SaveState = "saved" | "saving" | "not saved" | "committed";
 
@@ -30,7 +33,12 @@ export class LineSession {
 
   readonly offers: Offer[];
 
+  canUndo = $state(false);
+  canRedo = $state(false);
+
   #locked = $state(false);
+  #history: History;
+  #stepTimer = 0;
   /** The document as last written to disk, and its blocks in that order,
    * which is what the faults on `opened` count by. */
   #saved = "";
@@ -46,6 +54,7 @@ export class LineSession {
     this.opened = opened;
     this.offers = offers;
     this.document = opened.document ? structuredClone(opened.document) : null;
+    this.#history = new History(this.#text() ?? "");
     this.#remember(opened);
     const first = this.agents.find((one) => !one.reason) ?? this.agents[0];
     this.agent = first?.value ?? "";
@@ -136,6 +145,7 @@ export class LineSession {
     this.#attached = false;
     window.clearTimeout(this.#saveTimer);
     window.clearTimeout(this.#previewTimer);
+    window.clearTimeout(this.#stepTimer);
   }
 
   /** Locks or unlocks editing without changing the claim. */
@@ -143,10 +153,47 @@ export class LineSession {
     this.#locked = locked;
   }
 
-  /** Called after any change to the blocks: saves and composes when the
-   * writer pauses. */
-  changed() {
+  /** Called after any change to the blocks: records it for undo, and saves
+   * and composes when the writer pauses. Typing is recorded as one step
+   * per pause; anything else is a step of its own. */
+  changed(options: { typing?: boolean } = {}) {
     if (!this.writing) return;
+    window.clearTimeout(this.#stepTimer);
+    if (options.typing) this.#stepTimer = window.setTimeout(() => this.#step(), STEP_AFTER);
+    else this.#step();
+    this.#schedule();
+  }
+
+  /** Puts back the state before the last step. */
+  undo() {
+    this.#restore(() => this.#history.undo());
+  }
+
+  /** Puts back the step undone last. */
+  redo() {
+    this.#restore(() => this.#history.redo());
+  }
+
+  #step() {
+    const text = this.#text();
+    if (text !== null) this.#history.record(text);
+    this.canUndo = this.#history.canUndo;
+    this.canRedo = this.#history.canRedo;
+  }
+
+  #restore(take: () => string | null) {
+    if (!this.editable) return;
+    window.clearTimeout(this.#stepTimer);
+    this.#step();
+    const state = take();
+    this.canUndo = this.#history.canUndo;
+    this.canRedo = this.#history.canRedo;
+    if (state === null) return;
+    this.document = JSON.parse(state) as LineDocument;
+    this.#schedule();
+  }
+
+  #schedule() {
     this.saveState = "saving";
     window.clearTimeout(this.#saveTimer);
     window.clearTimeout(this.#previewTimer);

@@ -111,6 +111,16 @@ export function move(document: LineDocument, id: string, by: -1 | 1) {
   document.blocks.splice(to, 0, block);
 }
 
+/** Moves a block so that it ends up at `to`, counting positions as they
+ * are before the move; `to` may be the length, meaning the end. */
+export function moveTo(document: LineDocument, id: string, to: number) {
+  const at = document.blocks.findIndex((block) => block.id === id);
+  if (at < 0) return;
+  const target = Math.max(0, Math.min(to, document.blocks.length));
+  const [block] = document.blocks.splice(at, 1);
+  document.blocks.splice(target > at ? target - 1 : target, 0, block);
+}
+
 /** Which colour pairs each statement with its proof: statements carrying a
  * proof are numbered in order, and the proof shares the number. */
 export function pairs(document: LineDocument): Map<string, number> {
