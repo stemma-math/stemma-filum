@@ -179,8 +179,8 @@ fn group_card(card: &Card) -> Markup {
                         @for line in card.shared.iter().take(ON_A_CARD) {
                             li {
                                 span class="card__line" { (line.shown_as()) }
-                                @if let Some(question) = &line.question {
-                                    span class="quiet" { (question) }
+                                @if let Some(description) = &line.description {
+                                    span class="quiet" { (description) }
                                 }
                             }
                         }
@@ -239,7 +239,7 @@ fn decisions(signed: &SignedIn, obligations: &[crate::store::vault::Obligation])
     html! {
         @if !obligations.is_empty() {
             div class="block" {
-                p class="label" { "Decisions you owe · " (obligations.len()) }
+                p class="label" { "Pending decisions · " (obligations.len()) }
                 @for obligation in obligations {
                     form method="post" action={ "/audit-obligations/" (obligation.id) "/decide" } {
                         (super::layout::signature(signed))

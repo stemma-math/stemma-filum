@@ -257,3 +257,27 @@ fn encode(value: &str) -> String {
         })
         .collect()
 }
+
+/// A statement with a name and no proof to write, as these tests need them.
+pub fn statement(siglum: &str, title: &str) -> stemma_core::document::Block {
+    let siglum: stemma_core::line::Siglum = siglum.parse().expect("a siglum");
+    match siglum.kind {
+        stemma_core::line::NodeKind::Definition => {
+            stemma_core::document::Block::definition(Some(siglum), "x").titled(title)
+        }
+        kind => stemma_core::document::Block::theorem(kind.word(), Some(siglum), "y")
+            .titled(title)
+            .carrying_proof(false),
+    }
+}
+
+/// A line's digest, as a machine that read it would publish it.
+pub fn digest(document: &stemma_core::document::Document) -> stemma_core::artefact::LineDigest {
+    stemma_core::artefact::LineDigest {
+        name: stemma_core::line::Name::parse("quotient-groups").unwrap(),
+        title: Some(document.title.clone()),
+        description: document.description.clone(),
+        line: stemma_core::line::Line::of(document).expect("a line that reads"),
+        lean: None,
+    }
+}

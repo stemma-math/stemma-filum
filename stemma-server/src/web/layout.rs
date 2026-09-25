@@ -8,7 +8,7 @@
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 use stemma_identity::{MARK_CENTRE, MARK_ORBIT};
 
-use super::assets::{DESCENT_PATH, STYLESHEET_PATH, SURFACE_PATH};
+use super::assets::{STYLESHEET_PATH, SURFACE_PATH};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::Membership;
@@ -72,8 +72,6 @@ pub struct Chrome {
     pub maintainer: bool,
     /// Whether anybody may create an account right now.
     pub registration_open: bool,
-    /// Whether this page has a descent on it to draw.
-    pub draws: bool,
     /// Whether the bar offers a way in at all.
     ///
     /// An instance with no accounts offers none: a log-in link there would
@@ -94,7 +92,6 @@ impl Chrome {
             visitor: None,
             maintainer: false,
             registration_open: false,
-            draws: false,
             offer_ways_in: true,
             landing: false,
         }
@@ -103,12 +100,6 @@ impl Chrome {
     /// Takes the ways in out of the bar, for a page that is the way in.
     pub fn without_ways_in(mut self) -> Self {
         self.offer_ways_in = false;
-        self
-    }
-
-    /// Says that this page has a descent to draw.
-    pub fn drawing(mut self) -> Self {
-        self.draws = true;
         self
     }
 
@@ -167,9 +158,6 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                     ))
                 }
                 link rel="stylesheet" href=(STYLESHEET_PATH);
-                @if chrome.draws {
-                    script src=(DESCENT_PATH) type="module" {}
-                }
                 script src=(SURFACE_PATH) type="module" {}
             }
             body class=(body_class) {

@@ -23,7 +23,7 @@ pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
     let waiting = server.proposals(&credentials.token)?;
 
     if waiting.is_empty() {
-        writeln!(out, "Nothing is waiting for you to read it.")?;
+        writeln!(out, "No proposals waiting for review.")?;
 
         return Ok(());
     }
@@ -69,7 +69,7 @@ pub fn show(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
 
             for row in rows {
                 // A line the guard freezes is marked wherever it is
-                // shown, so that "it did not touch it" is visible
+                // shown, so that "unchanged" is visible
                 // rather than promised.
                 let held = match row.before.is_some_and(|at| frozen.contains(&at)) {
                     true => "|",
@@ -131,15 +131,15 @@ pub fn decide(home: &Home, proposal: &str, verdict: Verdict, out: &mut impl Writ
             writeln!(out, "{proposal}  accepted")?;
             writeln!(
                 out,
-                "  these are your words now, with the model recorded beside them"
+                "  it is recorded as yours, with the model that proposed it"
             )?;
-            writeln!(out, "  `stemma proposal apply {proposal}` writes them here")?;
-        }
-        Verdict::AskAgain => {
             writeln!(
                 out,
-                "{proposal}  declined, and the same question is back in the queue"
+                "  run `stemma proposal apply {proposal}` to apply it here"
             )?;
+        }
+        Verdict::AskAgain => {
+            writeln!(out, "{proposal}  rejected, and the task was queued again")?;
         }
         Verdict::Reject => writeln!(out, "{proposal}  rejected")?,
     }
@@ -174,7 +174,7 @@ pub fn apply(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
         )
     }
     if crate::git::is_dirty(&clone)? {
-        bail!("the clone has uncommitted work; keep it before applying the proposal")
+        bail!("there are uncommitted changes here: commit them before applying the proposal")
     }
 
     let path = repository::line_entry(&clone, &line);

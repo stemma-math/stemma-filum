@@ -13,7 +13,6 @@ pub mod claims;
 pub mod cookies;
 pub mod device;
 pub mod front;
-pub mod graph;
 pub mod groups;
 pub mod home;
 pub mod invite;
@@ -287,7 +286,6 @@ fn git() -> Router<Instance> {
 fn assets() -> Router<Instance> {
     Router::new()
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
-        .route(assets::DESCENT_PATH, get(assets::descent))
         .route(assets::SURFACE_PATH, get(assets::surface))
         .route(assets::NOISE_PATH, get(assets::noise))
         .route(assets::FONT_PATH, get(assets::font))

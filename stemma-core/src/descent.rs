@@ -304,26 +304,36 @@ fn draw(descent: &mut Descent, node: &crate::line::Node, place_of: &BTreeMap<Sig
 mod tests {
     use super::*;
 
+    use crate::document::{Block, Document};
+
     /// A definition, two statements the line rests on, and a lemma
     /// inside the box between them.
-    const SOURCE: &str = r#"
-= Quotient groups
+    fn source() -> Document {
+        let group = Block::definition(Some(siglum("def:group")), "A group.").titled("Group");
+        let first = Block::theorem("Theorem", Some(siglum("thm:first")), "First.")
+            .central(true)
+            .carrying_proof(false)
+            .using(&group);
+        let step = Block::theorem("Lemma", Some(siglum("lem:step")), "A step.")
+            .carrying_proof(false)
+            .using(&group);
+        let second = Block::theorem("Theorem", Some(siglum("thm:second")), "By @thm:first.")
+            .central(true)
+            .carrying_proof(false);
 
-#definition(id: "def:group", name: "Group")[A group.]
-
-#theorem(id: "thm:first", central: true, uses: "def:group")[First.]
-
-#lemma(id: "lem:step", uses: "def:group")[A step.]
-
-#theorem(id: "thm:second", central: true, uses: "thm:first")[Second.]
-"#;
+        Document::new("Quotient groups", None)
+            .with(group)
+            .with(first)
+            .with(step)
+            .with(second)
+    }
 
     fn siglum(raw: &str) -> Siglum {
         raw.parse().unwrap()
     }
 
     fn descent() -> Descent {
-        of(&Line::read(SOURCE).unwrap(), &[], &[])
+        of(&Line::of(&source()).unwrap(), &[], &[])
     }
 
     #[test]
@@ -378,7 +388,7 @@ mod tests {
 
     #[test]
     fn a_verified_statement_says_so_where_it_is_drawn() {
-        let descent = of(&Line::read(SOURCE).unwrap(), &[siglum("thm:first")], &[]);
+        let descent = of(&Line::of(&source()).unwrap(), &[siglum("thm:first")], &[]);
         let at = descent.at(&siglum("thm:first")).unwrap();
 
         assert_eq!(
@@ -392,11 +402,12 @@ mod tests {
 
     #[test]
     fn a_bridge_spans_two_definitions_rather_than_hanging_below_them() {
-        let source = SOURCE.replace(
-            "#theorem(id: \"thm:first\"",
-            "#definition(id: \"def:quotient\", name: \"Quotient\")[A quotient.]\n\n#theorem(id: \"thm:first\"",
+        let mut source = source();
+        source.blocks.insert(
+            1,
+            Block::definition(Some(siglum("def:quotient")), "A quotient.").titled("Quotient"),
         );
-        let line = Line::read(&source).unwrap();
+        let line = Line::of(&source).unwrap();
         let descent = of(&line, &[], &[(siglum("def:group"), siglum("def:quotient"))]);
 
         assert_eq!(descent.spans.len(), 1);
@@ -416,7 +427,7 @@ mod tests {
 
     #[test]
     fn a_line_that_declares_nothing_has_nothing_to_draw() {
-        let descent = of(&Line::read("= Nothing yet\n").unwrap(), &[], &[]);
+        let descent = of(&Line { nodes: Vec::new() }, &[], &[]);
 
         assert!(descent.is_empty());
         assert_eq!(descent.levels, 0);

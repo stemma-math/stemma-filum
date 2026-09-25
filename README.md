@@ -13,10 +13,27 @@ model, and the Tauri desktop application.
 | `stemma-server/` | The `stemma-server` binary: API, web interface, database, git remotes, job queue |
 | `stemma-app/` | The Tauri desktop application; its Svelte frontend is in `stemma-app/frontend` |
 | `identity/` | The visual identity: design tokens, faces, the mark, icons and the descent drawing |
-| `notation/` | The `@stemma/notation` Typst package every line imports |
+| `typst/` | The `@stemma/line` Typst package every line is typeset with |
 
 Dependencies point one way: `stemma` and `stemma-server` depend on
 `stemma-core`, never on each other, and the app depends on `stemma`.
+
+## Lines
+
+A line lives in `lines/<name>/line.json` inside a group repository. It is a
+title, an optional description and an ordered list of blocks:
+
+- `prose`: intuition and connecting text;
+- `definition`: central unless marked otherwise;
+- `theorem`: under any environment name (Theorem, Lemma, …), ordinary unless
+  marked central;
+- `proof`: the proof of one definition or theorem, linked by block id.
+
+Every block has a stable `blk:` identifier; definitions and theorems may also
+have a siglum such as `thm:main`, which `@thm:main` cites in Typst content.
+Only `line.json` is committed. The Typst document, and everything built from
+it, is rendered from it by `stemma-core` (`render::typst`) with the package in
+`typst/`, which also leaves each block's fields as queryable `metadata`.
 
 ## Requirements
 
@@ -81,8 +98,8 @@ STEMMA_HOME="$PWD/.test-state/client" just app-dev
   serves them from its own origin, so no page sends a reader to a font host.
 - `mark.svg`, `noise.svg` and `icons/` are the mark, the surface texture and
   the application icons.
-- `descent.js` draws a line's descent. The server serves it to the browser and
-  the app imports it, so both surfaces draw the same graph.
+- `descent.js` draws a line's descent graph from the placement
+  `stemma_core::descent` computes. Neither surface shows the graph at present.
 
 ## Verification
 

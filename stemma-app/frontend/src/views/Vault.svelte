@@ -70,8 +70,8 @@
       <label>{auditing.action === "attest" ? "What did you check?" : "Why is the guarantee withdrawn?"}
         <textarea rows="2" bind:value={auditing.note} required></textarea></label>
       <div class="row__actions">
-        <button type="submit">{auditing.action === "attest" ? "Attest it" : "Withdraw it"}</button>
-        <button type="button" class="quiet-button" onclick={() => (auditing = null)}>Not now</button>
+        <button type="submit">{auditing.action === "attest" ? "Attest" : "Withdraw"}</button>
+        <button type="button" class="quiet-button" onclick={() => (auditing = null)}>Cancel</button>
       </div>
     </form>
   {/if}
@@ -120,7 +120,7 @@
         <label>Distinguishing name<input type="text" bind:value={admit.name} required /></label>
         <label>The prose admitted<textarea bind:value={admit.prose} rows="3" required></textarea></label>
         <label>The complete Lean module<textarea bind:value={admit.lean} rows="5" required></textarea></label>
-        <button type="submit">Admit it</button>
+        <button type="submit">Admit</button>
         <p class="quiet">The module is compiled locally against the group's pinned version before submission.</p>
       </form>
     </section>

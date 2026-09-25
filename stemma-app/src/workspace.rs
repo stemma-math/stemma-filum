@@ -8,9 +8,9 @@ use stemma_core::repository;
 
 use crate::{carried_out, failed, home, said};
 
-/// A line's `main.typ`, checked to lie inside this machine's workspace.
+/// A line's `line.json`, checked to lie inside this machine's workspace.
 ///
-/// The path is `<workspace>/<group>/<side>/lines/<name>/main.typ`, and every
+/// The path is `<workspace>/<group>/<side>/lines/<name>/line.json`, and every
 /// command that takes a path from the webview goes through [`LineAt::admit`].
 pub struct LineAt {
     pub path: PathBuf,
@@ -107,7 +107,7 @@ pub struct Known {
     side: String,
     name: String,
     title: Option<String>,
-    question: Option<String>,
+    description: Option<String>,
     path: String,
 }
 
@@ -160,7 +160,7 @@ pub fn groups() -> Result<Vec<String>, String> {
     Ok(found)
 }
 
-/// Every line in the workspace, with the title and question its source
+/// Every line in the workspace, with the title and description its source
 /// declares.
 #[tauri::command(async)]
 pub fn lines() -> Result<Vec<Known>, String> {
@@ -191,12 +191,16 @@ pub fn lines() -> Result<Vec<Known>, String> {
                     continue;
                 }
                 let source = std::fs::read_to_string(&path).unwrap_or_default();
+                let document = stemma_core::document::Document::parse(&source).ok();
                 found.push(Known {
                     group: group_name.clone(),
                     side: side.to_owned(),
                     name,
-                    title: stemma_core::source::title(&source),
-                    question: stemma_core::source::question(&source),
+                    title: document
+                        .as_ref()
+                        .map(|document| document.title.clone())
+                        .filter(|title| !title.trim().is_empty()),
+                    description: document.and_then(|document| document.description),
                     path: path.display().to_string(),
                 });
             }
@@ -211,10 +215,12 @@ pub fn lines() -> Result<Vec<Known>, String> {
 pub fn new_line(
     group: String,
     title: String,
-    question: String,
+    description: Option<String>,
     shared: bool,
 ) -> Result<String, String> {
-    carried_out(|home, out| stemma::lines::start(home, &group, &title, &question, shared, out))
+    carried_out(|home, out| {
+        stemma::lines::start(home, &group, &title, description.as_deref(), shared, out)
+    })
 }
 
 /// Removes one of this person's private lines; its history is kept.
@@ -244,14 +250,14 @@ mod tests {
         let workspace = Path::new("/workspace");
         assert!(is_line_path(
             workspace,
-            Path::new("/workspace/algebra/private/lines/quotients/main.typ")
+            Path::new("/workspace/algebra/private/lines/quotients/line.json")
         ));
         for path in [
-            "/workspace/main.typ",
-            "/workspace/algebra/private/other/quotients/main.typ",
-            "/workspace/algebra/arbitrary/lines/quotients/main.typ",
-            "/workspace/algebra/private/lines/quotients/nested/main.typ",
-            "/elsewhere/algebra/private/lines/quotients/main.typ",
+            "/workspace/line.json",
+            "/workspace/algebra/private/other/quotients/line.json",
+            "/workspace/algebra/arbitrary/lines/quotients/line.json",
+            "/workspace/algebra/private/lines/quotients/nested/line.json",
+            "/elsewhere/algebra/private/lines/quotients/line.json",
         ] {
             assert!(!is_line_path(workspace, Path::new(path)), "{path}");
         }
@@ -260,7 +266,7 @@ mod tests {
     #[test]
     fn a_line_identity_comes_from_its_repository_path() {
         let line = LineAt::at(PathBuf::from(
-            "/workspace/algebra/private/lines/quotients/main.typ",
+            "/workspace/algebra/private/lines/quotients/line.json",
         ))
         .unwrap();
 

@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use stemma_core::artefact::{LineDigest, Nodes};
+use stemma_core::document::Document;
 use stemma_core::line::{Fault, Line, Name};
 use stemma_core::repository::{self, Manifest};
-use stemma_core::source;
 
 use crate::api::Server;
 use crate::config::Config;
@@ -66,7 +66,7 @@ pub fn run(home: &Home, here: &Path, out: &mut impl Write) -> Result<Vec<Built>>
     if clones.is_empty() {
         writeln!(
             out,
-            "There is nothing here to read. Run `stemma sync` to bring a group down."
+            "There are no repositories here. Run `stemma sync` to get your groups."
         )?;
 
         return Ok(Vec::new());
@@ -139,13 +139,17 @@ pub fn read(clone: &Path) -> Result<Built> {
         let text = std::fs::read_to_string(&source_path)
             .with_context(|| format!("cannot read {}", source_path.display()))?;
 
-        match Line::read(&text) {
-            Ok(line) => {
+        let read = Document::parse(&text)
+            .map_err(|unreadable| vec![Fault::from(unreadable)])
+            .and_then(|document| Line::of(&document).map(|line| (document, line)));
+
+        match read {
+            Ok((document, line)) => {
                 let lean = crate::lean::check(clone, &name, &pins)?;
                 nodes.lines.push(LineDigest {
                     name,
-                    title: source::title(&text),
-                    question: source::question(&text),
+                    title: Some(document.title).filter(|title| !title.trim().is_empty()),
+                    description: document.description,
                     line,
                     lean,
                 });
@@ -310,7 +314,7 @@ pub enum Published {
 impl std::fmt::Display for Published {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Kept => f.write_str("the instance has this, and can show it"),
+            Self::Kept => f.write_str("published to the server"),
             Self::Uncommitted => f.write_str(
                 "not sent to the instance: there is uncommitted work here, so this is \
                  not what the commit holds",
@@ -319,8 +323,8 @@ impl std::fmt::Display for Published {
                 "not sent to the instance: it does not have this commit yet, so run \
                  `stemma sync` first",
             ),
-            Self::Unknown => f.write_str("not sent to the instance: this machine is not signed in"),
-            Self::Refused(why) => write!(f, "not sent to the instance: {why}"),
+            Self::Unknown => f.write_str("not published: this machine is not signed in"),
+            Self::Refused(why) => write!(f, "not published: {why}"),
         }
     }
 }
@@ -432,7 +436,7 @@ mod tests {
     fn a_machine_with_nothing_to_send_to_says_so_rather_than_failing() {
         assert_eq!(
             Published::Unknown.to_string(),
-            "not sent to the instance: this machine is not signed in"
+            "not published: this machine is not signed in"
         );
         assert!(
             Published::Uncommitted

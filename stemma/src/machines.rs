@@ -33,7 +33,7 @@ pub fn list(home: &Home, at: &Path, group: Option<&str>, out: &mut impl Write) -
     let machines = server.machines(&credentials.token, &group)?;
 
     if machines.is_empty() {
-        writeln!(out, "No machine works for {group} yet.")?;
+        writeln!(out, "No machines run jobs for {group} yet.")?;
 
         return Ok(());
     }

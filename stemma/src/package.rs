@@ -1,25 +1,26 @@
-//! The notation package, and putting it where Typst will look for it.
+//! The line package, and putting it where Typst will look for it.
 //!
-//! A line begins with `#import "@stemma/notation:…"`, and Typst
-//! resolves that by reading its own directory of local packages — the
-//! same one the `typst` command reads, and not one of Stemma's. So the
-//! package is installed there: a line stays an ordinary Typst file that
-//! somebody can compose by hand, with nothing of Stemma running.
+//! The document built from a line begins with `#import
+//! "@stemma/line:…"`, and Typst resolves that by reading its own
+//! directory of local packages — the same one the `typst` command reads,
+//! and not one of Stemma's. So the package is installed there: the
+//! document stays an ordinary Typst file that somebody can compose by
+//! hand, with nothing of Stemma running.
 //!
 //! It travels inside this program, so a machine that has the command
-//! line has the notation, and installing it is a copy and not a
+//! line has the package, and installing it is a copy and not a
 //! download.
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use stemma_core::notation::{NAME, NAMESPACE, VERSION};
+use stemma_core::package::{NAME, NAMESPACE, VERSION};
 
 /// The package's own manifest, as Typst reads it.
-const MANIFEST: &str = include_str!("../../notation/typst.toml");
+const MANIFEST: &str = include_str!("../../typst/typst.toml");
 
 /// What the environments are.
-const LIBRARY: &str = include_str!("../../notation/lib.typ");
+const LIBRARY: &str = include_str!("../../typst/lib.typ");
 
 /// Where this version of the package goes.
 pub fn directory() -> Result<PathBuf> {
@@ -80,11 +81,11 @@ mod tests {
     }
 
     #[test]
-    fn every_environment_a_source_may_declare_is_defined() {
-        for environment in stemma_core::source::ENVIRONMENTS {
+    fn every_function_a_rendered_line_calls_is_defined() {
+        for function in stemma_core::package::FUNCTIONS {
             assert!(
-                LIBRARY.contains(&format!("#let {environment}(")),
-                "the notation defines no `{environment}`"
+                LIBRARY.contains(&format!("#let {function}(")),
+                "the package defines no `{function}`"
             );
         }
     }

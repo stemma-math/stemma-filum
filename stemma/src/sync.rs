@@ -52,16 +52,21 @@ impl std::fmt::Display for Outcome {
         match self {
             Self::Cloned => write!(f, "cloned"),
             Self::Together => write!(f, "up to date"),
-            Self::Took(commits) => write!(f, "took {}", commits_of(*commits)),
-            Self::Sent(commits) => write!(f, "sent {}", commits_of(*commits)),
+            Self::Took(commits) => write!(f, "pulled {}", commits_of(*commits)),
+            Self::Sent(commits) => write!(f, "pushed {}", commits_of(*commits)),
             Self::TookAndSent(took, sent) => {
-                write!(f, "took {}, sent {}", commits_of(*took), commits_of(*sent))
+                write!(
+                    f,
+                    "pulled {}, pushed {}",
+                    commits_of(*took),
+                    commits_of(*sent)
+                )
             }
-            Self::ToSend(commits) => write!(f, "{} to send", commits_of(*commits)),
-            Self::ToTake(commits) => write!(f, "{} to take", commits_of(*commits)),
+            Self::ToSend(commits) => write!(f, "{} to push", commits_of(*commits)),
+            Self::ToTake(commits) => write!(f, "{} to pull", commits_of(*commits)),
             Self::Parted(here, there) => write!(
                 f,
-                "this machine and the instance have both moved: {} here, {} there",
+                "this machine and the server have diverged: {} here, {} there",
                 commits_of(*here),
                 commits_of(*there)
             ),
@@ -104,7 +109,7 @@ pub fn run(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
     // Validate the complete listing before using remote names as local paths.
     for group in &listing.groups {
         stemma_core::id::Slug::parse(&group.slug)
-            .context("the instance returned an invalid group name")?;
+            .context("the server returned an invalid group name")?;
     }
 
     let mut config = Config::read(&home.config_file())?;
@@ -114,7 +119,7 @@ pub fn run(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
     if listing.groups.is_empty() {
         writeln!(
             out,
-            "You are not in any group yet, so there is nothing to bring down."
+            "You are not in any group yet, so there is nothing to sync."
         )?;
 
         return Ok(reports);
@@ -198,7 +203,7 @@ pub fn status(home: &Home, out: &mut impl Write) -> Result<Vec<Report>> {
 
     if reports.is_empty() {
         match credentials {
-            Some(_) => writeln!(out, "Nothing has been brought down yet. Run `stemma sync`.")?,
+            Some(_) => writeln!(out, "Nothing has been synced yet. Run `stemma sync`.")?,
             None => writeln!(out, "This machine is not signed in. Run `stemma login`.")?,
         }
     }
@@ -382,7 +387,7 @@ fn quoted(path: &Path) -> String {
 /// One line of what happened.
 fn line(report: &Report) -> String {
     let dirty = match report.dirty {
-        true => "  (uncommitted work here)",
+        true => "  (uncommitted changes)",
         false => "",
     };
 
@@ -400,11 +405,11 @@ mod tests {
     fn what_happened_is_said_in_words_and_counted() {
         assert_eq!(Outcome::Cloned.to_string(), "cloned");
         assert_eq!(Outcome::Together.to_string(), "up to date");
-        assert_eq!(Outcome::Took(1).to_string(), "took 1 commit");
-        assert_eq!(Outcome::Sent(3).to_string(), "sent 3 commits");
+        assert_eq!(Outcome::Took(1).to_string(), "pulled 1 commit");
+        assert_eq!(Outcome::Sent(3).to_string(), "pushed 3 commits");
         assert_eq!(
             Outcome::TookAndSent(1, 2).to_string(),
-            "took 1 commit, sent 2 commits"
+            "pulled 1 commit, pushed 2 commits"
         );
     }
 
@@ -412,7 +417,7 @@ mod tests {
     fn two_sides_that_have_both_moved_are_described_and_not_settled() {
         let said = Outcome::Parted(2, 3).to_string();
 
-        assert!(said.contains("both moved"));
+        assert!(said.contains("diverged"));
         assert!(said.contains("2 commits here"));
         assert!(said.contains("3 commits there"));
     }
@@ -436,8 +441,8 @@ mod tests {
         assert_eq!(apart(0, 2), Outcome::ToTake(2));
         assert_eq!(apart(1, 1), Outcome::Parted(1, 1));
 
-        assert_eq!(Outcome::ToSend(1).to_string(), "1 commit to send");
-        assert_eq!(Outcome::ToTake(2).to_string(), "2 commits to take");
+        assert_eq!(Outcome::ToSend(1).to_string(), "1 commit to push");
+        assert_eq!(Outcome::ToTake(2).to_string(), "2 commits to pull");
     }
 
     #[test]
@@ -456,6 +461,6 @@ mod tests {
         assert!(line.starts_with("algebra"));
         assert!(line.contains("private"));
         assert!(line.contains("cloned"));
-        assert!(line.contains("uncommitted work here"));
+        assert!(line.contains("uncommitted changes"));
     }
 }

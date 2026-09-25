@@ -133,11 +133,11 @@ pub fn is_commit(candidate: &str) -> bool {
 pub struct LineDigest {
     /// The directory it lives in, which is what it is called.
     pub name: Name,
-    /// What its first heading calls it, where it has one.
+    /// What the line is called, where it says.
     pub title: Option<String>,
-    /// What it exists to answer, where it says.
+    /// What the line is about, where it says.
     #[serde(default)]
-    pub question: Option<String>,
+    pub description: Option<String>,
     /// What it declares.
     pub line: Line,
     /// What the pinned Lean environment established for this line.
@@ -267,6 +267,7 @@ pub enum Unreadable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::document::{Block, Document};
 
     fn nodes() -> Nodes {
         let mut nodes = Nodes::new(
@@ -278,13 +279,17 @@ mod tests {
         nodes.lines.push(LineDigest {
             name: Name::parse("quotient-groups").unwrap(),
             title: Some("Quotient groups".to_owned()),
-            question: None,
-            line: Line::read(
-                r#"
-                #definition(id: "def:quotient")[x]
-                #theorem(id: "thm:main", central: true, uses: "def:quotient")[y]
-                "#,
-            )
+            description: None,
+            line: Line::of(&{
+                let quotient = Block::definition(Some("def:quotient".parse().unwrap()), "x");
+                let main = Block::theorem("Theorem", Some("thm:main".parse().unwrap()), "y")
+                    .central(true)
+                    .carrying_proof(false)
+                    .using(&quotient);
+                Document::new("Quotient groups", None)
+                    .with(quotient)
+                    .with(main)
+            })
             .unwrap(),
             lean: None,
         });
@@ -313,8 +318,8 @@ mod tests {
         let digest = LineDigest {
             name: Name::parse("untitled").unwrap(),
             title: None,
-            question: None,
-            line: Line::read("").unwrap(),
+            description: None,
+            line: Line { nodes: Vec::new() },
             lean: None,
         };
 

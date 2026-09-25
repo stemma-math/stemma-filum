@@ -105,7 +105,7 @@ pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
     let jobs = server.jobs(&credentials.token)?;
 
     if jobs.is_empty() {
-        writeln!(out, "Nothing has been asked of your machines.")?;
+        writeln!(out, "No jobs.")?;
         return Ok(());
     }
 
@@ -120,7 +120,7 @@ pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
         if work::output_exists(home, &job.job) {
             writeln!(
                 out,
-                "  raw output kept here · `stemma job output {}`",
+                "  raw output on this machine · `stemma job output {}`",
                 job.job
             )?;
         }
@@ -202,7 +202,7 @@ fn available(clone: &Path) -> String {
 pub(crate) fn ensure_reachable(clone: &Path, commit: &str) -> Result<()> {
     if git::is_dirty(clone).unwrap_or(false) {
         bail!(
-            "there is uncommitted work here, so {} is not what you are looking at",
+            "there are uncommitted changes here, so {} is not what you see",
             short(commit)
         );
     }
@@ -211,7 +211,7 @@ pub(crate) fn ensure_reachable(clone: &Path, commit: &str) -> Result<()> {
         .map(|far| far.ahead > 0)
         .unwrap_or(false)
     {
-        bail!("this commit is not on the instance yet: push it first");
+        bail!("this commit is not on the server yet: run `stemma sync` first");
     }
 
     Ok(())
@@ -221,7 +221,7 @@ pub(crate) fn ensure_reachable(clone: &Path, commit: &str) -> Result<()> {
 pub(crate) fn this_machine(server: &Server, credentials: &Credentials) -> Result<String> {
     let node = server
         .node(&credentials.token)?
-        .context("this machine is not offered for work: run `stemma node init`")?;
+        .context("this machine is not registered to run jobs: run `stemma node init`")?;
 
     Ok(node.machine)
 }
@@ -277,7 +277,7 @@ mod tests {
     fn a_command_run_anywhere_else_asks_which_line_and_says_what_there_is() {
         let clone = somewhere("outside");
         std::fs::create_dir_all(clone.join("lines/quotient-groups")).unwrap();
-        std::fs::write(clone.join("lines/quotient-groups/main.typ"), "").unwrap();
+        std::fs::write(clone.join("lines/quotient-groups/line.json"), "").unwrap();
 
         let error = line_of(&clone, &clone, None).unwrap_err();
 

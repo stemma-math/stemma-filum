@@ -5,16 +5,14 @@
 //! the job's base commit with the source offered by the agent and refuses
 //! any change to the text or declared dependencies of a central statement.
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 
 use crate::actor::{AgentRun, Attribution};
+use crate::document::{Block, Document};
 use crate::fact::{Fact, FactKind};
 use crate::id::{JobId, ProposalId, UserId};
 use crate::job::Outcome;
 use crate::line::{Line, Siglum};
-use crate::source;
 
 /// The one atomic report with which a machine completes a job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +108,9 @@ pub enum GuardError {
     /// A statement the line rests on disappeared.
     #[error("the proposal removes central statement `{0}`")]
     Removed(Siglum),
+    /// It is called something else.
+    #[error("the proposal renames central statement `{0}`")]
+    Renamed(Siglum),
     /// Its written claim changed.
     #[error("the proposal changes the text of central statement `{0}`")]
     ChangedText(Siglum),
@@ -122,126 +123,184 @@ pub enum GuardError {
 }
 
 /// Checks that an agent left every existing central statement frozen.
+///
+/// Statements are matched by block, so a frozen statement cannot be
+/// slipped past the guard by renaming it. What it says, what it is
+/// called, what it declares it uses and the bridges it relies on are
+/// all frozen; its proof is not, and neither is where it stands.
 pub fn preserves_central_statements(base: &str, offered: &str) -> Result<(), GuardError> {
-    let base_line = read_line("base", base)?;
-    let offered_line = read_line("proposed", offered)?;
-    let base_text = central_text(base, &base_line, "base")?;
-    let offered_text = central_text(offered, &offered_line, "proposed")?;
+    let base = read("base", base)?;
+    let offered = read("proposed", offered)?;
 
-    for central in base_line.central() {
-        let Some(after) = offered_line
-            .node(&central.siglum)
-            .filter(|node| node.is_central())
+    for block in &base.blocks {
+        let Some(frozen) = block.statement().filter(|statement| statement.central) else {
+            continue;
+        };
+        let siglum = block.siglum().expect("a statement has a siglum");
+
+        let Some(after) = offered
+            .block(&frozen.id)
+            .filter(|after| after.kind() == block.kind())
+            .and_then(Block::statement)
+            .filter(|statement| statement.central)
         else {
-            return Err(GuardError::Removed(central.siglum.clone()));
+            return Err(GuardError::Removed(siglum));
         };
 
-        if base_text.get(&central.siglum) != offered_text.get(&central.siglum) {
-            return Err(GuardError::ChangedText(central.siglum.clone()));
+        if after.siglum != frozen.siglum {
+            return Err(GuardError::Renamed(siglum));
         }
-        if central.uses != after.uses {
-            return Err(GuardError::ChangedUses(central.siglum.clone()));
+        if after.content != frozen.content
+            || after.environment != frozen.environment
+            || after.title != frozen.title
+        {
+            return Err(GuardError::ChangedText(siglum));
         }
-        if central.bridges != after.bridges {
-            return Err(GuardError::ChangedBridges(central.siglum.clone()));
+        if after.uses != frozen.uses {
+            return Err(GuardError::ChangedUses(siglum));
+        }
+        if after.bridges != frozen.bridges {
+            return Err(GuardError::ChangedBridges(siglum));
         }
     }
 
     Ok(())
 }
 
-fn read_line(which: &'static str, text: &str) -> Result<Line, GuardError> {
-    Line::read(text).map_err(|faults| GuardError::InvalidSource {
-        which,
-        reason: faults
-            .first()
-            .map(ToString::to_string)
-            .unwrap_or_else(|| "it is not a line".to_owned()),
-    })
-}
+/// Reads one side, which has to be a line and not only a document.
+fn read(which: &'static str, text: &str) -> Result<Document, GuardError> {
+    let invalid = |reason: String| GuardError::InvalidSource { which, reason };
+    let document = Document::parse(text).map_err(|unreadable| invalid(unreadable.to_string()))?;
 
-fn central_text(
-    text: &str,
-    line: &Line,
-    which: &'static str,
-) -> Result<BTreeMap<Siglum, String>, GuardError> {
-    let declarations = source::read(text).map_err(|problem| GuardError::InvalidSource {
-        which,
-        reason: problem.to_string(),
+    Line::of(&document).map_err(|faults| {
+        invalid(
+            faults
+                .first()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "it is not a line".to_owned()),
+        )
     })?;
-    let central: Vec<&Siglum> = line
-        .central()
-        .into_iter()
-        .map(|node| &node.siglum)
-        .collect();
-    let mut found = BTreeMap::new();
 
-    for declaration in declarations {
-        let Some(id) = declaration.text("id") else {
-            continue;
-        };
-        let Ok(siglum) = id.parse::<Siglum>() else {
-            continue;
-        };
-        if !central.contains(&&siglum) {
-            continue;
-        }
-
-        let body = declaration
-            .body
-            .map(|range| text[range].to_owned())
-            .unwrap_or_default();
-        found.insert(siglum, body);
-    }
-
-    Ok(found)
+    Ok(document)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const BASE: &str = r#"
-= A line
-#definition(id: "def:group", name: "Group")[A group.]
-#definition(id: "def:set", name: "Set")[A set.]
-#theorem(id: "thm:main", central: true, uses: "def:group")[Every finite group is finite.]
-#lemma(id: "lem:step", uses: "def:group")[An old argument.]
-"#;
+    fn base() -> Document {
+        let mut document = Document::new("A line", None);
+        let group = document.push(Block::definition(
+            Some("def:group".parse().unwrap()),
+            "A group.",
+        ));
+        let mut set = Block::definition(Some("def:set".parse().unwrap()), "A set.");
+        set.statement_mut().unwrap().central = false;
+        let set = document.push(set);
+        let mut main = Block::theorem(
+            "Theorem",
+            Some("thm:main".parse().unwrap()),
+            "Every finite group is finite.",
+        );
+        main.statement_mut().unwrap().central = true;
+        main.statement_mut().unwrap().uses.push(group);
+        let main = document.push(main);
+        document.push(Block::proof(main, "It is."));
+        let mut step = Block::theorem(
+            "Lemma",
+            Some("lem:step".parse().unwrap()),
+            "An old argument.",
+        );
+        step.statement_mut().unwrap().proof = false;
+        step.statement_mut().unwrap().uses.push(set);
+        document.push(step);
+        document
+    }
+
+    fn statement(document: &mut Document, at: usize) -> &mut crate::document::Statement {
+        document.blocks[at].statement_mut().unwrap()
+    }
+
+    fn guarded(original: &Document, offered: &Document) -> Result<(), GuardError> {
+        preserves_central_statements(&original.to_text(), &offered.to_text())
+    }
 
     #[test]
-    fn an_agent_may_rewrite_the_inside_of_a_box() {
-        let offered = BASE.replace("An old argument.", "A much better argument.");
-        assert_eq!(preserves_central_statements(BASE, &offered), Ok(()));
+    fn an_agent_may_rewrite_the_inside_of_a_box_and_any_proof() {
+        let original = base();
+        let mut offered = original.clone();
+        statement(&mut offered, 4).content = "A much better argument.".to_owned();
+        offered.blocks[3] = Block::proof(*offered.blocks[2].id(), "By @lem:step.");
+        offered.blocks.swap(0, 1);
+        assert_eq!(guarded(&original, &offered), Ok(()));
     }
 
     #[test]
     fn changing_a_central_claim_is_refused() {
-        let offered = BASE.replace("Every finite group is finite.", "Every group is finite.");
+        let original = base();
+        let mut offered = original.clone();
+        statement(&mut offered, 2).content = "Every group is finite.".to_owned();
         assert!(matches!(
-            preserves_central_statements(BASE, &offered),
+            preserves_central_statements(&original.to_text(), &offered.to_text()),
+            Err(GuardError::ChangedText(_))
+        ));
+    }
+
+    #[test]
+    fn a_central_definition_is_frozen_too() {
+        let original = base();
+        let mut offered = original.clone();
+        statement(&mut offered, 0).title = Some("Monoid".to_owned());
+        assert!(matches!(
+            preserves_central_statements(&original.to_text(), &offered.to_text()),
             Err(GuardError::ChangedText(_))
         ));
     }
 
     #[test]
     fn changing_a_central_dependency_is_refused() {
-        let offered = BASE.replace(
-            "uses: \"def:group\")[Every finite",
-            "uses: \"def:set\")[Every finite",
-        );
+        let original = base();
+        let mut offered = original.clone();
+        let set = *offered.blocks[1].id();
+        statement(&mut offered, 2).uses = vec![set];
         assert!(matches!(
-            preserves_central_statements(BASE, &offered),
+            preserves_central_statements(&original.to_text(), &offered.to_text()),
             Err(GuardError::ChangedUses(_))
         ));
     }
 
     #[test]
-    fn removing_or_demoting_a_central_statement_is_refused() {
-        let offered = BASE.replace("central: true, ", "");
+    fn removing_or_demoting_or_renaming_a_central_statement_is_refused() {
+        let original = base();
+
+        let mut demoted = original.clone();
+        statement(&mut demoted, 2).central = false;
         assert!(matches!(
-            preserves_central_statements(BASE, &offered),
+            preserves_central_statements(&original.to_text(), &demoted.to_text()),
             Err(GuardError::Removed(_))
+        ));
+
+        let mut renamed = original.clone();
+        statement(&mut renamed, 2).siglum = Some("thm:other".parse().unwrap());
+        assert!(matches!(
+            preserves_central_statements(&original.to_text(), &renamed.to_text()),
+            Err(GuardError::Renamed(_))
+        ));
+    }
+
+    #[test]
+    fn an_offer_that_is_not_a_line_is_refused() {
+        let original = base();
+        let broken = Document {
+            blocks: vec![Block::theorem("Theorem", None, "No proof block.")],
+            ..original.clone()
+        };
+        assert!(matches!(
+            guarded(&original, &broken),
+            Err(GuardError::InvalidSource {
+                which: "proposed",
+                ..
+            })
         ));
     }
 

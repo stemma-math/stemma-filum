@@ -312,7 +312,7 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
     let agent = Slug::parse(asking.agent.trim())
         .ok()
         .filter(|agent| stemma_core::machine::known(agent.as_str()).is_some())
-        .ok_or_else(|| refuse("This instance cannot run that agent."))?;
+        .ok_or_else(|| refuse("This server cannot run that agent."))?;
 
     let chosen = match asking
         .machine
@@ -343,9 +343,7 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
         .map(str::to_owned);
 
     if task == Task::Reconcile && against.is_none() {
-        return Err(refuse(
-            "Bringing two versions together needs the other one named.",
-        ));
+        return Err(refuse("A merge job needs the other version's commit."));
     }
 
     instance

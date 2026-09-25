@@ -42,17 +42,17 @@
   {/if}
 </div>
 <section class="field">
-  <p class="label">The command line</p>
+  <p class="label">Command line</p>
   <p class="quiet">Install the bundled <code>stemma</code> command to manage this workspace from a terminal.</p>
-  <div class="row__actions"><button onclick={() => run(api.installCli)}>Install it</button></div>
+  <div class="row__actions"><button onclick={() => run(api.installCli)}>Install</button></div>
 </section>
 <section class="field">
-  <p class="label">The background service</p>
+  <p class="label">Background service</p>
   <p class="quiet">The daemon accepts jobs while this machine is running, without the application open.</p>
   <div class="row__actions"><button onclick={() => run(api.daemonInstall)}>Install the daemon</button></div>
 </section>
 <section class="field">
-  <p class="label">Offer it for work</p>
+  <p class="label">Run jobs for groups</p>
   <form class="stack" onsubmit={offer}>
     <div>
       {#each app.groups as group (group)}
@@ -61,7 +61,7 @@
         <p class="quiet">No groups are available on this machine.</p>
       {/each}
     </div>
-    <div class="row__actions"><button type="submit">Offer this machine</button></div>
+    <div class="row__actions"><button type="submit">Save</button></div>
   </form>
 </section>
 <section class="field">

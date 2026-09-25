@@ -68,15 +68,15 @@
     <p class="quiet">at {beginning.url}</p>
     <button onclick={() => api.openLink(beginning!.url_complete).catch(() => {})}>Open it in the browser</button>
     <p class="quiet">Waiting for approval in your browser...</p>
-    <button class="quiet-button" onclick={() => restart()}>Use a different instance</button>
+    <button class="quiet-button" onclick={() => restart()}>Use a different server</button>
   {:else}
     <span class="entrance-kicker">Desktop workspace</span>
     <h1>Connect this machine</h1>
-    <p class="quiet">Enter the address of your Stemma instance. You will confirm access in your browser.</p>
+    <p class="quiet">Enter the address of your Stemma server. You will confirm access in your browser.</p>
     {#if problem}<p class="problem">{problem}</p>{/if}
     <form onsubmit={begin}>
       <!-- svelte-ignore a11y_autofocus -->
-      <input type="text" bind:value={server} placeholder="stemma.example.org" aria-label="Instance address" autofocus />
+      <input type="text" bind:value={server} placeholder="stemma.example.org" aria-label="Server address" autofocus />
       <button type="submit">Continue</button>
     </form>
   {/if}

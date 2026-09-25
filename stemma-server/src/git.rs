@@ -721,10 +721,9 @@ mod tests {
     }
 
     /// A source with a question and one statement in it.
-    fn source(question: &str) -> String {
-        format!(
-            "= Quotient groups\n\n#question[{question}]\n\n             #theorem(id: \"thm:one\", central: true)[It splits.]\n"
-        )
+    fn source(description: &str) -> String {
+        stemma_core::document::Document::new("Quotient groups", Some(description.to_owned()))
+            .to_text()
     }
 
     #[test]

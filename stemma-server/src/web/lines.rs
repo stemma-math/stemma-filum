@@ -5,8 +5,8 @@
 //! so what it can show is what the source declares: the definitions, the
 //! statements the line rests on, and the boxes between them.
 //!
-//! The prose is shown as it was written: the source at the head of the
-//! repository, uncompiled. A composed document would be a different
+//! The prose is shown as the Typst document the line at the head of the
+//! repository becomes, uncompiled. A composed document would be a different
 //! artefact, and a page that typeset the mathematics itself would be
 //! pretending to be that document.
 
@@ -66,37 +66,6 @@ pub async fn view(
     };
 
     let offers = super::jobs::offers(&instance, &group.id).await?;
-    let bridges = {
-        let id = group.id.clone();
-
-        instance
-            .read(move |connection| {
-                let entries = crate::store::vault::entries(connection, &id)?;
-                let audited = crate::store::vault::bridges(connection, &id)?;
-                let named = |at: &stemma_core::id::VaultEntryId| {
-                    entries
-                        .iter()
-                        .find(|entry| &entry.entry.id == at)
-                        .map(|entry| entry.entry.siglum.clone())
-                };
-
-                Ok(audited
-                    .iter()
-                    // A withdrawn substitution stops being offered; the
-                    // graph stops showing it as a licence for the same
-                    // reason.
-                    .filter(|held| {
-                        held.bridge.correspondence
-                            != stemma_core::model::Correspondence::AuditWithdrawn
-                    })
-                    .filter_map(|held| {
-                        Some((named(&held.bridge.left)?, named(&held.bridge.right)?))
-                    })
-                    .collect::<Vec<_>>())
-            })
-            .await?
-    };
-
     let writing = {
         let owner = signed.user.id.clone();
         let id = group.id.clone();
@@ -108,8 +77,7 @@ pub async fn view(
     };
     let chrome = super::layout::around(&instance, &signed, digest.shown_as().to_owned())
         .await?
-        .at(format!("/g/{}", group.slug()))
-        .drawing();
+        .at(format!("/g/{}", group.slug()));
 
     let launchers = Anchored {
         signed: &signed,
@@ -130,7 +98,6 @@ pub async fn view(
             launchers: &launchers,
             writing: writing.as_ref(),
             signed: &signed,
-            bridges: &bridges,
             written: written.as_ref(),
         }),
     )
@@ -237,13 +204,21 @@ async fn written(
 /// added — the Lean result, the composed document — and the page says
 /// so where it would have shown them.
 fn declared(name: &Name, source: &str) -> LineDigest {
+    let document = stemma_core::document::Document::parse(source).ok();
+
     LineDigest {
         name: name.clone(),
-        title: stemma_core::source::title(source),
-        question: stemma_core::source::question(source),
+        title: document
+            .as_ref()
+            .map(|document| document.title.clone())
+            .filter(|title| !title.trim().is_empty()),
+        description: document
+            .as_ref()
+            .and_then(|document| document.description.clone()),
         // A source with a fault in it is still a line somebody is
         // writing; what it declares so far is nothing.
-        line: stemma_core::line::Line::read(source)
+        line: document
+            .and_then(|document| stemma_core::line::Line::of(&document).ok())
             .unwrap_or(stemma_core::line::Line { nodes: Vec::new() }),
         lean: None,
     }
@@ -368,8 +343,6 @@ struct Viewing<'a> {
     writing: Option<&'a Claim>,
     /// Who is reading.
     signed: &'a SignedIn,
-    /// The audited substitutions between this line's definitions.
-    bridges: &'a [(stemma_core::line::Siglum, stemma_core::line::Siglum)],
     /// What is written, where the repository still has it.
     written: Option<&'a Written>,
 }
@@ -384,7 +357,6 @@ fn body(viewing: &Viewing<'_>) -> Markup {
         launchers,
         writing,
         signed,
-        bridges,
         written,
     } = *viewing;
     let boxes = digest.line.boxes();
@@ -398,14 +370,12 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             }
             h1 { (digest.shown_as()) }
 
-            @if let Some(question) = &digest.question {
-                p class="serif" { (question) }
+            @if let Some(description) = &digest.description {
+                p class="serif" { (description) }
             }
 
             p class="quiet identifier" { "lines/" (digest.name) }
         }
-
-        (super::graph::drawn(digest, bridges))
 
         div class="apparatus" {
             div class="apparatus__gutter" {
@@ -444,7 +414,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             div class="apparatus__register" {
                 @if side == Side::Private {
                     div class="block" {
-                        p class="label" { "Yours alone" }
+                        p class="label" { "Private" }
                         p {
                             a href={ "/g/" (group.slug()) "/private/" (digest.name) "/share" } {
                                 "Share it with the group"
@@ -459,7 +429,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                                       "/delete" } {
                             (signature(signed))
                             button class="button button--quiet" type="submit" {
-                                "Take this line out"
+                                "Delete this line"
                             }
                         }
                         p class="quiet" {
@@ -473,15 +443,15 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             }
         }
 
-        // What was written, prose and all, as it was written. It has the
-        // width of the page because most of it is prose.
+        // What was written, prose and all, as the Typst it becomes. It has
+        // the width of the page because most of it is prose.
         @if let Some(written) = written {
             div class="block source" {
                 p class="label" {
-                    "The source · "
+                    "Typst source · "
                     span class="identifier" { (short(&written.commit)) }
                 }
-                pre class="source__text" { (written.source) }
+                pre class="source__text" { (stemma_core::render::readable(&written.source)) }
             }
         }
     }
@@ -628,7 +598,7 @@ fn claim_block(
                         form method="post"
                              action={ "/g/" (group.slug()) "/" (side) "/" (line) "/claim/release" } {
                             (signature(signed))
-                            button type="submit" { "Hand it back" }
+                            button type="submit" { "Release" }
                         }
                     }
                 }

@@ -2,32 +2,42 @@
 
 use serde::Serialize;
 use stemma_core::artefact::LeanDigest;
-use stemma_core::line::{BlackBox, Line, Name};
-use stemma_core::notation;
+use stemma_core::document::Document;
+use stemma_core::line::{Fault, Line, Name};
 
 use crate::said;
 use crate::workspace::{LineAt, LineEntry};
 
-/// A line as the editor holds it: its source and what can be read out of it.
+/// A line as the editor holds it: its blocks and what can be read out of them.
 #[derive(Serialize)]
 pub struct OpenLine {
     entry: LineEntry,
+    /// The line, when the file on disk is one.
+    document: Option<Document>,
+    /// The file as it is, for when it is not a line and has to be fixed by hand.
     source: String,
     line: Option<Line>,
-    boxes: Vec<BlackBox>,
-    diagnostics: Vec<String>,
+    faults: Vec<Problem>,
     lean: Option<LeanDigest>,
+}
+
+/// Something wrong with the line, and the block it is about.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Problem {
+    /// Which block, counting from one, when it is about one.
+    at: Option<usize>,
+    message: String,
 }
 
 impl OpenLine {
     fn of(line: &LineAt, source: String) -> Result<Self, String> {
-        let (read, boxes, diagnostics) = analyse(&source);
+        let (document, read, faults) = analyse(&source);
         Ok(Self {
             entry: line.entry(),
+            document,
             source,
             line: read,
-            boxes,
-            diagnostics,
+            faults,
             lean: lean_status(line)?,
         })
     }
@@ -40,10 +50,11 @@ pub fn open_line(path: String) -> Result<OpenLine, String> {
     OpenLine::of(&line, source)
 }
 
-/// Writes the source to disk. Called whenever the writer pauses.
+/// Writes the line to disk. Called whenever the writer pauses.
 #[tauri::command(async)]
-pub fn save_line(path: String, source: String) -> Result<OpenLine, String> {
+pub fn save_line(path: String, document: Document) -> Result<OpenLine, String> {
     let line = LineAt::admit(&path)?;
+    let source = document.to_text();
     stemma::storage::replace(&line.path, &source).map_err(said)?;
     OpenLine::of(&line, source)
 }
@@ -58,41 +69,29 @@ pub fn record_line(path: String) -> Result<Option<String>, String> {
         .map(|recorded| recorded.to_string()))
 }
 
-/// Prepends the notation import to a line that uses the environments
-/// without importing them, and saves it.
-#[tauri::command(async)]
-pub fn add_notation(path: String) -> Result<OpenLine, String> {
-    let line = LineAt::admit(&path)?;
-    let source = std::fs::read_to_string(&line.path).map_err(said)?;
+/// Reads the line out of its source, collecting every fault.
+fn analyse(source: &str) -> (Option<Document>, Option<Line>, Vec<Problem>) {
+    let document = match Document::parse(source) {
+        Ok(document) => document,
+        Err(unreadable) => {
+            let problem = Problem {
+                at: None,
+                message: unreadable.to_string(),
+            };
+            return (None, None, vec![problem]);
+        }
+    };
 
-    if !notation::missing_from(&source) {
-        return OpenLine::of(&line, source);
+    match Line::of(&document) {
+        Ok(line) => (Some(document), Some(line), Vec::new()),
+        Err(faults) => (Some(document), None, faults.iter().map(problem).collect()),
     }
-
-    let source = format!("{}\n\n{source}", notation::import());
-    stemma::storage::replace(&line.path, &source).map_err(said)?;
-    OpenLine::of(&line, source)
 }
 
-/// Reads the line out of its source, collecting every fault. A missing
-/// notation import comes first, since the other faults follow from it.
-fn analyse(source: &str) -> (Option<Line>, Vec<BlackBox>, Vec<String>) {
-    let missing = notation::missing_from(source)
-        .then(notation::how_to_add_it)
-        .into_iter();
-
-    match Line::read(source) {
-        Ok(line) => {
-            let boxes = line.boxes();
-            (Some(line), boxes, missing.collect())
-        }
-        Err(faults) => (
-            None,
-            Vec::new(),
-            missing
-                .chain(faults.into_iter().map(|fault| fault.to_string()))
-                .collect(),
-        ),
+fn problem(fault: &Fault) -> Problem {
+    Problem {
+        at: fault.at(),
+        message: fault.to_string(),
     }
 }
 
@@ -106,41 +105,43 @@ fn lean_status(line: &LineAt) -> Result<Option<LeanDigest>, String> {
 
 #[cfg(test)]
 mod tests {
+    use stemma_core::document::{Block, Document};
+
     use super::analyse;
 
-    fn written(body: &str) -> String {
-        format!("{}\n\n{body}", stemma_core::notation::import())
-    }
-
     #[test]
-    fn unfinished_source_remains_available_with_diagnostics() {
-        let (line, boxes, diagnostics) =
-            analyse(&written(r#"#theorem(central: true)[Unfinished.]"#));
+    fn an_unfinished_line_keeps_its_blocks_and_says_which_one_is_wrong() {
+        let unproved = Block::theorem("Theorem", Some("thm:main".parse().unwrap()), "x");
+        let source = Document::new("A line", None)
+            .with(Block::prose("An idea."))
+            .with(unproved)
+            .to_text();
 
+        let (document, line, faults) = analyse(&source);
+
+        assert_eq!(document.map(|document| document.blocks.len()), Some(2));
         assert!(line.is_none());
-        assert!(boxes.is_empty());
-        assert!(!diagnostics.is_empty());
+        assert_eq!(faults[0].at, Some(2));
     }
 
     #[test]
-    fn valid_source_keeps_its_apparatus() {
-        let (line, _, diagnostics) = analyse(&written(
-            r#"#theorem(id: "thm:main", central: true)[A statement.]"#,
-        ));
+    fn a_valid_line_keeps_its_apparatus() {
+        let source = Document::new("A line", None)
+            .with(Block::definition(None, "A group."))
+            .to_text();
 
-        assert!(line.is_some());
-        assert!(diagnostics.is_empty());
+        let (_, line, faults) = analyse(&source);
+
+        assert_eq!(line.map(|line| line.nodes.len()), Some(1));
+        assert!(faults.is_empty());
     }
 
     #[test]
-    fn a_source_without_the_notation_import_is_told_what_it_lacks() {
-        let (_, _, diagnostics) = analyse("= Hola\n\n#question[Adiós.]\n");
+    fn a_file_that_is_not_a_line_is_reported_whole() {
+        let (document, _, faults) = analyse("= Hola\n");
 
-        assert!(
-            diagnostics
-                .iter()
-                .any(|said| said.contains("where its environments come from")),
-            "nothing said the import was missing: {diagnostics:?}"
-        );
+        assert!(document.is_none());
+        assert_eq!(faults.len(), 1);
+        assert_eq!(faults[0].at, None);
     }
 }

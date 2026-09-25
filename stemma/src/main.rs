@@ -74,9 +74,9 @@ fn run(cli: Cli) -> Result<bool> {
             LineCommand::New {
                 group,
                 title,
-                question,
+                description,
                 shared,
-            } => lines::start(home, &group, &title, &question, shared, out)?,
+            } => lines::start(home, &group, &title, description.as_deref(), shared, out)?,
             LineCommand::Delete { line } => lines::delete(home, &here(), line.as_deref(), out)?,
             LineCommand::Share {
                 line,
@@ -87,7 +87,7 @@ fn run(cli: Cli) -> Result<bool> {
 
         Command::Claim { command } => match command {
             ClaimCommand::Take { line } => claims::take(home, &here(), line.as_deref(), out)?,
-            ClaimCommand::Ask { line } => claims::ask(home, &here(), line.as_deref(), out)?,
+            ClaimCommand::Request { line } => claims::request(home, &here(), line.as_deref(), out)?,
             ClaimCommand::Release { line } => claims::release(home, &here(), line.as_deref(), out)?,
             ClaimCommand::Status => claims::status(home, out)?,
         },
@@ -185,7 +185,7 @@ fn where_things_are(home: &Home, out: &mut impl Write) -> Result<()> {
     writeln!(out, "workspace  {}", home.workspace().display())?;
     writeln!(
         out,
-        "instance   {}",
+        "server     {}",
         signed_in
             .as_ref()
             .map_or("not signed in", |credentials| credentials.server.as_str())

@@ -1,7 +1,7 @@
 // Application-wide state: who is signed in, which group and view are
 // showing, the open line, and moving between them.
 
-import { api, auditedBridges, said } from "./api";
+import { api, said } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
 import { tell } from "./status.svelte";
@@ -107,7 +107,7 @@ class App {
   }
 
   /** Switches the rail to another group; the open line belongs to the old
-   * one, so it is put down first. */
+   * one, so it is closed first. */
   async chooseGroup(next: string) {
     if (next === this.group) return;
     if (!(await this.goTo("welcome"))) return;
@@ -121,17 +121,14 @@ class App {
     try {
       await leaving?.save();
       const opened = await api.openLine(path);
-      const [offers, bridges] = await Promise.all([
-        api.offers(opened.entry.group).catch(() => []),
-        auditedBridges(opened.entry.group),
-      ]);
+      const offers = await api.offers(opened.entry.group).catch(() => []);
       if (!active()) return;
       if (leaving) {
         await leaving.flush();
         await leaving.record();
         if (!active()) return;
       }
-      this.line = new LineSession(opened, offers, bridges);
+      this.line = new LineSession(opened, offers);
       this.stage = "editor";
     } catch (error) {
       tell(said(error));
@@ -193,10 +190,10 @@ function syncReport(stepped: Stepped[]): string {
   }
   const dirty = stepped.filter((one) => one.dirty);
   if (dirty.length) {
-    return `${dirty.map(where).join(", ")}: there is work here that is not in the history yet, so it has not gone anywhere. A line you are writing is written when you let it go.`;
+    return `${dirty.map(where).join(", ")}: uncommitted changes were not synced. A line is committed when you release it.`;
   }
   const recorded = stepped.flatMap((one) => one.recorded);
-  if (recorded.length) return `Written into history before syncing: ${recorded.join(", ")}.`;
+  if (recorded.length) return `Committed before syncing: ${recorded.join(", ")}.`;
   return stepped.map((one) => `${where(one)}: ${one.outcome}`).join(" · ") || "Everything is up to date.";
 }
 

@@ -1,8 +1,8 @@
 // Typed wrappers over the desktop shell's commands.
 
 import type {
-  AuditAction, AuditTarget, Beginning, Claim, Decision, Disagreement, Known, Machine, Offer,
-  OpenLine, Preview, Review, Signed, Stepped, Vault, Verdict, Waiting,
+  AuditAction, AuditTarget, Beginning, Claim, Conflict, Decision, Known, LineDocument, Machine,
+  Offer, OpenLine, Preview, Review, Signed, Stepped, Vault, Verdict, Waiting,
 } from "./types";
 
 type Bridge = { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } };
@@ -45,24 +45,21 @@ export const api = {
   groups: () => call<string[]>("groups"),
   lines: () => call<Known[]>("lines"),
 
-  newLine: (group: string, title: string, question: string, shared: boolean) =>
-    call<string>("new_line", { group, title, question, shared }),
+  newLine: (group: string, title: string, description: string | null, shared: boolean) =>
+    call<string>("new_line", { group, title, description, shared }),
   deleteLine: (path: string) => call<string>("delete_line", { path }),
   shareLine: (path: string, history: boolean, mineToWrite: boolean) =>
     call<string>("share_line", { path, history, mineToWrite }),
 
   openLine: (path: string) => call<OpenLine>("open_line", { path }),
-  saveLine: (path: string, source: string) => call<OpenLine>("save_line", { path, source }),
+  saveLine: (path: string, document: LineDocument) => call<OpenLine>("save_line", { path, document }),
   recordLine: (path: string) => call<string | null>("record_line", { path }),
-  addNotation: (path: string) => call<OpenLine>("add_notation", { path }),
-  preview: (path: string, source: string) => call<Preview>("preview", { path, source }),
-  descent: (source: string, verified: string[], bridges: string[][]) =>
-    call<unknown>("descent", { source, verified, bridges }),
+  preview: (path: string, document: LineDocument) => call<Preview>("preview", { path, document }),
 
   claim: (path: string) => call<Claim>("claim", { path }),
-  letGo: (path: string) => call<Claim>("let_go", { path }),
-  askForLine: (path: string) => call<Claim>("ask_for_line", { path }),
-  parted: (path: string) => call<Disagreement[]>("parted", { path }),
+  release: (path: string) => call<Claim>("release", { path }),
+  requestClaim: (path: string) => call<Claim>("request_claim", { path }),
+  parted: (path: string) => call<Conflict[]>("parted", { path }),
   settle: (path: string, decisions: Decision[]) => call<string[]>("settle", { path, decisions }),
 
   offers: (group: string) => call<Offer[]>("offers", { group }),
@@ -88,17 +85,3 @@ export const api = {
   vaultAudit: (group: string, targetKind: AuditTarget, target: string, action: AuditAction, note: string) =>
     call<string>("vault_audit", { group, targetKind, target, action, note }),
 };
-
-/** Pairs of definition sigla joined by an audited bridge in `group`'s vault. */
-export async function auditedBridges(group: string): Promise<string[][]> {
-  try {
-    const vault = await api.vault(group);
-    const sigla = new Map(vault.entries.map((entry) => [entry.id, entry.siglum]));
-    return vault.bridges
-      .filter((bridge) => bridge.correspondence === "audited")
-      .map((bridge) => [sigla.get(bridge.left), sigla.get(bridge.right)])
-      .filter((pair): pair is string[] => pair.every((siglum) => typeof siglum === "string"));
-  } catch {
-    return [];
-  }
-}

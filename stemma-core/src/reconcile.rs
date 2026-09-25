@@ -1,35 +1,34 @@
-//! Two versions of one line, and the rule for bringing them together.
+//! Two versions of one line, and the rule for merging them.
 //!
 //! Only people's machines write mathematics, so the two versions are
 //! never two people's: they are one person's, on two of their own
 //! machines. Nobody is owed a negotiation, and what is needed is a rule.
 //!
-//! The rule is that **the mathematics is decided statement by statement**
-//! and everything else in the document follows the machine the decision
-//! is being made on. A statement one side changed and the other left
-//! alone is not a disagreement and is taken over silently; only a
-//! statement both sides wrote is put to the person, with the two versions
-//! as they wrote them.
+//! The rule is that **the line is decided block by block**. A block one
+//! side changed and the other left alone is not a conflict and is taken
+//! over silently; only a block both sides changed, differently, is put
+//! to the person, with the two versions as they wrote them. Everything
+//! else — the order of the blocks, the title, the description — follows
+//! the machine the decision is being made on, except where only the
+//! other machine changed it.
 //!
 //! Nothing here deletes anything. What it produces is a source, and the
 //! version not kept stays in the history it came from.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
-use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use crate::line::Siglum;
-use crate::source::{self, Problem};
+use crate::document::{Block, Document, Unreadable};
+use crate::id::BlockId;
 
-/// Which of the two versions of a statement to keep.
+/// Which of the two versions of a block to keep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Keep {
     /// The one on the machine the decision is being made on.
     Here,
-    /// The one that came from the instance.
+    /// The one that came from the server.
     There,
 }
 
@@ -38,119 +37,79 @@ spelled!(Keep, UnknownKeep("`{0}` is not a version: say `here` or `there`") {
     There => "there",
 });
 
-/// Which part of a statement a piece of source is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Part {
-    /// What it claims.
-    Statement,
-    /// The argument for it.
-    Proof,
-}
-
-/// One decidable piece of a line: a statement, or its proof.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub struct Mark {
-    /// The statement it belongs to.
-    pub siglum: Siglum,
-    /// Whether it is the statement itself or its argument.
-    pub part: Part,
-}
-
-impl fmt::Display for Mark {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.part {
-            Part::Statement => write!(f, "{}", self.siglum),
-            Part::Proof => write!(f, "the proof of {}", self.siglum),
-        }
-    }
-}
-
-/// A piece of a line, as one version has it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Piece {
-    /// Everything it occupies in that version's source.
-    span: Range<usize>,
-    /// What it says there.
-    text: String,
-    /// Where it comes in that version.
-    order: usize,
-}
-
-/// A piece the two versions do not agree on.
+/// A block the two versions do not agree on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Divergence {
-    /// Which piece it is.
-    pub mark: Mark,
+pub struct Conflict {
+    /// Which block it is.
+    pub block: BlockId,
+    /// What to call it: its siglum, or where it is.
+    pub label: String,
     /// How it reads on this machine, when it is still there.
     pub here: Option<String>,
-    /// How it reads on the instance, when it is still there.
+    /// How it reads on the server, when it is still there.
     pub there: Option<String>,
 }
 
-impl Divergence {
+impl Conflict {
     /// What happened to it, in words.
     pub fn said(&self) -> &'static str {
         match (&self.here, &self.there) {
-            (Some(_), Some(_)) => "it was written in both places",
-            (Some(_), None) => "it was written here and taken out there",
-            (None, Some(_)) => "it was taken out here and written there",
-            (None, None) => "it is in neither version",
+            (Some(_), Some(_)) => "changed on both machines",
+            (Some(_), None) => "changed here and deleted on the server",
+            (None, Some(_)) => "deleted here and changed on the server",
+            (None, None) => "deleted on both machines",
         }
     }
 }
 
-/// Why two versions could not be compared or brought together.
+/// Why two versions could not be compared or merged.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Trouble {
-    /// One of the three versions is not a readable source.
+    /// One of the three versions is not a readable line.
     #[error("the {which} version cannot be read: {problem}")]
     Unreadable {
         /// Which of the three it is.
         which: &'static str,
         /// What is wrong with it.
-        problem: Problem,
+        problem: Unreadable,
     },
-    /// A piece both machines wrote has no decision.
-    #[error("nobody has said which version of {0} to keep")]
-    Undecided(Mark),
-    /// Multiple declarations would be collapsed into a single merge decision.
-    #[error("the {which} version declares {mark} more than once")]
+    /// A block both machines changed has no decision.
+    #[error("no version of {0} has been chosen")]
+    Undecided(String),
+    /// Two blocks in one version share an identifier, so neither can be
+    /// matched with the other versions.
+    #[error("the {which} version has block `{block}` twice")]
     Duplicate {
         /// Which version contains the duplicate.
         which: &'static str,
-        /// The ambiguous statement or proof.
-        mark: Mark,
+        /// The identifier they share.
+        block: BlockId,
     },
 }
 
-/// What the two versions disagree about.
+/// What the two versions conflict on, in this machine's order.
 ///
-/// Only the pieces both machines wrote. A piece one of them changed and
-/// the other left alone is not a disagreement, and presenting it as one
+/// Only the blocks both machines changed. A block one of them changed
+/// and the other left alone is not a conflict, and presenting it as one
 /// would ask a person to decide something they already decided.
-pub fn between(base: &str, here: &str, there: &str) -> Result<Vec<Divergence>, Trouble> {
-    let (base, here, there) = read_all(base, here, there)?;
-    let mut found = Vec::new();
+pub fn between(base: &str, here: &str, there: &str) -> Result<Vec<Conflict>, Trouble> {
+    let versions = Versions::read(base, here, there)?;
+    let mut found: Vec<Conflict> = versions
+        .ids()
+        .into_iter()
+        .filter(|id| !versions.settled(id))
+        .map(|id| Conflict {
+            block: id,
+            label: versions.label(&id),
+            here: versions.here.get(&id).map(shown),
+            there: versions.there.get(&id).map(shown),
+        })
+        .collect();
 
-    for mark in marks(&base, &here, &there) {
-        let (was, mine, theirs) = (base.get(&mark), here.get(&mark), there.get(&mark));
-
-        if settled(was, mine, theirs) {
-            continue;
-        }
-
-        found.push(Divergence {
-            mark,
-            here: mine.map(|piece| piece.text.clone()),
-            there: theirs.map(|piece| piece.text.clone()),
-        });
-    }
-
-    found.sort_by_key(|divergence| {
+    found.sort_by_key(|conflict| {
         (
-            here.get(&divergence.mark).map(|piece| piece.order),
-            there.get(&divergence.mark).map(|piece| piece.order),
+            versions.here.at.get(&conflict.block).copied(),
+            versions.there.at.get(&conflict.block).copied(),
         )
     });
 
@@ -158,426 +117,447 @@ pub fn between(base: &str, here: &str, there: &str) -> Result<Vec<Divergence>, T
 }
 
 /// The line as the decisions leave it.
-///
-/// Everything outside the declarations — headings, prose, the order of
-/// the document — is this machine's. That is the rule, and a rule is all
-/// this needs: both versions belong to the same person.
 pub fn merge(
     base: &str,
     here: &str,
     there: &str,
-    decisions: &BTreeMap<Mark, Keep>,
+    decisions: &BTreeMap<BlockId, Keep>,
 ) -> Result<String, Trouble> {
-    let (was, mine, theirs) = read_all(base, here, there)?;
-    let mut edits = Vec::new();
+    let versions = Versions::read(base, here, there)?;
+    let mut kept: BTreeMap<BlockId, Option<&Block>> = BTreeMap::new();
 
-    for mark in marks(&was, &mine, &theirs) {
-        let (before, ours, other) = (was.get(&mark), mine.get(&mark), theirs.get(&mark));
-
-        if settled(before, ours, other) {
-            // Either nobody moved it, or only this machine did. What is
-            // already in this source is what was decided.
-            if text_of(before) == text_of(ours) && text_of(before) != text_of(other) {
-                edits.push(take_theirs(&mark, ours, other, &mine, &theirs, here.len()));
-            }
-
-            continue;
-        }
-
-        match decisions.get(&mark) {
-            Some(Keep::Here) => continue,
-            Some(Keep::There) => {
-                edits.push(take_theirs(&mark, ours, other, &mine, &theirs, here.len()));
-            }
-            None => return Err(Trouble::Undecided(mark)),
-        }
-    }
-
-    Ok(apply(here, edits))
-}
-
-/// Whether a piece needs nobody's decision.
-fn settled(base: Option<&Piece>, here: Option<&Piece>, there: Option<&Piece>) -> bool {
-    let (was, mine, theirs) = (text_of(base), text_of(here), text_of(there));
-
-    mine == theirs || was == mine || was == theirs
-}
-
-/// The text of a piece that may not be there.
-fn text_of(piece: Option<&Piece>) -> Option<&str> {
-    piece.map(|piece| piece.text.as_str())
-}
-
-/// The edit that puts the instance's version of a piece in place.
-struct Edit {
-    range: Range<usize>,
-    replacement: String,
-    order: usize,
-}
-
-fn take_theirs(
-    mark: &Mark,
-    ours: Option<&Piece>,
-    other: Option<&Piece>,
-    mine: &Version,
-    theirs: &Version,
-    source_len: usize,
-) -> Edit {
-    let (range, replacement) = match (ours, other) {
-        // It is in both: their words go where ours are.
-        (Some(ours), Some(other)) => (ours.span.clone(), other.text.clone()),
-        // They took it out.
-        (Some(ours), None) => (ours.span.clone(), String::new()),
-        // They wrote it, and it goes after whatever it follows there.
-        (None, Some(other)) => {
-            let at = anchor(mark, mine, theirs, source_len);
-            let before_first = mine.values().map(|piece| piece.span.start).min() == Some(at);
-            let replacement = if before_first {
-                format!("{}\n\n", other.text)
-            } else {
-                format!("\n\n{}", other.text)
-            };
-            (at..at, replacement)
-        }
-        (None, None) => (0..0, String::new()),
-    };
-
-    Edit {
-        range,
-        replacement,
-        order: other.map_or(0, |piece| piece.order),
-    }
-}
-
-/// Where a piece only the instance has belongs in this machine's source.
-///
-/// After the last thing that comes before it there and exists here, so a
-/// statement written between two others arrives between those two.
-fn anchor(mark: &Mark, mine: &Version, theirs: &Version, source_len: usize) -> usize {
-    let Some(placed) = theirs.get(mark) else {
-        return mine
-            .values()
-            .map(|piece| piece.span.end)
-            .max()
-            .unwrap_or(source_len);
-    };
-
-    theirs
-        .iter()
-        .filter(|(_, piece)| piece.order < placed.order)
-        .filter_map(|(other, _)| mine.get(other))
-        .map(|piece| piece.span.end)
-        .max()
-        .unwrap_or_else(|| {
-            // Nothing it follows is here, so it goes before everything.
-            mine.values()
-                .map(|piece| piece.span.start)
-                .min()
-                .unwrap_or(source_len)
-        })
-}
-
-/// Carries out the edits, from the end of the document backwards.
-fn apply(source: &str, mut edits: Vec<Edit>) -> String {
-    // Replacements precede insertions at the same offset. Insertions sharing
-    // an anchor are applied in reverse document order, so their final order
-    // is the instance's, independent of the identifiers' alphabetical order.
-    edits.sort_by_key(|edit| std::cmp::Reverse((edit.range.start, edit.range.end, edit.order)));
-
-    let mut written = source.to_owned();
-
-    for Edit {
-        range, replacement, ..
-    } in edits
-    {
-        let mut range = range;
-
-        // Taking a declaration out takes the blank line it sat on with
-        // it, so removing one does not leave a hole in the document.
-        if replacement.is_empty() {
-            while written[range.end..].starts_with('\n') && range.end < written.len() {
-                range.end += 1;
-            }
-        }
-
-        written.replace_range(range, &replacement);
-    }
-
-    written
-}
-
-/// Every piece any of the three versions has.
-fn marks(base: &Version, here: &Version, there: &Version) -> BTreeSet<Mark> {
-    base.keys()
-        .chain(here.keys())
-        .chain(there.keys())
-        .cloned()
-        .collect()
-}
-
-/// The pieces of one version, by the mark that names them.
-type Version = BTreeMap<Mark, Piece>;
-
-/// Reads the three versions, naming whichever of them will not be read.
-fn read_all(base: &str, here: &str, there: &str) -> Result<(Version, Version, Version), Trouble> {
-    Ok((
-        pieces("common", base)?,
-        pieces("local", here)?,
-        pieces("instance", there)?,
-    ))
-}
-
-/// The decidable pieces of one version.
-fn pieces(which: &'static str, source: &str) -> Result<Version, Trouble> {
-    let declarations =
-        source::read(source).map_err(|problem| Trouble::Unreadable { which, problem })?;
-    let mut found = BTreeMap::new();
-
-    for (order, declaration) in declarations.into_iter().enumerate() {
-        let part = match declaration.environment.as_str() {
-            "proof" => Part::Proof,
-            _ => Part::Statement,
-        };
-        let named = match part {
-            Part::Statement => declaration.text("id"),
-            Part::Proof => declaration.text("of"),
-        };
-        let Some(Ok(siglum)) = named.map(str::parse::<Siglum>) else {
-            continue;
-        };
-
-        let mark = Mark { siglum, part };
-        if found.contains_key(&mark) {
-            return Err(Trouble::Duplicate { which, mark });
-        }
-        found.insert(
-            mark,
-            Piece {
-                text: source[declaration.span.clone()].to_owned(),
-                span: declaration.span,
-                order,
-            },
+    for id in versions.ids() {
+        let (was, mine, theirs) = (
+            versions.base.get(&id),
+            versions.here.get(&id),
+            versions.there.get(&id),
         );
+
+        let chosen = if mine == theirs || was == theirs {
+            mine
+        } else if was == mine {
+            theirs
+        } else {
+            match decisions.get(&id) {
+                Some(Keep::Here) => mine,
+                Some(Keep::There) => theirs,
+                None => return Err(Trouble::Undecided(versions.label(&id))),
+            }
+        };
+        kept.insert(id, chosen);
     }
 
-    Ok(found)
+    // This machine's order, less what goes, plus what arrives from the
+    // server placed after whatever it follows there.
+    let mut order: Vec<BlockId> = versions
+        .here
+        .document
+        .blocks
+        .iter()
+        .map(|block| *block.id())
+        .filter(|id| kept.get(id).copied().flatten().is_some())
+        .collect();
+
+    let mut previous: Option<BlockId> = None;
+    for block in &versions.there.document.blocks {
+        let id = *block.id();
+        if !order.contains(&id) && kept.get(&id).copied().flatten().is_some() {
+            let at = previous
+                .and_then(|previous| order.iter().position(|one| one == &previous))
+                .map_or(0, |position| position + 1);
+            order.insert(at, id);
+        }
+        if order.contains(&id) {
+            previous = Some(id);
+        }
+    }
+
+    let merged = Document {
+        format: versions.here.document.format,
+        title: three_way(
+            &versions.base.document.title,
+            &versions.here.document.title,
+            &versions.there.document.title,
+        )
+        .clone(),
+        description: three_way(
+            &versions.base.document.description,
+            &versions.here.document.description,
+            &versions.there.document.description,
+        )
+        .clone(),
+        blocks: order
+            .iter()
+            .filter_map(|id| kept.get(id).copied().flatten().cloned())
+            .collect(),
+    };
+
+    Ok(merged.to_text())
+}
+
+/// This machine's value, unless only the server changed it.
+fn three_way<'a, T: PartialEq>(base: &'a T, here: &'a T, there: &'a T) -> &'a T {
+    match here == base {
+        true => there,
+        false => here,
+    }
+}
+
+/// A block as a person reads it when choosing between two versions.
+fn shown(block: &Block) -> String {
+    let mut said = String::new();
+    match block {
+        Block::Prose(_) => said.push_str("Prose"),
+        Block::Definition(statement) | Block::Theorem(statement) => {
+            said.push_str(&statement.environment);
+            if let Some(title) = &statement.title {
+                said.push_str(&format!(" ({title})"));
+            }
+            if let Some(siglum) = block.siglum() {
+                said.push_str(&format!(" [{siglum}]"));
+            }
+            if statement.central {
+                said.push_str(", central");
+            }
+        }
+        Block::Proof(_) => said.push_str("Proof"),
+    }
+    said.push('\n');
+    said.push_str(block.content().trim());
+    said
+}
+
+/// One version, read and indexed by block.
+struct Version {
+    document: Document,
+    at: BTreeMap<BlockId, usize>,
+}
+
+impl Version {
+    fn read(which: &'static str, text: &str) -> Result<Self, Trouble> {
+        // A line only one side had when they parted is merged against nothing.
+        let document = if which == "common" && text.trim().is_empty() {
+            Document::new("", None)
+        } else {
+            Document::parse(text).map_err(|problem| Trouble::Unreadable { which, problem })?
+        };
+
+        let mut at = BTreeMap::new();
+        for (position, block) in document.blocks.iter().enumerate() {
+            if at.insert(*block.id(), position).is_some() {
+                return Err(Trouble::Duplicate {
+                    which,
+                    block: *block.id(),
+                });
+            }
+        }
+
+        Ok(Self { document, at })
+    }
+
+    fn get(&self, id: &BlockId) -> Option<&Block> {
+        self.at
+            .get(id)
+            .map(|position| &self.document.blocks[*position])
+    }
+}
+
+/// The three versions of one line.
+struct Versions {
+    base: Version,
+    here: Version,
+    there: Version,
+}
+
+impl Versions {
+    fn read(base: &str, here: &str, there: &str) -> Result<Self, Trouble> {
+        Ok(Self {
+            base: Version::read("common", base)?,
+            here: Version::read("local", here)?,
+            there: Version::read("server", there)?,
+        })
+    }
+
+    /// Every block any of the three has.
+    fn ids(&self) -> BTreeSet<BlockId> {
+        [&self.base, &self.here, &self.there]
+            .into_iter()
+            .flat_map(|version| version.at.keys().copied())
+            .collect()
+    }
+
+    /// Whether a block needs nobody's decision.
+    fn settled(&self, id: &BlockId) -> bool {
+        let (was, mine, theirs) = (self.base.get(id), self.here.get(id), self.there.get(id));
+        mine == theirs || was == mine || was == theirs
+    }
+
+    /// What to call a block: its siglum, the statement a proof is of, or
+    /// where it stands.
+    fn label(&self, id: &BlockId) -> String {
+        let Some((version, block)) = [&self.here, &self.there, &self.base]
+            .into_iter()
+            .find_map(|version| Some((version, version.get(id)?)))
+        else {
+            return id.to_string();
+        };
+
+        if let Some(siglum) = block.siglum() {
+            return siglum.to_string();
+        }
+        if let Block::Proof(proof) = block
+            && let Some(siglum) = version.get(&proof.of).and_then(Block::siglum)
+        {
+            return format!("the proof of {siglum}");
+        }
+        format!("{} block {}", block.kind(), version.at[id] + 1)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const BASE: &str = "= Quotient groups\n\n\
-        #definition(id: \"def:group\", name: \"Group\")[A group.]\n\n\
-        #theorem(id: \"thm:main\", central: true, uses: \"def:group\")[Every finite group is finite.]\n\n\
-        #proof(of: \"thm:main\")[It is.]\n";
+    /// A definition, a central theorem and its proof.
+    fn base() -> Document {
+        let mut document = Document::new("Quotient groups", None);
+        document.push(Block::definition(
+            Some("def:group".parse().unwrap()),
+            "A group.",
+        ));
+        let mut main = Block::theorem(
+            "Theorem",
+            Some("thm:main".parse().unwrap()),
+            "Every finite group is finite.",
+        );
+        main.statement_mut().unwrap().central = true;
+        let main = document.push(main);
+        document.push(Block::proof(main, "It is."));
+        document
+    }
 
-    fn mark(siglum: &str, part: Part) -> Mark {
-        Mark {
-            siglum: siglum.parse().unwrap(),
-            part,
-        }
+    fn with_proof(document: &Document, content: &str) -> Document {
+        let mut changed = document.clone();
+        let Block::Proof(proof) = &mut changed.blocks[2] else {
+            panic!("the third block is the proof");
+        };
+        proof.content = content.to_owned();
+        changed
+    }
+
+    fn proof_id(document: &Document) -> BlockId {
+        *document.blocks[2].id()
     }
 
     #[test]
-    fn two_machines_that_wrote_the_same_thing_disagree_about_nothing() {
-        assert_eq!(between(BASE, BASE, BASE).unwrap(), Vec::new());
+    fn two_machines_that_wrote_the_same_thing_conflict_on_nothing() {
+        let base = base().to_text();
+        assert_eq!(between(&base, &base, &base).unwrap(), Vec::new());
     }
 
     #[test]
-    fn a_statement_only_one_machine_touched_is_not_put_to_anybody() {
-        let there = BASE.replace("It is.", "Because every finite set is finite.");
+    fn a_block_only_one_machine_changed_is_not_put_to_anybody() {
+        let original = base();
+        let there = with_proof(&original, "Because every finite set is finite.");
+        let (base, there) = (original.to_text(), there.to_text());
 
-        assert_eq!(between(BASE, BASE, &there).unwrap(), Vec::new());
+        assert_eq!(between(&base, &base, &there).unwrap(), Vec::new());
 
-        let merged = merge(BASE, BASE, &there, &BTreeMap::new()).unwrap();
-
+        let merged = merge(&base, &base, &there, &BTreeMap::new()).unwrap();
         assert!(merged.contains("Because every finite set is finite."));
-        assert!(merged.contains("= Quotient groups"));
     }
 
     #[test]
-    fn a_statement_both_machines_wrote_is_put_to_the_person_with_both_versions() {
-        let here = BASE.replace("It is.", "By counting.");
-        let there = BASE.replace("It is.", "By induction.");
+    fn a_block_both_machines_changed_is_put_to_the_person_with_both_versions() {
+        let original = base();
+        let here = with_proof(&original, "By counting.").to_text();
+        let there = with_proof(&original, "By induction.").to_text();
 
-        let divergences = between(BASE, &here, &there).unwrap();
+        let conflicts = between(&original.to_text(), &here, &there).unwrap();
 
-        assert_eq!(divergences.len(), 1);
-        assert_eq!(divergences[0].mark, mark("thm:main", Part::Proof));
-        assert!(
-            divergences[0]
-                .here
-                .as_ref()
-                .unwrap()
-                .contains("By counting.")
-        );
-        assert!(
-            divergences[0]
-                .there
-                .as_ref()
-                .unwrap()
-                .contains("By induction.")
-        );
-        assert_eq!(divergences[0].said(), "it was written in both places");
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].block, proof_id(&original));
+        assert_eq!(conflicts[0].label, "the proof of thm:main");
+        assert_eq!(conflicts[0].here.as_deref(), Some("Proof\nBy counting."));
+        assert_eq!(conflicts[0].there.as_deref(), Some("Proof\nBy induction."));
+        assert_eq!(conflicts[0].said(), "changed on both machines");
     }
 
     #[test]
-    fn nothing_is_brought_together_until_every_disagreement_is_decided() {
-        let here = BASE.replace("It is.", "By counting.");
-        let there = BASE.replace("It is.", "By induction.");
+    fn nothing_is_merged_until_every_conflict_is_decided() {
+        let original = base();
+        let here = with_proof(&original, "By counting.").to_text();
+        let there = with_proof(&original, "By induction.").to_text();
 
         assert_eq!(
-            merge(BASE, &here, &there, &BTreeMap::new()),
-            Err(Trouble::Undecided(mark("thm:main", Part::Proof)))
+            merge(&original.to_text(), &here, &there, &BTreeMap::new()),
+            Err(Trouble::Undecided("the proof of thm:main".to_owned()))
         );
     }
 
     #[test]
     fn the_version_the_person_keeps_is_the_one_that_stands() {
-        let here = BASE.replace("It is.", "By counting.");
-        let there = BASE.replace("It is.", "By induction.");
-        let decide = |keep| BTreeMap::from([(mark("thm:main", Part::Proof), keep)]);
+        let original = base();
+        let here = with_proof(&original, "By counting.").to_text();
+        let there = with_proof(&original, "By induction.").to_text();
+        let decide = |keep| BTreeMap::from([(proof_id(&original), keep)]);
 
-        let kept = merge(BASE, &here, &there, &decide(Keep::Here)).unwrap();
+        let kept = merge(&original.to_text(), &here, &there, &decide(Keep::Here)).unwrap();
         assert!(kept.contains("By counting."));
         assert!(!kept.contains("By induction."));
 
-        let taken = merge(BASE, &here, &there, &decide(Keep::There)).unwrap();
+        let taken = merge(&original.to_text(), &here, &there, &decide(Keep::There)).unwrap();
         assert!(taken.contains("By induction."));
         assert!(!taken.contains("By counting."));
     }
 
     #[test]
-    fn a_statement_written_only_on_the_instance_arrives_where_it_was_written() {
-        let there = BASE.replace(
-            "#proof(of: \"thm:main\")",
-            "#lemma(id: \"lem:step\")[A step.]\n\n#proof(of: \"thm:main\")",
-        );
+    fn a_block_added_on_the_server_arrives_where_it_was_added() {
+        let original = base();
+        let mut there = original.clone();
+        let mut lemma = Block::theorem("Lemma", Some("lem:step".parse().unwrap()), "A step.");
+        lemma.statement_mut().unwrap().proof = false;
+        let lemma_id = *lemma.id();
+        there.blocks.insert(2, lemma);
 
-        let merged = merge(BASE, BASE, &there, &BTreeMap::new()).unwrap();
+        let merged = merge(
+            &original.to_text(),
+            &original.to_text(),
+            &there.to_text(),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let merged = Document::parse(&merged).unwrap();
 
-        assert!(merged.contains("#lemma(id: \"lem:step\")[A step.]"));
-        assert!(
-            merged.find("lem:step").unwrap() < merged.find("#proof").unwrap(),
-            "a lemma written before the proof arrives before it:\n{merged}"
-        );
-        assert!(crate::line::Line::read(&merged).is_ok());
+        assert_eq!(merged.position(&lemma_id), Some(2));
+        assert_eq!(merged.blocks.len(), 4);
+        assert!(crate::line::Line::of(&merged).is_ok());
     }
 
     #[test]
-    fn a_statement_taken_out_on_the_instance_goes_from_here_too() {
-        let there = BASE.replace("#proof(of: \"thm:main\")[It is.]\n", "");
+    fn additions_keep_the_servers_order_even_at_the_start() {
+        let original = base();
+        let mut there = original.clone();
+        let first = Block::prose("First.");
+        let second = Block::prose("Second.");
+        let (first_id, second_id) = (*first.id(), *second.id());
+        there.blocks.insert(0, second);
+        there.blocks.insert(0, first);
 
-        let merged = merge(BASE, BASE, &there, &BTreeMap::new()).unwrap();
+        let merged = merge(
+            &original.to_text(),
+            &original.to_text(),
+            &there.to_text(),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let merged = Document::parse(&merged).unwrap();
 
-        assert!(!merged.contains("#proof"));
-        assert!(merged.contains("#theorem"));
-        assert!(!merged.contains("\n\n\n"), "a hole was left:\n{merged}");
+        assert_eq!(merged.position(&first_id), Some(0));
+        assert_eq!(merged.position(&second_id), Some(1));
     }
 
     #[test]
-    fn a_statement_one_machine_took_out_and_the_other_rewrote_is_put_to_the_person() {
-        let here = BASE.replace("#proof(of: \"thm:main\")[It is.]\n", "");
-        let there = BASE.replace("It is.", "By induction.");
+    fn a_block_deleted_on_the_server_goes_from_here_too() {
+        let original = base();
+        let mut there = original.clone();
+        there.blocks.remove(0);
 
-        let divergences = between(BASE, &here, &there).unwrap();
-
-        assert_eq!(divergences.len(), 1);
-        assert_eq!(divergences[0].here, None);
-        assert_eq!(
-            divergences[0].said(),
-            "it was taken out here and written there"
-        );
-
-        let kept = merge(
-            BASE,
-            &here,
-            &there,
-            &BTreeMap::from([(mark("thm:main", Part::Proof), Keep::Here)]),
+        let merged = merge(
+            &original.to_text(),
+            &original.to_text(),
+            &there.to_text(),
+            &BTreeMap::new(),
         )
         .unwrap();
 
-        assert!(!kept.contains("#proof"));
+        assert!(!merged.contains("def:group"));
     }
 
     #[test]
-    fn everything_outside_the_statements_is_this_machines() {
-        let here = BASE.replace("= Quotient groups", "= Quotient groups, at last");
-        let there = BASE.replace("= Quotient groups", "= Groups, quotients of");
+    fn a_block_one_machine_deleted_and_the_other_changed_is_put_to_the_person() {
+        let original = base();
+        let mut here = original.clone();
+        here.blocks.remove(2);
+        let there = with_proof(&original, "By induction.");
 
-        let merged = merge(BASE, &here, &there, &BTreeMap::new()).unwrap();
+        let conflicts = between(&original.to_text(), &here.to_text(), &there.to_text()).unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].here, None);
+        assert_eq!(
+            conflicts[0].said(),
+            "deleted here and changed on the server"
+        );
 
-        assert!(merged.contains("= Quotient groups, at last"));
+        let kept = merge(
+            &original.to_text(),
+            &here.to_text(),
+            &there.to_text(),
+            &BTreeMap::from([(proof_id(&original), Keep::Here)]),
+        )
+        .unwrap();
+        assert!(!kept.contains("By induction."));
     }
 
     #[test]
-    fn additions_at_one_anchor_keep_the_instances_document_order() {
-        let additions = "#lemma(id: \"lem:z\")[First.]\n\n\
-            #lemma(id: \"lem:a\")[Second.]\n\n\
-            #proof(of: \"lem:a\")[Third.]";
-        for (base, there) in [
-            (String::new(), additions.to_owned()),
-            (BASE.to_owned(), format!("{BASE}\n{additions}")),
-            (BASE.to_owned(), format!("{additions}\n\n{BASE}")),
-        ] {
-            let merged = merge(&base, &base, &there, &BTreeMap::new()).unwrap();
-            assert!(
-                merged.contains(additions),
-                "wrong insertion order:\n{merged}"
-            );
-            assert!(crate::line::Line::read(&merged).is_ok());
-        }
+    fn the_order_and_the_title_are_this_machines_unless_only_the_server_changed_them() {
+        let original = base();
+        let mut here = original.clone();
+        here.title = "Quotient groups, at last".to_owned();
+        here.blocks.swap(1, 2);
+        let mut there = original.clone();
+        there.title = "Groups, quotients of".to_owned();
+        there.description = Some("Why they split.".to_owned());
+
+        let merged = merge(
+            &original.to_text(),
+            &here.to_text(),
+            &there.to_text(),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let merged = Document::parse(&merged).unwrap();
+
+        assert_eq!(merged.title, "Quotient groups, at last");
+        assert_eq!(merged.description.as_deref(), Some("Why they split."));
+        assert_eq!(merged.blocks[1], here.blocks[1]);
     }
 
     #[test]
-    fn the_first_statement_arrives_after_the_local_preamble() {
-        let base = "#import \"notation.typ\": *\n\n= A new line\n\n#question[Why?]\n";
-        let there = format!("{base}\n#theorem(id: \"thm:first\")[An answer.]");
-        let here = base.replace("A new line", "The local title");
-        let merged = merge(base, &here, &there, &BTreeMap::new()).unwrap();
-        assert!(merged.starts_with(&here));
-        assert!(merged.ends_with("#theorem(id: \"thm:first\")[An answer.]"));
+    fn a_line_both_machines_started_separately_merges_against_nothing() {
+        let here = base();
+        let there = base();
+
+        let conflicts = between("", &here.to_text(), &there.to_text()).unwrap();
+        assert!(conflicts.is_empty(), "their blocks are different blocks");
     }
 
     #[test]
-    fn an_insertion_before_a_replaced_or_removed_first_statement_survives() {
-        let base = "#theorem(id: \"thm:main\")[Old.]";
-        let added = "#lemma(id: \"lem:first\")[New.]";
-        for there in [
-            format!("{added}\n\n{}", base.replace("Old.", "Changed.")),
-            added.to_owned(),
-        ] {
-            let merged = merge(base, base, &there, &BTreeMap::new()).unwrap();
-            assert_eq!(merged.trim(), there);
-        }
-    }
+    fn a_repeated_block_is_refused_rather_than_silently_overwritten() {
+        let original = base();
+        let mut there = original.clone();
+        there.blocks.push(original.blocks[0].clone());
 
-    #[test]
-    fn duplicate_statements_and_proofs_are_not_silently_overwritten() {
-        for (declaration, part) in [
-            ("#theorem(id: \"thm:main\")[Duplicated.]", Part::Statement),
-            ("#proof(of: \"thm:main\")[Another proof.]", Part::Proof),
-        ] {
-            let ambiguous = format!("{BASE}\n{declaration}");
-            assert_eq!(
-                merge(BASE, BASE, &ambiguous, &BTreeMap::new()),
-                Err(Trouble::Duplicate {
-                    which: "instance",
-                    mark: mark("thm:main", part),
-                })
-            );
-        }
+        assert_eq!(
+            merge(
+                &original.to_text(),
+                &original.to_text(),
+                &there.to_text(),
+                &BTreeMap::new()
+            ),
+            Err(Trouble::Duplicate {
+                which: "server",
+                block: *original.blocks[0].id(),
+            })
+        );
     }
 
     #[test]
     fn a_version_that_cannot_be_read_is_named() {
-        assert_eq!(
-            between(BASE, "#theorem(id: \"thm:main\"", BASE),
-            Err(Trouble::Unreadable {
-                which: "local",
-                problem: source::read("#theorem(id: \"thm:main\"").unwrap_err(),
-            })
-        );
+        let base = base().to_text();
+        assert!(matches!(
+            between(&base, "{", &base),
+            Err(Trouble::Unreadable { which: "local", .. })
+        ));
     }
 }

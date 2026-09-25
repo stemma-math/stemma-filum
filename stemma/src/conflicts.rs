@@ -1,17 +1,18 @@
 //! Two versions of one line, and the person who wrote both.
 //!
 //! This never runs on its own and never resets anything. It reads the
-//! two versions out of git, says which statements they disagree about,
-//! and writes what the person decided as an ordinary merge commit — so
-//! the version not kept is still in the history, and still theirs.
+//! two versions out of git, lists the blocks they conflict on, and
+//! writes what the person decided as an ordinary merge commit — so the
+//! version not kept is still in the history, and still theirs.
 
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use stemma_core::id::BlockId;
 use stemma_core::line::Name;
-use stemma_core::reconcile::{self, Divergence, Keep, Mark};
+use stemma_core::reconcile::{self, Conflict, Keep};
 use stemma_core::repository;
 
 use crate::git;
@@ -27,10 +28,10 @@ pub struct Parted {
     pub base: String,
     /// What this machine has.
     pub here: String,
-    /// What the instance has.
+    /// What the server has.
     pub there: String,
-    /// What the two of them disagree about.
-    pub divergences: Vec<Divergence>,
+    /// The blocks the two of them conflict on.
+    pub conflicts: Vec<Conflict>,
 }
 
 impl Parted {
@@ -40,7 +41,7 @@ impl Parted {
     }
 }
 
-/// Says what the two versions disagree about.
+/// Lists the conflicts between the two versions.
 pub fn list(home: &Home, at: &Path, out: &mut impl Write) -> Result<()> {
     let clone = clone_at(home, at)?;
     git::fetch(&clone)?;
@@ -50,7 +51,7 @@ pub fn list(home: &Home, at: &Path, out: &mut impl Write) -> Result<()> {
     if !distance.has_parted() {
         writeln!(
             out,
-            "This machine and the instance have not parted. `stemma sync` is enough."
+            "This machine and the server have not diverged. Run `stemma sync`."
         )?;
 
         return Ok(());
@@ -58,27 +59,27 @@ pub fn list(home: &Home, at: &Path, out: &mut impl Write) -> Result<()> {
 
     let parted = between(&clone)?;
 
-    if parted.iter().all(|line| line.divergences.is_empty()) {
+    if parted.iter().all(|line| line.conflicts.is_empty()) {
         writeln!(
             out,
-            "Both sides moved, and they wrote about different things. \
-             `stemma conflict resolve --keep here` brings them together."
+            "Both sides changed, with no conflicts. \
+             Run `stemma conflict resolve --keep here` to merge them."
         )?;
 
         return Ok(());
     }
 
     for line in &parted {
-        if line.divergences.is_empty() {
+        if line.conflicts.is_empty() {
             continue;
         }
 
         writeln!(out, "{}", line.line)?;
 
-        for divergence in &line.divergences {
-            writeln!(out, "  {}  {}", divergence.mark, divergence.said())?;
-            writeln!(out, "    here   {}", shown(divergence.here.as_deref()))?;
-            writeln!(out, "    there  {}", shown(divergence.there.as_deref()))?;
+        for conflict in &line.conflicts {
+            writeln!(out, "  {}  {}", conflict.label, conflict.said())?;
+            writeln!(out, "    here   {}", shown(conflict.here.as_deref()))?;
+            writeln!(out, "    there  {}", shown(conflict.there.as_deref()))?;
         }
     }
 
@@ -86,26 +87,25 @@ pub fn list(home: &Home, at: &Path, out: &mut impl Write) -> Result<()> {
     writeln!(
         out,
         "Keep one side with `stemma conflict resolve --keep here|there`, \
-         or ask an agent to reconcile them with `stemma conflict reconcile --agent AGENT`."
+         or ask an agent to merge them with `stemma conflict reconcile --agent AGENT`."
     )?;
 
     Ok(())
 }
 
-/// Brings the two versions together, keeping one side wherever they
-/// disagree.
+/// Merges the two versions, keeping one side wherever they conflict.
 pub fn resolve(home: &Home, at: &Path, keep: Keep, out: &mut impl Write) -> Result<()> {
     let clone = clone_at(home, at)?;
     git::fetch(&clone)?;
 
     let parted = between(&clone)?;
-    let decisions: BTreeMap<String, BTreeMap<Mark, Keep>> = parted
+    let decisions: BTreeMap<String, BTreeMap<BlockId, Keep>> = parted
         .iter()
         .map(|line| {
             let decided = line
-                .divergences
+                .conflicts
                 .iter()
-                .map(|divergence| (divergence.mark.clone(), keep))
+                .map(|conflict| (conflict.block, keep))
                 .collect();
 
             (line.line.as_str().to_owned(), decided)
@@ -115,13 +115,13 @@ pub fn resolve(home: &Home, at: &Path, keep: Keep, out: &mut impl Write) -> Resu
     let settled = settle(&clone, &decisions)?;
 
     for line in &settled {
-        writeln!(out, "{line}  brought together")?;
+        writeln!(out, "{line}  merged")?;
     }
 
     writeln!(
         out,
-        "The version not kept is still in this clone's history, \
-         and `stemma sync` sends the result."
+        "The version not kept is still in this clone's history. \
+         Run `stemma sync` to push the result."
     )?;
 
     Ok(())
@@ -140,10 +140,10 @@ pub fn reconcile(home: &Home, at: &Path, agent: &str, out: &mut impl Write) -> R
     let parted = between(&clone)?;
     let Some(line) = parted
         .iter()
-        .find(|line| !line.divergences.is_empty())
+        .find(|line| !line.conflicts.is_empty())
         .or_else(|| parted.first())
     else {
-        bail!("nothing here has parted")
+        bail!("nothing here has diverged")
     };
 
     let job = server.launch_job(
@@ -161,25 +161,21 @@ pub fn reconcile(home: &Home, at: &Path, agent: &str, out: &mut impl Write) -> R
     )?;
 
     writeln!(out, "{job}")?;
+    writeln!(out, "  merge the two versions · {} on {}", agent, line.line)?;
     writeln!(
         out,
-        "  bring the two versions together · {} on {}",
-        agent, line.line
+        "  it runs on this machine, the only one with both versions"
     )?;
     writeln!(
         out,
-        "  it runs here, because this is the machine that has both versions"
-    )?;
-    writeln!(
-        out,
-        "  what comes back is a proposal; accepting it makes the words yours, \
-         and `stemma conflict resolve --keep here` then settles the line"
+        "  the result is a proposal; after accepting it, \
+         run `stemma conflict resolve --keep here` to finish the merge"
     )?;
 
     Ok(())
 }
 
-/// Every line whose two versions have parted.
+/// Every line whose two versions have diverged.
 pub fn between(clone: &Path) -> Result<Vec<Parted>> {
     let base = git::common(clone)?;
     let here = git::head(clone)?;
@@ -193,14 +189,14 @@ pub fn between(clone: &Path) -> Result<Vec<Parted>> {
 
         let (ours, theirs) = (at(&here), at(&there));
 
-        // A line only one side has is not a disagreement: git can add or
+        // A line only one side has is not a conflict: git can add or
         // remove a file without anybody deciding anything.
         if ours == theirs || ours.is_empty() || theirs.is_empty() {
             continue;
         }
 
         let was = at(&base);
-        let divergences = reconcile::between(&was, &ours, &theirs)
+        let conflicts = reconcile::between(&was, &ours, &theirs)
             .with_context(|| format!("`{name}` cannot be compared"))?;
 
         found.push(Parted {
@@ -208,7 +204,7 @@ pub fn between(clone: &Path) -> Result<Vec<Parted>> {
             base: was,
             here: ours,
             there: theirs,
-            divergences,
+            conflicts,
         });
     }
 
@@ -219,14 +215,14 @@ pub fn between(clone: &Path) -> Result<Vec<Parted>> {
 ///
 /// Git does the ordinary work — files one side touched, files that are
 /// not mathematics — and every line source is written from the
-/// decisions instead, because a statement that both machines wrote must
-/// never be blended by a text merge.
+/// decisions instead, because a block both machines changed must never
+/// be blended by a text merge.
 pub fn settle(
     clone: &Path,
-    decisions: &BTreeMap<String, BTreeMap<Mark, Keep>>,
+    decisions: &BTreeMap<String, BTreeMap<BlockId, Keep>>,
 ) -> Result<Vec<Name>> {
     if git::is_dirty(clone)? {
-        bail!("there is uncommitted work here: keep it first, and nothing will be lost")
+        bail!("there are uncommitted changes here: commit them first")
     }
     if git::merging(clone) {
         bail!("a merge is already half done here: finish it with git, or `git merge --abort`")
@@ -242,7 +238,7 @@ pub fn settle(
             .unwrap_or_default();
 
         let source = reconcile::merge(&line.base, &line.here, &line.there, &decided)
-            .with_context(|| format!("`{}` cannot be brought together", line.line))?;
+            .with_context(|| format!("`{}` cannot be merged", line.line))?;
 
         merged.push((line, source));
     }
@@ -258,7 +254,7 @@ pub fn settle(
         git::abandon_merge(clone)?;
 
         bail!(
-            "these are not mathematics and this cannot speak for them: {}",
+            "these files conflict and are not lines, so resolve them with git: {}",
             left.join(", ")
         )
     }
@@ -282,10 +278,10 @@ pub fn settle(
 /// What the merge commit says it did.
 fn message(lines: &[Name]) -> String {
     match lines.split_first() {
-        None => "Bring this machine and the instance together".to_owned(),
-        Some((first, [])) => format!("Bring two versions of {first} together"),
+        None => "Merge this machine and the server".to_owned(),
+        Some((first, [])) => format!("Merge two versions of {first}"),
         Some(_) => format!(
-            "Bring two versions of {} together",
+            "Merge two versions of {}",
             lines
                 .iter()
                 .map(Name::as_str)
@@ -332,10 +328,10 @@ fn clone_at(home: &Home, at: &Path) -> Result<PathBuf> {
     git::containing(at).context("this is not inside a clone: run it from a group's repository")
 }
 
-/// One version of a statement, short enough to read in a terminal.
+/// One version of a block, short enough to read in a terminal.
 fn shown(version: Option<&str>) -> String {
     let Some(version) = version else {
-        return "it is not there".to_owned();
+        return "deleted".to_owned();
     };
 
     let one_line: String = version.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -351,9 +347,36 @@ mod tests {
     use super::*;
     use std::process::Command;
 
+    use stemma_core::document::{Block, Document};
+
+    const THEOREM: u128 = 1;
+    const PROOF: u128 = 2;
+
+    fn block(n: u128) -> BlockId {
+        format!("blk:{n:026}").parse().unwrap()
+    }
+
     /// A line with one statement and a proof, which is what the two
-    /// machines below both rewrite.
-    const SOURCE: &str = "= Quotient groups\n\n        #theorem(id: \"thm:main\", central: true)[Every finite group is finite.]\n\n        #proof(of: \"thm:main\")[It is.]\n";
+    /// machines below both change. Its blocks have fixed identifiers, so
+    /// two machines writing it write the same blocks.
+    fn source() -> String {
+        let mut theorem = Block::theorem(
+            "Theorem",
+            Some("thm:main".parse().unwrap()),
+            "Every finite group is finite.",
+        )
+        .central(true);
+        theorem.statement_mut().unwrap().id = block(THEOREM);
+        let Block::Proof(mut proof) = Block::proof(block(THEOREM), "It is.") else {
+            unreachable!()
+        };
+        proof.id = block(PROOF);
+
+        Document::new("Quotient groups", None)
+            .with(theorem)
+            .with(Block::Proof(proof))
+            .to_text()
+    }
 
     /// Somewhere to put three repositories.
     fn scratch(name: &str) -> PathBuf {
@@ -389,7 +412,7 @@ mod tests {
 
     /// Writes the line's source in a clone.
     fn write(clone: &Path, source: &str) {
-        let path = clone.join("lines/quotient-groups/main.typ");
+        let path = clone.join("lines/quotient-groups/line.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, source).unwrap();
     }
@@ -409,7 +432,7 @@ mod tests {
             &root,
             &["clone", "--quiet", instance.to_str().unwrap(), "laptop"],
         );
-        write(&first, SOURCE);
+        write(&first, &source());
         git(&first, &["add", "."]);
         git(&first, &["commit", "--quiet", "-m", "A line"]);
         git(&first, &["push", "--quiet", "origin", "main"]);
@@ -424,25 +447,22 @@ mod tests {
     }
 
     #[test]
-    fn a_statement_both_machines_wrote_is_a_disagreement_and_the_rest_is_not() {
+    fn a_block_both_machines_changed_is_a_conflict_and_the_rest_is_not() {
         let (root, laptop, desktop) = two_machines("parted");
 
-        write(&desktop, &SOURCE.replace("It is.", "By induction."));
+        write(&desktop, &source().replace("It is.", "By induction."));
         git(&desktop, &["commit", "--quiet", "-am", "By induction"]);
         git(&desktop, &["push", "--quiet", "origin", "main"]);
 
-        write(&laptop, &SOURCE.replace("It is.", "By counting."));
+        write(&laptop, &source().replace("It is.", "By counting."));
         git(&laptop, &["commit", "--quiet", "-am", "By counting"]);
         git(&laptop, &["fetch", "--quiet", "origin"]);
 
         let parted = between(&laptop).unwrap();
 
         assert_eq!(parted.len(), 1);
-        assert_eq!(parted[0].divergences.len(), 1);
-        assert_eq!(
-            parted[0].divergences[0].mark.to_string(),
-            "the proof of thm:main"
-        );
+        assert_eq!(parted[0].conflicts.len(), 1);
+        assert_eq!(parted[0].conflicts[0].label, "the proof of thm:main");
 
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -451,11 +471,11 @@ mod tests {
     fn the_version_kept_is_written_and_the_other_stays_in_the_history() {
         let (root, laptop, desktop) = two_machines("settled");
 
-        write(&desktop, &SOURCE.replace("It is.", "By induction."));
+        write(&desktop, &source().replace("It is.", "By induction."));
         git(&desktop, &["commit", "--quiet", "-am", "By induction"]);
         git(&desktop, &["push", "--quiet", "origin", "main"]);
 
-        write(&laptop, &SOURCE.replace("It is.", "By counting."));
+        write(&laptop, &source().replace("It is.", "By counting."));
         git(&laptop, &["commit", "--quiet", "-am", "By counting"]);
         git(&laptop, &["fetch", "--quiet", "origin"]);
 
@@ -463,9 +483,9 @@ mod tests {
         let decisions = BTreeMap::from([(
             "quotient-groups".to_owned(),
             parted[0]
-                .divergences
+                .conflicts
                 .iter()
-                .map(|divergence| (divergence.mark.clone(), Keep::There))
+                .map(|conflict| (conflict.block, Keep::There))
                 .collect(),
         )]);
 
@@ -474,7 +494,7 @@ mod tests {
         assert_eq!(settled.len(), 1);
 
         let written =
-            std::fs::read_to_string(laptop.join("lines/quotient-groups/main.typ")).unwrap();
+            std::fs::read_to_string(laptop.join("lines/quotient-groups/line.json")).unwrap();
         assert!(written.contains("By induction."));
         assert!(!written.contains("By counting."));
 
@@ -488,14 +508,14 @@ mod tests {
     }
 
     #[test]
-    fn nothing_is_written_while_a_statement_is_undecided() {
+    fn nothing_is_written_while_a_conflict_is_undecided() {
         let (root, laptop, desktop) = two_machines("undecided");
 
-        write(&desktop, &SOURCE.replace("It is.", "By induction."));
+        write(&desktop, &source().replace("It is.", "By induction."));
         git(&desktop, &["commit", "--quiet", "-am", "By induction"]);
         git(&desktop, &["push", "--quiet", "origin", "main"]);
 
-        write(&laptop, &SOURCE.replace("It is.", "By counting."));
+        write(&laptop, &source().replace("It is.", "By counting."));
         git(&laptop, &["commit", "--quiet", "-am", "By counting"]);
         git(&laptop, &["fetch", "--quiet", "origin"]);
 
@@ -504,7 +524,7 @@ mod tests {
         assert!(format!("{refused:#}").contains("thm:main"));
         assert!(!git::merging(&laptop), "a half-done merge was left behind");
         assert!(
-            std::fs::read_to_string(laptop.join("lines/quotient-groups/main.typ"))
+            std::fs::read_to_string(laptop.join("lines/quotient-groups/line.json"))
                 .unwrap()
                 .contains("By counting.")
         );
@@ -516,14 +536,14 @@ mod tests {
     fn work_that_is_not_committed_stops_this_before_it_starts() {
         let (root, laptop, desktop) = two_machines("dirty");
 
-        write(&desktop, &SOURCE.replace("It is.", "By induction."));
+        write(&desktop, &source().replace("It is.", "By induction."));
         git(&desktop, &["commit", "--quiet", "-am", "By induction"]);
         git(&desktop, &["push", "--quiet", "origin", "main"]);
 
-        write(&laptop, &SOURCE.replace("It is.", "By counting."));
+        write(&laptop, &source().replace("It is.", "By counting."));
         git(&laptop, &["commit", "--quiet", "-am", "By counting"]);
         git(&laptop, &["fetch", "--quiet", "origin"]);
-        write(&laptop, &SOURCE.replace("It is.", "Half a thought"));
+        write(&laptop, &source().replace("It is.", "Half a thought"));
 
         let refused = settle(&laptop, &BTreeMap::new()).unwrap_err();
 
@@ -536,29 +556,35 @@ mod tests {
     fn what_only_one_machine_touched_needs_nobody_to_decide_anything() {
         let (root, laptop, desktop) = two_machines("apart");
 
-        write(
-            &desktop,
-            &SOURCE.replace("#proof", "#lemma(id: \"lem:step\")[A step.]\n\n#proof"),
+        let mut stepped = Document::parse(&source()).unwrap();
+        stepped.blocks.insert(
+            1,
+            Block::theorem("Lemma", Some("lem:step".parse().unwrap()), "A step.")
+                .carrying_proof(false),
         );
+        write(&desktop, &stepped.to_text());
         git(&desktop, &["commit", "--quiet", "-am", "A step"]);
         git(&desktop, &["push", "--quiet", "origin", "main"]);
 
-        write(&laptop, &SOURCE.replace("= Quotient groups", "= Quotients"));
+        write(
+            &laptop,
+            &source().replace("\"Quotient groups\"", "\"Quotients\""),
+        );
         git(&laptop, &["commit", "--quiet", "-am", "A better title"]);
         git(&laptop, &["fetch", "--quiet", "origin"]);
 
         let parted = between(&laptop).unwrap();
-        assert!(parted[0].divergences.is_empty());
+        assert!(parted[0].conflicts.is_empty());
 
         settle(&laptop, &BTreeMap::new()).unwrap();
 
         let written =
-            std::fs::read_to_string(laptop.join("lines/quotient-groups/main.typ")).unwrap();
+            std::fs::read_to_string(laptop.join("lines/quotient-groups/line.json")).unwrap();
 
         assert!(written.contains("lem:step"), "what they wrote came over");
         assert!(
-            written.contains("= Quotients"),
-            "this machine keeps its prose"
+            written.contains("\"title\": \"Quotients\""),
+            "this machine keeps its title"
         );
 
         std::fs::remove_dir_all(&root).unwrap();

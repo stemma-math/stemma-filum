@@ -41,7 +41,7 @@
 {#if !app.ready}
   <Entrance>
     <Brand />
-    <p class="quiet">Starting your workspace...</p>
+    <p class="quiet">Loading...</p>
   </Entrance>
 {:else if !app.signed}
   <SignIn />

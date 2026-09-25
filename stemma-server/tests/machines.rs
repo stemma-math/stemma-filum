@@ -5,9 +5,9 @@ mod support;
 use axum::http::StatusCode;
 use serde_json::Value;
 use stemma_core::access::GroupRole;
-use stemma_core::artefact::{Kind, LineDigest, Nodes, Scope};
+use stemma_core::artefact::{Kind, Nodes, Scope};
+use stemma_core::document::Document;
 use stemma_core::id::Slug;
-use stemma_core::line::{Line, Name};
 use stemma_core::repository::Side;
 use stemma_server::artefacts::Shelf;
 use stemma_server::store::{artefacts as index, groups, users};
@@ -20,17 +20,13 @@ const PASSWORD: &str = "a long enough password";
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
 /// A line with two central statements and a box between them.
-const SOURCE: &str = r#"
-= Quotient groups
-
-#definition(id: "def:quotient", name: "Quotient group")[x]
-
-#theorem(id: "thm:first", name: "First isomorphism theorem", central: true)[y]
-
-#lemma(id: "lem:kernel")[z]
-
-#theorem(id: "thm:second", name: "Correspondence", central: true)[v]
-"#;
+fn source() -> Document {
+    Document::new("Quotient groups", None)
+        .with(support::statement("def:quotient", "Quotient group"))
+        .with(support::statement("thm:first", "First isomorphism theorem").central(true))
+        .with(support::statement("lem:kernel", "Kernel"))
+        .with(support::statement("thm:second", "Correspondence").central(true))
+}
 
 /// What an answer said, as JSON.
 fn parsed(page: &Page) -> Value {
@@ -115,13 +111,7 @@ async fn publish(harness: &mut Harness, who: &str) {
             let scope = Scope::of(Side::Shared, &user.id);
 
             let mut nodes = Nodes::new(group.id.clone(), Side::Shared, COMMIT.to_owned());
-            nodes.lines.push(LineDigest {
-                name: Name::parse("quotient-groups").unwrap(),
-                title: stemma_core::source::title(SOURCE),
-                question: None,
-                line: Line::read(SOURCE).expect("a line that reads"),
-                lean: None,
-            });
+            nodes.lines.push(support::digest(&source()));
 
             let text = nodes.to_text();
             shelf.put(&group.id, &scope, Kind::Nodes, COMMIT, text.as_bytes())?;
@@ -385,14 +375,14 @@ async fn a_machine_that_could_not_try_says_so_on_the_machine() {
     let panel = harness.get(&format!("/machines/{machine}")).await;
     assert_eq!(panel.status, StatusCode::OK);
     assert!(panel.says("is not signed in on this machine"));
-    assert!(panel.says("I have dealt with it"));
+    assert!(panel.says("Mark as resolved"));
 
     // The group is told the typed reason, and the decision stays on the
     // machine: the count travels with its owner in their own bar, and the
     // thing to do about it is offered nowhere else.
     let space = harness.get("/g/algebra").await;
     assert!(space.says("is not signed in on this machine"));
-    assert!(!space.says("I have dealt with it"));
+    assert!(!space.says("Mark as resolved"));
 
     harness
         .post(

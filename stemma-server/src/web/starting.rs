@@ -16,8 +16,10 @@ use axum::response::{IntoResponse, Redirect, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
 use stemma_core::access::WhoWrites;
+use stemma_core::document::Document;
 use stemma_core::id::{GroupId, Slug};
 use stemma_core::line::{Line, Name, NodeKind};
+use stemma_core::render;
 use stemma_core::repository::{self, Side};
 
 use super::layout::{page, signature};
@@ -32,9 +34,9 @@ pub struct Starting {
     /// What the line is called.
     #[serde(default)]
     pub title: String,
-    /// What it exists to answer.
+    /// What it is about. Empty when its author says nothing.
     #[serde(default)]
-    pub question: String,
+    pub description: String,
     /// `me` or `group`.
     #[serde(default)]
     pub seen_by: String,
@@ -91,7 +93,7 @@ pub async fn start(
         &signed.user,
         &group,
         form.title.trim(),
-        form.question.trim(),
+        form.description.trim(),
         side,
     )
     .await
@@ -116,19 +118,13 @@ async fn born(
     who: &crate::store::users::User,
     group: &Group,
     title: &str,
-    question: &str,
+    description: &str,
     side: Side,
 ) -> Result<Name, WebError> {
     let refuse = |what: &str| WebError::BadRequest(what.to_owned());
 
     if title.is_empty() {
         return Err(refuse("A line needs a title."));
-    }
-    if question.is_empty() {
-        return Err(refuse(
-            "A line needs the question it exists to answer. That is what makes it a line \
-             and not a folder.",
-        ));
     }
 
     let Some(name) = Name::from_title(title) else {
@@ -149,7 +145,7 @@ async fn born(
     {
         let path = path.clone();
         let name = name.clone();
-        let source = skeleton(title, question);
+        let source = Document::new(title, Some(description.to_owned())).to_text();
         let author_name = who.display_name.clone();
         let author_email = who.email.clone();
 
@@ -192,19 +188,6 @@ async fn born(
     }
 
     Ok(name)
-}
-
-/// What a line's source says before anybody has written mathematics.
-///
-/// The import is written into the file rather than supplied by
-/// whatever composes it: the environments below are Typst functions,
-/// and a document that does not say where its functions come from is
-/// not one anybody else can compose.
-fn skeleton(title: &str, question: &str) -> String {
-    format!(
-        "{}\n\n= {title}\n\n#question[{question}]\n",
-        stemma_core::notation::import()
-    )
 }
 
 /// The two questions and the one warning.
@@ -288,7 +271,7 @@ async fn moved(
 
     if !held.is_empty() {
         return Err(WebError::BadRequest(
-            "Nothing the group can see may lean on something only you can.".to_owned(),
+            "A shared line cannot depend on private work.".to_owned(),
         ));
     }
 
@@ -466,7 +449,10 @@ async fn held_back(
     group: &GroupId,
     source: &str,
 ) -> Result<Vec<String>, WebError> {
-    let imports = stemma_core::source::imports(source);
+    let imports = match Document::parse(source) {
+        Ok(document) => stemma_core::source::imports(&render::typst(&document).source),
+        Err(_) => stemma_core::source::imports(source),
+    };
 
     if imports.iter().all(|path| !path.starts_with("..")) {
         return Ok(Vec::new());
@@ -507,8 +493,8 @@ fn asked(
     given: Option<&Starting>,
 ) -> Markup {
     let title = given.map(|given| given.title.clone()).unwrap_or_default();
-    let question = given
-        .map(|given| given.question.clone())
+    let description = given
+        .map(|given| given.description.clone())
         .unwrap_or_default();
     let shared = given.is_some_and(|given| given.seen_by.trim() == "group");
 
@@ -532,15 +518,15 @@ fn asked(
                 }
 
                 label class="field" {
-                    span class="label" { "The question" }
-                    textarea name="question" rows="3" required { (question) }
+                    span class="label" { "Description" }
+                    textarea name="description" rows="3" { (description) }
                     span class="field__hint" {
-                        "Describe the research question this line will address."
+                        "Optional. What this line is about, in a sentence or two."
                     }
                 }
 
                 fieldset {
-                    legend class="label" { "Who can see it" }
+                    legend class="label" { "Visibility" }
 
                     label class="choice" {
                         input type="radio" name="seen_by" value="me" checked[!shared];
@@ -556,7 +542,7 @@ fn asked(
                     }
                 }
 
-                button class="button" type="submit" { "Start the line" }
+                button class="button" type="submit" { "Create line" }
             }
         }
     }
@@ -601,7 +587,7 @@ fn offered(
 
             @if !held.is_empty() {
                 div class="block" {
-                    p class="label" { "This line leans on work nobody else can see" }
+                    p class="label" { "This line depends on private work" }
                     ul class="register" {
                         @for path in held {
                             li { span class="identifier" { (path) } }
@@ -619,7 +605,7 @@ fn offered(
                 (signature(signed))
 
                 fieldset {
-                    legend class="label" { "What the group sees of what you have written" }
+                    legend class="label" { "History to share" }
 
                     label class="choice" {
                         input type="radio" name="travels" value="today" checked;
@@ -636,11 +622,11 @@ fn offered(
 
                     label class="choice" {
                         input type="radio" name="writing" value="author" checked;
-                        span { "Only me. Everybody else proposes" }
+                        span { "Only me; others send proposals" }
                     }
                     label class="choice" {
                         input type="radio" name="writing" value="anyone";
-                        span { "Anybody in the group, one at a time" }
+                        span { "Anyone in the group, one at a time" }
                     }
                 }
 
@@ -662,7 +648,7 @@ fn offered(
                 }
 
                 button class="button" type="submit" disabled[!held.is_empty()] {
-                    "Move it to the group"
+                    "Share"
                 }
             }
         }
@@ -686,7 +672,7 @@ pub async fn api_start(
         &credential.user,
         &group,
         asking.title.trim(),
-        asking.question.trim(),
+        asking.description.as_deref().unwrap_or_default().trim(),
         side,
     )
     .await?;
@@ -738,9 +724,9 @@ pub struct AskingToStart {
     /// What the line is called.
     #[serde(default)]
     pub title: String,
-    /// What it exists to answer.
+    /// What it is about, where its author says.
     #[serde(default)]
-    pub question: String,
+    pub description: Option<String>,
     /// `me` or `group`.
     #[serde(default)]
     pub seen_by: String,

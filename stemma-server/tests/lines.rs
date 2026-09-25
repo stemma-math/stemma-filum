@@ -4,9 +4,9 @@ mod support;
 
 use axum::http::StatusCode;
 use stemma_core::access::GroupRole;
-use stemma_core::artefact::{Kind, LineDigest, Nodes, Scope};
+use stemma_core::artefact::{Kind, Nodes, Scope};
+use stemma_core::document::Document;
 use stemma_core::id::Slug;
-use stemma_core::line::{Line, Name};
 use stemma_core::repository::Side;
 use stemma_server::artefacts::Shelf;
 use stemma_server::store::{artefacts as index, groups, users};
@@ -16,20 +16,25 @@ use support::Harness;
 const PASSWORD: &str = "a long enough password";
 
 /// A line with two central statements and work between them.
-const SOURCE: &str = r#"
-= Quotient groups
+fn source() -> Document {
+    let quotient = support::statement("def:quotient", "Quotient group");
+    let kernel = support::statement("lem:kernel", "Kernel").using(&quotient);
+    let image = support::statement("lem:image", "Image");
+    let first = support::statement("thm:first", "First isomorphism theorem")
+        .central(true)
+        .using(&quotient);
+    let second = support::statement("thm:second", "Correspondence")
+        .central(true)
+        .using(&kernel)
+        .using(&image);
 
-#definition(id: "def:quotient", name: "Quotient group")[x]
-
-#theorem(id: "thm:first", name: "First isomorphism theorem", central: true,
-         uses: "def:quotient")[y]
-
-#lemma(id: "lem:kernel", uses: "def:quotient")[z]
-#lemma(id: "lem:image")[w]
-
-#theorem(id: "thm:second", name: "Correspondence", central: true,
-         uses: ("lem:kernel", "lem:image"))[v]
-"#;
+    Document::new("Quotient groups", None)
+        .with(quotient)
+        .with(first)
+        .with(kernel)
+        .with(image)
+        .with(second)
+}
 
 /// Registers somebody and leaves them signed in.
 async fn register(harness: &mut Harness, name: &str) {
@@ -82,13 +87,7 @@ async fn publish(harness: &mut Harness, side: Side, who: &str, commit: &str) {
             let scope = Scope::of(side, &user.id);
 
             let mut nodes = Nodes::new(group.id.clone(), side, commit.clone());
-            nodes.lines.push(LineDigest {
-                name: Name::parse("quotient-groups").unwrap(),
-                title: stemma_core::source::title(SOURCE),
-                question: None,
-                line: Line::read(SOURCE).expect("a line that reads"),
-                lean: None,
-            });
+            nodes.lines.push(support::digest(&source()));
 
             let text = nodes.to_text();
             shelf.put(&group.id, &scope, Kind::Nodes, &commit, text.as_bytes())?;
@@ -252,42 +251,4 @@ async fn a_line_nobody_has_written_is_not_there() {
             .status,
         StatusCode::NOT_FOUND
     );
-}
-
-#[tokio::test]
-async fn the_line_carries_its_descent_and_what_it_falls_back_to() {
-    let mut harness = Harness::new();
-    register(&mut harness, "ana").await;
-    own_a_group(&mut harness, "ana").await;
-    publish(&mut harness, Side::Shared, "ana", "0123456789abcdef").await;
-
-    let line = harness.get("/g/algebra/shared/quotient-groups").await;
-
-    assert!(line.says("The descent"));
-    assert!(line.says("descent__canvas"));
-    assert!(line.says("/assets/descent.js"));
-
-    // The placement the drawing works from, and the list it degrades to.
-    assert!(line.says("descent__placement"));
-    assert!(line.says("descent__list"));
-    assert!(line.says("2 statements it rests on"));
-
-    let list = &line.body[line.body.find("descent__list").expect("the list")..];
-    let ends = list.find("</ol>").expect("the end of the list");
-
-    assert!(
-        !list[..ends].contains("lem:kernel"),
-        "the graph never shows what is inside a box"
-    );
-}
-
-#[tokio::test]
-async fn a_page_with_nothing_to_draw_does_not_load_a_drawing() {
-    let mut harness = Harness::new();
-    register(&mut harness, "ana").await;
-    own_a_group(&mut harness, "ana").await;
-
-    let home = harness.get("/").await;
-
-    assert!(!home.says("/assets/descent.js"));
 }

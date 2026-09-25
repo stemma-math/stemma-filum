@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::{AgentFailure, Attempt};
 use crate::fact::{Fact, FactKind};
-use crate::id::MachineId;
+use crate::id::{BlockId, IdError, MachineId};
 use crate::line::{BadSiglum, Siglum};
 
 /// What a job asks an agent to do, and where its answer belongs.
@@ -57,6 +57,23 @@ pub enum Task {
         /// The lemma or proposition to move out of its box.
         statement: Siglum,
     },
+    /// Write, or finish, the proof of a statement.
+    Prove {
+        /// The statement whose proof block is to be written.
+        statement: Siglum,
+    },
+    /// Rewrite a statement that is not central so that it is correct and
+    /// precise, keeping what it means.
+    Rewrite {
+        /// The statement to rewrite.
+        statement: Siglum,
+    },
+    /// Turn a prose block into the mathematics it describes: definitions,
+    /// statements and proofs that bridge what comes before and after it.
+    Develop {
+        /// The prose block.
+        block: BlockId,
+    },
     /// Say where the line could go next.
     Explore,
     /// Bring two versions of this line together.
@@ -75,6 +92,9 @@ impl Task {
             Self::Formalize { .. } => "formalize in Lean",
             Self::Verify { .. } => "verify this box in Lean",
             Self::Promote { .. } => "promote this statement",
+            Self::Prove { .. } => "write the proof",
+            Self::Rewrite { .. } => "rewrite this statement rigorously",
+            Self::Develop { .. } => "develop this prose into mathematics",
             Self::Explore => "say where the line could go next",
             Self::Reconcile => "bring the two versions together",
         }
@@ -88,7 +108,9 @@ impl Task {
             Self::Formalize { statement } => Some(statement),
             Self::Verify { after } => after.as_ref(),
             Self::Promote { statement } => Some(statement),
-            Self::Explore | Self::Reconcile => None,
+            Self::Prove { statement } => Some(statement),
+            Self::Rewrite { statement } => Some(statement),
+            Self::Develop { .. } | Self::Explore | Self::Reconcile => None,
         }
     }
 
@@ -111,6 +133,9 @@ impl fmt::Display for Task {
             Self::Verify { after: None } => f.write_str("verify"),
             Self::Verify { after: Some(node) } => write!(f, "verify@{node}"),
             Self::Promote { statement } => write!(f, "promote@{statement}"),
+            Self::Prove { statement } => write!(f, "prove@{statement}"),
+            Self::Rewrite { statement } => write!(f, "rewrite@{statement}"),
+            Self::Develop { block } => write!(f, "develop@{block}"),
             Self::Explore => f.write_str("explore"),
             Self::Reconcile => f.write_str("reconcile"),
         }
@@ -129,12 +154,17 @@ pub enum BadTask {
     /// What it hangs off is not a siglum.
     #[error(transparent)]
     Siglum(#[from] BadSiglum),
+    /// What it hangs off is not a block.
+    #[error(transparent)]
+    Block(#[from] IdError),
 }
 
 impl FromStr for Task {
     type Err = BadTask;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
+        // A block identifier has a colon of its own, so only the first `@`
+        // separates the verb from what it hangs off.
         let (verb, anchor) = match input.split_once('@') {
             Some((verb, anchor)) => (verb, Some(anchor)),
             None => (input, None),
@@ -159,6 +189,16 @@ impl FromStr for Task {
                 statement: statement.parse()?,
             }),
             ("promote", None) => Err(BadTask::Unanchored(input.to_owned())),
+            ("prove", Some(statement)) => Ok(Self::Prove {
+                statement: statement.parse()?,
+            }),
+            ("rewrite", Some(statement)) => Ok(Self::Rewrite {
+                statement: statement.parse()?,
+            }),
+            ("develop", Some(block)) => Ok(Self::Develop {
+                block: block.parse()?,
+            }),
+            ("prove" | "rewrite" | "develop", None) => Err(BadTask::Unanchored(input.to_owned())),
             ("explore", _) => Ok(Self::Explore),
             ("reconcile", _) => Ok(Self::Reconcile),
             _ => Err(BadTask::Unknown(verb.to_owned())),
@@ -424,6 +464,15 @@ mod tests {
             Task::Promote {
                 statement: statement(),
             },
+            Task::Prove {
+                statement: statement(),
+            },
+            Task::Rewrite {
+                statement: statement(),
+            },
+            Task::Develop {
+                block: BlockId::generate(),
+            },
             Task::Explore,
         ] {
             assert_eq!(task.to_string().parse(), Ok(task.clone()), "for {task}");
@@ -464,7 +513,15 @@ mod tests {
         );
         assert_eq!(
             "prove".parse::<Task>(),
-            Err(BadTask::Unknown("prove".to_owned()))
+            Err(BadTask::Unanchored("prove".to_owned()))
+        );
+        assert_eq!(
+            "guess".parse::<Task>(),
+            Err(BadTask::Unknown("guess".to_owned()))
+        );
+        assert!(
+            "develop@thm:main".parse::<Task>().is_err(),
+            "a block, not a siglum"
         );
         assert!("fill@nothing".parse::<Task>().is_err());
     }

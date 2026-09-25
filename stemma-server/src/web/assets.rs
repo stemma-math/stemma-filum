@@ -2,7 +2,7 @@
 //!
 //! Everything is served from the instance's own origin, so reading a group's
 //! pages never tells a third party who is reading them. Tokens, faces, the
-//! mark, the texture and the descent drawing come from `stemma-identity`.
+//! mark and the texture come from `stemma-identity`.
 
 use std::sync::LazyLock;
 
@@ -18,9 +18,6 @@ pub const STYLESHEET_PATH: &str = "/assets/stemma.css";
 /// Where the faces are served. The stylesheet's `fonts/<file>` URLs resolve
 /// here because both live under `/assets/`.
 pub const FONT_PATH: &str = "/assets/fonts/{file}";
-
-/// Where the descent drawing is served.
-pub const DESCENT_PATH: &str = "/assets/descent.js";
 
 /// Where the front-door transition script is served.
 pub const SURFACE_PATH: &str = "/assets/surface.js";
@@ -63,9 +60,6 @@ static STYLESHEET: LazyLock<Asset> = LazyLock::new(|| {
     Asset::new(joined.leak().as_bytes(), CSS)
 });
 
-static DESCENT: LazyLock<Asset> =
-    LazyLock::new(|| Asset::new(stemma_identity::DESCENT_JS.as_bytes(), JAVASCRIPT));
-
 static SURFACE: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(include_bytes!("../../assets/surface.js"), JAVASCRIPT));
 
@@ -94,11 +88,6 @@ fn tag_of(content: &[u8]) -> String {
 /// Serves the stylesheet.
 pub async fn stylesheet(headers: HeaderMap) -> Response {
     serve(&headers, &STYLESHEET)
-}
-
-/// Serves the descent drawing.
-pub async fn descent(headers: HeaderMap) -> Response {
-    serve(&headers, &DESCENT)
 }
 
 /// Serves the front-door transition.

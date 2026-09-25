@@ -5,9 +5,9 @@ mod support;
 use axum::http::StatusCode;
 use serde_json::Value;
 use stemma_core::access::GroupRole;
-use stemma_core::artefact::{Kind, LineDigest, Nodes, Scope};
+use stemma_core::artefact::{Kind, Nodes, Scope};
+use stemma_core::document::Document;
 use stemma_core::id::Slug;
-use stemma_core::line::{Line, Name};
 use stemma_core::repository::Side;
 use stemma_server::artefacts::Shelf;
 use stemma_server::store::{artefacts as index, groups, users};
@@ -20,11 +20,10 @@ const PASSWORD: &str = "a long enough password";
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
 /// A line with one central statement.
-const SOURCE: &str = r#"
-= Quotient groups
-
-#theorem(id: "thm:first", name: "First isomorphism theorem", central: true)[y]
-"#;
+fn source() -> Document {
+    Document::new("Quotient groups", None)
+        .with(support::statement("thm:first", "First isomorphism theorem").central(true))
+}
 
 /// What the line the tests are about is called.
 const LINE: &str = "quotient-groups";
@@ -76,13 +75,7 @@ async fn a_group_with_a_line(harness: &mut Harness, owner: &str) {
             let scope = Scope::of(Side::Shared, &user.id);
 
             let mut nodes = Nodes::new(group.id.clone(), Side::Shared, COMMIT.to_owned());
-            nodes.lines.push(LineDigest {
-                name: Name::parse(LINE).unwrap(),
-                title: stemma_core::source::title(SOURCE),
-                question: None,
-                line: Line::read(SOURCE).expect("a line that reads"),
-                lean: None,
-            });
+            nodes.lines.push(support::digest(&source()));
 
             let text = nodes.to_text();
             shelf.put(&group.id, &scope, Kind::Nodes, COMMIT, text.as_bytes())?;
@@ -269,7 +262,7 @@ async fn somebody_elses_line_is_not_theirs_to_hand_back() {
 
     assert!(line.says("ana's laptop is writing it"));
     assert!(
-        !line.says("Hand it back"),
+        !line.says(">Release<"),
         "somebody else's machine is not theirs to put down"
     );
 

@@ -29,7 +29,7 @@
   {#each lines as line (line.path)}
     <button class="line" class:line--here={line.path === here} onclick={() => app.open(line.path)}>
       <span class="line__name">{line.title ?? line.name}</span>
-      {#if line.question}<span class="line__question">{line.question}</span>{/if}
+      {#if line.description}<span class="line__description">{line.description}</span>{/if}
     </button>
   {:else}
     <p class="rail__empty">{empty}</p>
@@ -61,9 +61,9 @@
       <button class="rail__entry rail__entry--make" onclick={() => app.goTo("new-line")}>
         <span class="rail__entry-mark" aria-hidden="true">+</span>New line
       </button>
-      <p class="rail__label">Yours alone</p>
-      {@render list(app.railLines.mine, "Nothing of your own here yet.")}
-      <p class="rail__label">Shared with the group</p>
+      <p class="rail__label">Private</p>
+      {@render list(app.railLines.mine, "No private lines yet.")}
+      <p class="rail__label">Shared</p>
       {@render list(app.railLines.ours, "Nothing has been shared yet.")}
     {:else}
       <p class="rail__empty">No groups are on this machine yet. Sync to bring them here.</p>

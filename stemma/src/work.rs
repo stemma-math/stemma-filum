@@ -24,7 +24,7 @@ use crate::home::Home;
 ///
 /// It is recorded with every run, because "an agent said so" is not an
 /// attribution: the vendor, the model and the words it was given are.
-pub const PROMPT_REVISION: &str = "1";
+pub const PROMPT_REVISION: &str = "2";
 
 /// Carries out one job and says what came of it.
 ///
@@ -151,6 +151,21 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
             said: "the agent reported an answer without reviewable source and a concrete model"
                 .to_owned(),
         },
+        (Outcome::Produced { .. }, Some(offer)) => match Line::read(&offer.source) {
+            Ok(_) => outcome,
+            Err(faults) => {
+                return Completed::only(Outcome::Broke {
+                    code: "invalid_line".to_owned(),
+                    said: format!(
+                        "the agent offered something that is not a valid line: {}",
+                        faults
+                            .first()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| "it is not a line".to_owned())
+                    ),
+                });
+            }
+        },
         _ => outcome,
     };
     Completed { outcome, proposal }
@@ -264,6 +279,9 @@ fn nothing_found(task: &Task) -> &'static str {
         Task::Formalize { .. } => "no formalization was found",
         Task::Verify { .. } => "no Lean argument was found",
         Task::Promote { .. } => "no justified promotion was found",
+        Task::Prove { .. } => "no proof was found",
+        Task::Rewrite { .. } => "no better statement was found",
+        Task::Develop { .. } => "nothing was developed",
         Task::Explore => "nothing to suggest",
         Task::Reconcile => "no reconciliation was found",
     }
@@ -329,23 +347,26 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option
 
     let _ = writeln!(
         asked,
-        "You are working on one line of mathematical work, written in Typst. \
-         It belongs to the group `{}`, and this is its state at commit {}.",
+        "You are working on one line of mathematical work. It belongs to the \
+         group `{}`, and this is its state at commit {}.",
         handed.group,
         short(&handed.commit)
     );
+    let _ = writeln!(asked);
+    let _ = writeln!(asked, "{FORMAT}");
     let _ = writeln!(asked);
     let _ = writeln!(
         asked,
         "Three rules hold, whatever you are asked to do:\n\
          \n\
-         1. A statement declared `central: true` is what the line rests on. \
-            Do not change its text and do not change what it says it uses.\n\
+         1. A definition or theorem with `\"central\": true` is what the line rests on. \
+            Do not change its text, its title, its siglum or what it says it uses, \
+            and do not delete it. Its proof is yours to write.\n\
          2. Everything between two central statements is yours to write, \
             repair or rewrite.\n\
-         3. Say what you lean on. A statement that uses another declares it, \
-            and an argument that quietly assumes something undeclared is not \
-            an argument."
+         3. Say what you lean on. A statement that uses another lists it in `uses` \
+            or cites it with `@siglum`, and an argument that quietly assumes \
+            something undeclared is not an argument."
     );
     let _ = writeln!(asked);
     let _ = writeln!(asked, "The line as it stands:");
@@ -358,7 +379,7 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option
     let _ = writeln!(
         asked,
         "When you have a change to offer, print `stemma: proposal` on its own, \
-         then the complete proposed Typst source, then `stemma: end proposal`. \
+         then the complete proposed line.json, then `stemma: end proposal`. \
          If Lean changes, then print `stemma: lean`, the complete `Main.lean` module, \
          and `stemma: end lean`. After it print `stemma: model MODEL-ID` with the concrete model you used, \
          and finally `stemma: produced`. If you found nothing, end with `{NOTHING}`. \
@@ -367,6 +388,25 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option
 
     asked
 }
+
+/// How a line is written, for an agent that has never seen one.
+const FORMAT: &str = "The line is a JSON document, `line.json`, and it is the whole of the \
+line: a Typst document is built from it. It has `format` (always 1), `title`, an optional \
+`description`, and `blocks`, an ordered list. Every block has an `id` of the form \
+`blk:` followed by a ULID, which never changes; a new block needs a new, unique one. \
+Each block has a `kind`:\n\
+\n\
+- `prose`: `content` only. Intuition, intentions, how one idea leads to the next.\n\
+- `definition` and `theorem`: `environment` (what it is called on the page: Definition, \
+Theorem, Lemma, Proposition, Corollary…), optional `siglum` (`def:name` for a definition, \
+`thm:`, `lem:`, `prop:` or `cor:` followed by lowercase letters, digits and hyphens for a \
+theorem), optional `title`, `central`, `proof` (whether it carries a proof), `uses` (the \
+`id`s of the statements it leans on) and `content`.\n\
+- `proof`: `of` (the `id` of the statement it proves) and `content`. A statement with \
+`\"proof\": true` has exactly one proof block, possibly empty, anywhere in the line.\n\
+\n\
+Every `content` is Typst markup: `$x^2$` for mathematics, `@siglum` to cite a statement. \
+Brackets in it must be balanced or escaped as `\\[` and `\\]`.";
 
 /// The one thing this job asks for.
 fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
@@ -409,17 +449,34 @@ fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
             }
         }
         Task::Promote { statement } => format!(
-            "Promote `{statement}` out of its black box by declaring it `central: true`. \
+            "Promote `{statement}` out of its black box by setting `\"central\": true`. \
              Do not change its claim. Explain why it deserves a stable name; promotion freezes \
              it, splits the surrounding box, and reserves a human correspondence audit."
+        ),
+        Task::Prove { statement } => format!(
+            "Write the proof of `{statement}` in its proof block, or finish the one there. \
+             Do not change the statement. Add the lemmas the proof needs as new blocks \
+             before it, each with its own proof. If you find no proof, say so rather than \
+             offering an incomplete one as complete."
+        ),
+        Task::Rewrite { statement } => format!(
+            "Rewrite `{statement}` so that it is correct and precise, keeping what it means. \
+             Keep its block identifier. Adjust what uses it only where the new statement \
+             requires it, and explain every change of meaning."
+        ),
+        Task::Develop { block } => format!(
+            "The prose block `{block}` describes mathematics informally. Develop it: replace \
+             or follow it with the definitions, statements and proofs it describes, so that \
+             it bridges what comes before it and what comes after. Keep the intuition as \
+             prose where it helps a reader."
         ),
         Task::Explore => "Say where this line could go next: what is worth stating, \
                           and why it follows from what is already here."
             .to_owned(),
         Task::Reconcile => format!(
             "Two of this person's machines wrote this line, and the versions have parted. \
-             Bring them together into one source that keeps everything either version \
-             established and says, for every statement they write differently, the version \
+             Merge them into one line that keeps everything either version \
+             established and chooses, for every block they write differently, the version \
              that is right. Central statements stay exactly as they are in both. You are \
              offering a proposal, not settling it: a person decides.\n\
              \n\
@@ -427,7 +484,7 @@ fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
              ----------------------------------------\n\
              {}\n\
              ----------------------------------------",
-            other.unwrap_or("it is not here").trim()
+            other.unwrap_or("it is missing").trim()
         ),
     }
 }
@@ -488,15 +545,26 @@ mod tests {
     }
     use crate::agents::Finished;
 
-    const SOURCE: &str = r##"
-= Quotient groups
+    use stemma_core::document::{Block, Document};
 
-#theorem(id: "thm:first", name: "First", central: true)[y]
-
-#lemma(id: "lem:kernel")[z]
-
-#theorem(id: "thm:second", name: "Second", central: true)[v]
-"##;
+    fn source() -> String {
+        let statement = |named: &str, environment: &str, content: &str| {
+            Block::theorem(environment, Some(named.parse().unwrap()), content).carrying_proof(false)
+        };
+        Document::new("Quotient groups", None)
+            .with(
+                statement("thm:first", "Theorem", "y")
+                    .central(true)
+                    .titled("First"),
+            )
+            .with(statement("lem:kernel", "Lemma", "z"))
+            .with(
+                statement("thm:second", "Theorem", "v")
+                    .central(true)
+                    .titled("Second"),
+            )
+            .to_text()
+    }
 
     fn handed(task: &str) -> Handed {
         Handed {
@@ -513,7 +581,7 @@ mod tests {
     }
 
     fn line() -> Line {
-        Line::read(SOURCE).unwrap()
+        Line::read(&source()).unwrap()
     }
 
     #[test]
@@ -533,9 +601,10 @@ mod tests {
     #[test]
     fn the_prompt_says_what_an_agent_may_not_touch() {
         let task: Task = "fill@thm:first".parse().unwrap();
-        let asked = prompt(&handed("fill@thm:first"), &task, &line(), SOURCE, None);
+        let asked = prompt(&handed("fill@thm:first"), &task, &line(), &source(), None);
 
         assert!(asked.contains("Do not change its text"));
+        assert!(asked.contains("\"kind\""), "the format is described");
         assert!(asked.contains("thm:second"));
         assert!(asked.contains("stemma: nothing"));
     }
@@ -585,9 +654,12 @@ mod tests {
 
     #[test]
     fn a_proposal_carries_complete_source_and_concrete_attribution() {
-        let output = "notes\nstemma: proposal\n= Better line\n#lemma(id: \"lem:a\")[x]\nstemma: end proposal\nstemma: model claude-opus-5\nstemma: produced\n";
-        let offered = proposal("claude", output).unwrap();
-        assert!(offered.source.starts_with("= Better line"));
+        let written = source();
+        let output = format!(
+            "notes\nstemma: proposal\n{written}stemma: end proposal\nstemma: model claude-opus-5\nstemma: produced\n"
+        );
+        let offered = proposal("claude", &output).unwrap();
+        assert_eq!(offered.source, written.trim_end());
         assert_eq!(offered.vendor, "Anthropic");
         assert_eq!(offered.model, "claude-opus-5");
     }

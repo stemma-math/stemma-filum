@@ -42,7 +42,7 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
     let config = Config::read(&home.config_file())?;
 
     if server.node(&credentials.token)?.is_none() {
-        bail!("this machine is not offered for work: run `stemma node init`");
+        bail!("this machine is not registered to run jobs: run `stemma node init`");
     }
 
     let mut agents = crate::agents::look(home, &config);
@@ -50,7 +50,7 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
 
     writeln!(
         out,
-        "Taking work from {} as {}.",
+        "Running jobs from {} as {}.",
         credentials.server, credentials.user
     )?;
     out.flush()?;
@@ -87,7 +87,7 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
 
         let Some(handed) = taken else {
             if once {
-                writeln!(out, "Nothing is waiting.")?;
+                writeln!(out, "No jobs waiting.")?;
                 return Ok(());
             }
 
@@ -303,10 +303,7 @@ pub fn install(home: &Home, out: &mut impl Write) -> Result<()> {
                 "This machine is run by neither systemd nor launchd, so there is \
                  nothing here to install into."
             )?;
-            writeln!(
-                out,
-                "Run `stemma daemon run` under whatever supervises this machine."
-            )?;
+            writeln!(out, "Run `stemma daemon run` under a service manager.")?;
         }
     }
 
@@ -327,7 +324,7 @@ fn enable(out: &mut impl Write, program: &str, runs: &[&[&str]]) -> Result<()> {
             .unwrap_or(false);
 
         if !happy {
-            writeln!(out, "It is written and not started. Run:")?;
+            writeln!(out, "The service is installed but not started. Run:")?;
             writeln!(out, "  {program} {}", arguments.join(" "))?;
 
             return Ok(());

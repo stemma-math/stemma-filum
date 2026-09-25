@@ -10,6 +10,11 @@
 //! Boxes do not nest. That is not enforced by refusing anything: it is
 //! true by construction, because a box is the run of ordinary statements
 //! between two central ones and a run has no inside.
+//!
+//! What is read here is the line's [`Document`]: the definitions and
+//! theorems in it become nodes, its proofs mark what they prove, and
+//! what a statement leans on is what its author declared plus what its
+//! text and its proofs cite.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -17,11 +22,16 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::{BridgeId, UserId};
+use crate::document::{self, Block, BlockKind, Document, Unreadable};
+use crate::id::{BlockId, BridgeId, UserId};
 use crate::model::{BoxState, Centrality};
-use crate::source::{self, Declaration};
 
 /// What kind of thing a node is.
+///
+/// It is what a siglum's prefix says, so that the siglum alone tells a
+/// definition from a result wherever it travels. Every kind but the
+/// definition is a theorem block; which of them a theorem is follows
+/// from the name its author gives the environment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeKind {
@@ -35,8 +45,6 @@ pub enum NodeKind {
     Proposition,
     /// What follows from one immediately.
     Corollary,
-    /// Something said about the mathematics rather than proved.
-    Remark,
 }
 
 impl NodeKind {
@@ -48,27 +56,31 @@ impl NodeKind {
             Self::Lemma => "lem",
             Self::Proposition => "prop",
             Self::Corollary => "cor",
-            Self::Remark => "rem",
         }
     }
 
-    /// The environment that declares it.
-    pub fn environment(self) -> &'static str {
+    /// What it is called in a sentence.
+    pub fn word(self) -> &'static str {
         match self {
             Self::Definition => "definition",
             Self::Theorem => "theorem",
             Self::Lemma => "lemma",
             Self::Proposition => "proposition",
             Self::Corollary => "corollary",
-            Self::Remark => "remark",
         }
     }
 
-    /// The kind an environment declares.
-    pub fn from_environment(environment: &str) -> Option<Self> {
-        Self::all()
-            .into_iter()
-            .find(|kind| kind.environment() == environment)
+    /// The kind a theorem block is, given what its environment is called.
+    ///
+    /// An environment with a name of its own — `Claim`, `Teorema` — is a
+    /// theorem, which is what every result is when nothing says otherwise.
+    pub fn for_environment(environment: &str) -> Self {
+        match environment.trim().to_lowercase().as_str() {
+            "lemma" => Self::Lemma,
+            "proposition" => Self::Proposition,
+            "corollary" => Self::Corollary,
+            _ => Self::Theorem,
+        }
     }
 
     /// The kind a prefix names.
@@ -77,26 +89,33 @@ impl NodeKind {
     }
 
     /// Every kind.
-    pub fn all() -> [Self; 6] {
+    pub fn all() -> [Self; 5] {
         [
             Self::Definition,
             Self::Theorem,
             Self::Lemma,
             Self::Proposition,
             Self::Corollary,
-            Self::Remark,
         ]
     }
 
     /// Whether it is something that can be proved.
     pub fn is_statement(self) -> bool {
-        !matches!(self, Self::Definition | Self::Remark)
+        !matches!(self, Self::Definition)
+    }
+
+    /// The block that declares a node of this kind.
+    pub fn block(self) -> BlockKind {
+        match self {
+            Self::Definition => BlockKind::Definition,
+            _ => BlockKind::Theorem,
+        }
     }
 }
 
 impl fmt::Display for NodeKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.environment())
+        f.write_str(self.word())
     }
 }
 
@@ -321,11 +340,16 @@ impl<'de> Deserialize<'de> for Siglum {
 pub struct Node {
     /// What it is called.
     pub siglum: Siglum,
+    /// The block that declares it.
+    pub block: BlockId,
+    /// What its environment is called on the page.
+    pub environment: String,
     /// What it is called in prose, where the author gave it one.
     pub name: Option<String>,
     /// Whether the line rests on it.
     pub centrality: Centrality,
-    /// What it leans on.
+    /// What it leans on: what its author declared, then what its text
+    /// and its proofs cite.
     pub uses: Vec<Siglum>,
     /// Audited substitution licences this statement relies on.
     #[serde(default)]
@@ -333,9 +357,9 @@ pub struct Node {
     /// The person responsible for downstream decisions, when declared.
     #[serde(default)]
     pub author: Option<UserId>,
-    /// Whether the source carries a proof of it.
+    /// Whether a proof of it has been written.
     pub proved: bool,
-    /// Which line of the source declares it, counting from one.
+    /// Which block of the line declares it, counting from one.
     pub at: usize,
 }
 
@@ -372,16 +396,18 @@ impl Line {
     /// Every fault is collected rather than the first one stopping the
     /// rest: somebody fixing a line wants the whole list.
     pub fn read(source: &str) -> Result<Self, Vec<Fault>> {
-        let declarations = match source::read(source) {
-            Ok(declarations) => declarations,
-            Err(problem) => return Err(vec![Fault::Malformed(problem)]),
-        };
+        let document = Document::parse(source).map_err(|unreadable| vec![unreadable.into()])?;
+        Self::of(&document)
+    }
 
-        let (mut nodes, mut faults) = collect(&declarations);
-        mark_proofs(&declarations, &mut nodes, &mut faults);
+    /// Reads a line out of a document already read.
+    pub fn of(document: &Document) -> Result<Self, Vec<Fault>> {
+        let mut faults = Vec::new();
+        check_blocks(document, &mut faults);
 
-        let known: BTreeSet<Siglum> = nodes.iter().map(|node| node.siglum.clone()).collect();
-        check_references(&nodes, &known, &mut faults);
+        let mut nodes = collect(document, &mut faults);
+        check_proofs(document, &mut nodes, &mut faults);
+        lean(document, &mut nodes, &mut faults);
         check_cycles(&nodes, &mut faults);
 
         match faults.is_empty() {
@@ -395,9 +421,17 @@ impl Line {
         self.nodes.iter().find(|node| &node.siglum == siglum)
     }
 
-    /// The statements the line rests on, in order.
+    /// The statements the line rests on, in order: the central results
+    /// that divide it into boxes.
+    ///
+    /// Definitions are left out even when they are central. They are
+    /// nodes of their own, frozen like any central block, but they are
+    /// not the ends of a box.
     pub fn central(&self) -> Vec<&Node> {
-        self.nodes.iter().filter(|node| node.is_central()).collect()
+        self.nodes
+            .iter()
+            .filter(|node| node.is_central() && node.siglum.kind != NodeKind::Definition)
+            .collect()
     }
 
     /// The boxes between the central statements.
@@ -411,6 +445,13 @@ impl Line {
         let mut after: Option<Siglum> = None;
 
         for node in &self.nodes {
+            // A definition is a node of the graph in its own right: it is
+            // neither buried in a box nor one of a box's ends, central or
+            // not.
+            if node.siglum.kind == NodeKind::Definition {
+                continue;
+            }
+
             if node.is_central() {
                 boxes.push(BlackBox {
                     after: after.clone(),
@@ -423,11 +464,7 @@ impl Line {
                 continue;
             }
 
-            // A definition is a node of the graph in its own right and
-            // not something buried in a box.
-            if node.siglum.kind != NodeKind::Definition {
-                interior.push(node.siglum.clone());
-            }
+            interior.push(node.siglum.clone());
         }
 
         // The end of a line is open: whatever comes after the last
@@ -514,42 +551,48 @@ fn state_of(interior: &[Siglum]) -> BoxState {
     }
 }
 
-/// Reads the nodes out of the declarations.
-fn collect(declarations: &[Declaration]) -> (Vec<Node>, Vec<Fault>) {
+/// Reports two blocks with one identifier, which nothing could tell apart.
+fn check_blocks(document: &Document, faults: &mut Vec<Fault>) {
+    let mut first_seen: BTreeMap<&BlockId, usize> = BTreeMap::new();
+
+    for (at, block) in numbered(document) {
+        match first_seen.get(block.id()) {
+            Some(first) => faults.push(Fault::RepeatedBlock {
+                id: *block.id(),
+                at,
+                first: *first,
+            }),
+            None => {
+                first_seen.insert(block.id(), at);
+            }
+        }
+    }
+}
+
+/// The blocks, counting from one.
+fn numbered(document: &Document) -> impl Iterator<Item = (usize, &Block)> {
+    document
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(at, block)| (at + 1, block))
+}
+
+/// Reads the nodes out of the statements.
+fn collect(document: &Document, faults: &mut Vec<Fault>) -> Vec<Node> {
     let mut nodes: Vec<Node> = Vec::new();
-    let mut faults = Vec::new();
     let mut first_seen: BTreeMap<Siglum, usize> = BTreeMap::new();
 
-    for declaration in declarations {
-        let Some(kind) = NodeKind::from_environment(&declaration.environment) else {
+    for (at, block) in numbered(document) {
+        let (Some(statement), Some(siglum)) = (block.statement(), block.siglum()) else {
             continue;
         };
 
-        let Some(written) = declaration.text("id") else {
-            faults.push(Fault::Nameless {
-                environment: declaration.environment.clone(),
-                at: declaration.line,
-            });
-            continue;
-        };
-
-        let siglum = match written.parse::<Siglum>() {
-            Ok(siglum) => siglum,
-            Err(why) => {
-                faults.push(Fault::BadSiglum {
-                    written: written.to_owned(),
-                    at: declaration.line,
-                    why,
-                });
-                continue;
-            }
-        };
-
-        if siglum.kind != kind {
+        if siglum.kind.block() != block.kind() {
             faults.push(Fault::KindDisagrees {
-                siglum: siglum.clone(),
-                declared: kind,
-                at: declaration.line,
+                siglum,
+                declared: block.kind(),
+                at,
             });
             continue;
         }
@@ -557,127 +600,167 @@ fn collect(declarations: &[Declaration]) -> (Vec<Node>, Vec<Fault>) {
         if let Some(first) = first_seen.get(&siglum) {
             faults.push(Fault::Twice {
                 siglum,
-                at: declaration.line,
+                at,
                 first: *first,
             });
             continue;
         }
-
-        first_seen.insert(siglum.clone(), declaration.line);
-
-        let mut uses = Vec::new();
-        for written in declaration.list("uses") {
-            match written.parse::<Siglum>() {
-                Ok(used) if used == siglum => faults.push(Fault::UsesItself {
-                    siglum: siglum.clone(),
-                    at: declaration.line,
-                }),
-                Ok(used) => uses.push(used),
-                Err(why) => faults.push(Fault::BadSiglum {
-                    written,
-                    at: declaration.line,
-                    why,
-                }),
-            }
-        }
-
-        let mut bridges = Vec::new();
-        for written in declaration.list("bridges") {
-            match written.parse::<BridgeId>() {
-                Ok(bridge) => bridges.push(bridge),
-                Err(why) => faults.push(Fault::BadBridge {
-                    written,
-                    at: declaration.line,
-                    why: why.to_string(),
-                }),
-            }
-        }
-
-        let author = match declaration.text("author") {
-            Some(written) => match written.parse::<UserId>() {
-                Ok(author) => Some(author),
-                Err(why) => {
-                    faults.push(Fault::BadAuthor {
-                        written: written.to_owned(),
-                        at: declaration.line,
-                        why: why.to_string(),
-                    });
-                    None
-                }
-            },
-            None => None,
-        };
+        first_seen.insert(siglum.clone(), at);
 
         nodes.push(Node {
             siglum,
-            name: declaration.text("name").map(str::to_owned),
-            centrality: match declaration.flag("central") {
-                Some(true) => Centrality::Central,
-                _ => Centrality::Ordinary,
+            block: statement.id,
+            environment: statement.environment.clone(),
+            name: statement.title.clone(),
+            centrality: match statement.central {
+                true => Centrality::Central,
+                false => Centrality::Ordinary,
             },
-            uses,
-            bridges,
-            author,
+            uses: Vec::new(),
+            bridges: statement.bridges.clone(),
+            author: statement.author.clone(),
             proved: false,
-            at: declaration.line,
+            at,
         });
     }
 
-    (nodes, faults)
+    nodes
 }
 
-/// Marks the statements a proof is written for.
-fn mark_proofs(declarations: &[Declaration], nodes: &mut [Node], faults: &mut Vec<Fault>) {
-    for declaration in declarations.iter().filter(|one| one.environment == "proof") {
-        let Some(written) = declaration.text("of") else {
-            faults.push(Fault::ProofOfNothing {
-                at: declaration.line,
-            });
+/// Checks every proof against what it proves, and marks what is proved.
+fn check_proofs(document: &Document, nodes: &mut [Node], faults: &mut Vec<Fault>) {
+    let mut proved_at: BTreeMap<BlockId, usize> = BTreeMap::new();
+
+    for (at, block) in numbered(document) {
+        let Block::Proof(proof) = block else {
             continue;
         };
 
-        let Ok(siglum) = written.parse::<Siglum>() else {
-            faults.push(Fault::BadSiglum {
-                written: written.to_owned(),
-                at: declaration.line,
-                why: BadSiglum::NoKind(written.to_owned()),
-            });
+        let Some(proved) = document.block(&proof.of) else {
+            faults.push(Fault::ProofOfMissing { of: proof.of, at });
             continue;
         };
 
-        let Some(node) = nodes.iter_mut().find(|node| node.siglum == siglum) else {
-            faults.push(Fault::Unknown {
-                siglum,
-                by: None,
-                at: declaration.line,
-            });
-            continue;
-        };
-
-        if !node.siglum.kind.is_statement() {
+        let Some(statement) = proved.statement() else {
             faults.push(Fault::NotProvable {
-                siglum,
-                at: declaration.line,
+                of: proof.of,
+                kind: proved.kind(),
+                at,
             });
+            continue;
+        };
+
+        let siglum = proved.siglum().expect("a statement has a siglum");
+
+        if !statement.proof {
+            faults.push(Fault::ProofNotCarried { siglum, at });
             continue;
         }
 
-        node.proved = true;
+        if let Some(first) = proved_at.get(&proof.of) {
+            faults.push(Fault::ProofTwice {
+                siglum,
+                at,
+                first: *first,
+            });
+            continue;
+        }
+        proved_at.insert(proof.of, at);
+
+        if !proof.content.trim().is_empty()
+            && let Some(node) = nodes.iter_mut().find(|node| node.block == proof.of)
+        {
+            node.proved = true;
+        }
+    }
+
+    for (at, block) in numbered(document) {
+        if let Some(statement) = block.statement()
+            && statement.proof
+            && !proved_at.contains_key(&statement.id)
+        {
+            faults.push(Fault::ProofMissing {
+                siglum: block.siglum().expect("a statement has a siglum"),
+                at,
+            });
+        }
     }
 }
 
-/// Reports what a node leans on that is not there.
-fn check_references(nodes: &[Node], known: &BTreeSet<Siglum>, faults: &mut Vec<Fault>) {
-    for node in nodes {
-        for used in &node.uses {
-            if !known.contains(used) {
-                faults.push(Fault::Unknown {
-                    siglum: used.clone(),
-                    by: Some(node.siglum.clone()),
+/// Works out what every node leans on.
+///
+/// First what its author declared, in the order they declared it; then
+/// what its text and its proofs cite, in the order they cite it. A
+/// citation of something that is not a statement of this line — an
+/// equation, a figure, a line elsewhere — is not a dependency.
+fn lean(document: &Document, nodes: &mut [Node], faults: &mut Vec<Fault>) {
+    let by_block: BTreeMap<BlockId, Siglum> = nodes
+        .iter()
+        .map(|node| (node.block, node.siglum.clone()))
+        .collect();
+    let by_label: BTreeMap<String, Siglum> = nodes
+        .iter()
+        .map(|node| (node.siglum.to_string(), node.siglum.clone()))
+        .collect();
+
+    for node in nodes.iter_mut() {
+        let Some(statement) = document.block(&node.block).and_then(Block::statement) else {
+            continue;
+        };
+        let mut uses: Vec<Siglum> = Vec::new();
+
+        for used in &statement.uses {
+            if used == &node.block {
+                faults.push(Fault::UsesItself {
+                    siglum: node.siglum.clone(),
                     at: node.at,
                 });
+                continue;
+            }
+
+            match (by_block.get(used), document.block(used)) {
+                (Some(siglum), _) => {
+                    if !uses.contains(siglum) {
+                        uses.push(siglum.clone());
+                    }
+                }
+                (None, Some(block)) if block.statement().is_none() => {
+                    faults.push(Fault::UsesWhatIsNotAStatement {
+                        by: node.siglum.clone(),
+                        block: *used,
+                        kind: block.kind(),
+                        at: node.at,
+                    });
+                }
+                // A statement that is there and did not become a node
+                // already has a fault of its own.
+                (None, Some(_)) => {}
+                (None, None) => faults.push(Fault::UsesMissing {
+                    by: node.siglum.clone(),
+                    block: *used,
+                    at: node.at,
+                }),
             }
         }
+
+        let cited = std::iter::once(statement.content.as_str())
+            .chain(
+                document
+                    .proofs_of(&node.block)
+                    .map(|proof| proof.content.as_str()),
+            )
+            .flat_map(document::references);
+
+        for label in cited {
+            if let Some(siglum) = by_label.get(&label)
+                && siglum != &node.siglum
+                && !uses.contains(siglum)
+            {
+                uses.push(siglum.clone());
+            }
+        }
+
+        node.uses = uses;
     }
 }
 
@@ -750,63 +833,32 @@ fn walk<'a>(
 pub enum Fault {
     /// The source could not be read at all.
     #[error(transparent)]
-    Malformed(#[from] source::Problem),
+    Unreadable(#[from] Unreadable),
 
-    /// A declaration with no name, which nothing can refer to.
-    #[error("line {at}: this {environment} has no `id`, so nothing can refer to it")]
-    Nameless {
-        /// Which environment it is.
-        environment: String,
-        /// Where it is.
+    /// Two blocks with one identifier.
+    #[error("block {at}: `{id}` is already the identifier of block {first}")]
+    RepeatedBlock {
+        /// The identifier they share.
+        id: BlockId,
+        /// Where the second one is.
         at: usize,
+        /// Where the first one is.
+        first: usize,
     },
 
-    /// A siglum that will not do.
-    #[error("line {at}: {why}")]
-    BadSiglum {
-        /// What was written.
-        written: String,
-        /// Where it is.
-        at: usize,
-        /// Why it will not do.
-        why: BadSiglum,
-    },
-
-    /// A vault bridge identifier that will not do.
-    #[error("line {at}: `{written}` is not a bridge identifier: {why}")]
-    BadBridge {
-        /// What was written.
-        written: String,
-        /// Where it is.
-        at: usize,
-        /// Why it will not do.
-        why: String,
-    },
-
-    /// An author identifier that will not do.
-    #[error("line {at}: `{written}` is not a user identifier: {why}")]
-    BadAuthor {
-        /// What was written.
-        written: String,
-        /// Where it is.
-        at: usize,
-        /// Why it will not do.
-        why: String,
-    },
-
-    /// A siglum whose kind is not the environment's.
-    #[error("line {at}: `{siglum}` is declared as a {declared}, and its name says otherwise")]
+    /// A siglum whose kind is not the block's.
+    #[error("block {at}: `{siglum}` names a {}, and this block is a {declared}", .siglum.kind)]
     KindDisagrees {
         /// What was written.
         siglum: Siglum,
-        /// What declared it.
-        declared: NodeKind,
+        /// What the block is.
+        declared: BlockKind,
         /// Where it is.
         at: usize,
     },
 
-    /// Two things with one name.
-    #[error("line {at}: `{siglum}` was already declared on line {first}")]
+    /// Two statements with one name.
+    #[error("block {at}: `{siglum}` is already the name of block {first}")]
     Twice {
         /// The name they share.
         siglum: Siglum,
@@ -816,19 +868,32 @@ pub enum Fault {
         first: usize,
     },
 
-    /// Something leaning on what is not there.
-    #[error("line {at}: `{siglum}` is not declared in this line")]
-    Unknown {
-        /// What was named.
-        siglum: Siglum,
-        /// What named it, where something did.
-        by: Option<Siglum>,
-        /// Where it is.
+    /// A statement leaning on a block that is not there.
+    #[error("block {at}: `{by}` uses `{block}`, which is not in this line")]
+    UsesMissing {
+        /// The statement that leans.
+        by: Siglum,
+        /// What it names.
+        block: BlockId,
+        /// Where the statement is.
         at: usize,
     },
 
-    /// Something leaning on itself.
-    #[error("line {at}: `{siglum}` uses itself")]
+    /// A statement leaning on prose or on a proof.
+    #[error("block {at}: `{by}` uses a {kind} block, and only a statement can be used")]
+    UsesWhatIsNotAStatement {
+        /// The statement that leans.
+        by: Siglum,
+        /// What it names.
+        block: BlockId,
+        /// What that block is.
+        kind: BlockKind,
+        /// Where the statement is.
+        at: usize,
+    },
+
+    /// A statement leaning on itself.
+    #[error("block {at}: `{siglum}` uses itself")]
     UsesItself {
         /// What does it.
         siglum: Siglum,
@@ -836,20 +901,53 @@ pub enum Fault {
         at: usize,
     },
 
-    /// A proof of nothing in particular.
-    #[error("line {at}: this proof does not say what it proves; give it `of`")]
-    ProofOfNothing {
-        /// Where it is.
+    /// A proof of a block that is not there.
+    #[error("block {at}: this proof is of `{of}`, which is not in this line")]
+    ProofOfMissing {
+        /// What it names.
+        of: BlockId,
+        /// Where the proof is.
         at: usize,
     },
 
-    /// A proof of something that is not proved.
-    #[error("line {at}: `{siglum}` is not something that can be proved")]
+    /// A proof of prose, or of another proof.
+    #[error("block {at}: this proof is of a {kind} block, which is not something to prove")]
     NotProvable {
-        /// What the proof named.
-        siglum: Siglum,
-        /// Where it is.
+        /// What it names.
+        of: BlockId,
+        /// What that block is.
+        kind: BlockKind,
+        /// Where the proof is.
         at: usize,
+    },
+
+    /// A proof of a statement that says it carries none.
+    #[error("block {at}: `{siglum}` says it is not proved here, and this is a proof of it")]
+    ProofNotCarried {
+        /// The statement.
+        siglum: Siglum,
+        /// Where the proof is.
+        at: usize,
+    },
+
+    /// A statement that carries a proof with no proof block.
+    #[error("block {at}: `{siglum}` carries a proof and there is no proof block for it")]
+    ProofMissing {
+        /// The statement.
+        siglum: Siglum,
+        /// Where the statement is.
+        at: usize,
+    },
+
+    /// Two proofs of one statement.
+    #[error("block {at}: `{siglum}` already has its proof in block {first}")]
+    ProofTwice {
+        /// The statement.
+        siglum: Siglum,
+        /// Where the second proof is.
+        at: usize,
+        /// Where the first one is.
+        first: usize,
     },
 
     /// Mathematics resting on itself.
@@ -861,21 +959,22 @@ pub enum Fault {
 }
 
 impl Fault {
-    /// Which line of the source it is about, where it is about one.
+    /// Which block of the line it is about, counting from one, where it
+    /// is about one.
     pub fn at(&self) -> Option<usize> {
         match self {
-            Self::Malformed(problem) => Some(problem.line),
-            Self::Nameless { at, .. }
-            | Self::BadSiglum { at, .. }
-            | Self::BadBridge { at, .. }
-            | Self::BadAuthor { at, .. }
+            Self::RepeatedBlock { at, .. }
             | Self::KindDisagrees { at, .. }
             | Self::Twice { at, .. }
-            | Self::Unknown { at, .. }
+            | Self::UsesMissing { at, .. }
+            | Self::UsesWhatIsNotAStatement { at, .. }
             | Self::UsesItself { at, .. }
-            | Self::ProofOfNothing { at }
-            | Self::NotProvable { at, .. } => Some(*at),
-            Self::Circular { .. } => None,
+            | Self::ProofOfMissing { at, .. }
+            | Self::NotProvable { at, .. }
+            | Self::ProofNotCarried { at, .. }
+            | Self::ProofMissing { at, .. }
+            | Self::ProofTwice { at, .. } => Some(*at),
+            Self::Unreadable(_) | Self::Circular { .. } => None,
         }
     }
 }
@@ -904,39 +1003,74 @@ mod tests {
         );
     }
 
-    /// A line with two central statements and work between them.
-    const ORDINARY: &str = r#"
-        #definition(id: "def:quotient", name: "Quotient group")[
-          Let $G$ be a group and $N$ normal in it.
-        ]
-
-        #theorem(id: "thm:first", name: "First isomorphism", central: true,
-                 uses: "def:quotient")[
-          Every homomorphism factors through its quotient.
-        ]
-
-        #proof(of: "thm:first")[By the universal property.]
-
-        #lemma(id: "lem:kernel", uses: "def:quotient")[
-          The kernel is normal.
-        ]
-
-        #lemma(id: "lem:image")[
-          The image is a subgroup.
-        ]
-
-        #theorem(id: "thm:second", central: true, uses: ("lem:kernel", "lem:image"))[
-          And so the two agree.
-        ]
-    "#;
-
     fn siglum(text: &str) -> Siglum {
         text.parse().unwrap()
     }
 
+    /// A statement with a name and no proof to write, which keeps these
+    /// tests about what they are about.
+    fn stated(named: &str, content: &str) -> Block {
+        let siglum = siglum(named);
+        let mut block = match siglum.kind {
+            NodeKind::Definition => Block::definition(Some(siglum), content),
+            kind => Block::theorem(kind.word(), Some(siglum), content),
+        };
+        let statement = block.statement_mut().unwrap();
+        statement.proof = false;
+        statement.central = false;
+        block
+    }
+
+    fn central(mut block: Block) -> Block {
+        block.statement_mut().unwrap().central = true;
+        block
+    }
+
+    fn using(mut block: Block, used: &Block) -> Block {
+        block.statement_mut().unwrap().uses.push(*used.id());
+        block
+    }
+
+    fn proved(mut block: Block) -> Block {
+        block.statement_mut().unwrap().proof = true;
+        block
+    }
+
+    fn written(blocks: Vec<Block>) -> String {
+        let mut document = Document::new("A line", None);
+        document.blocks = blocks;
+        document.to_text()
+    }
+
+    /// A line with two central statements and work between them.
+    fn ordinary() -> String {
+        let quotient = stated("def:quotient", "Let $G$ be a group and $N$ normal in it.");
+        let first = proved(central(stated(
+            "thm:first",
+            "Every homomorphism factors through @def:quotient.",
+        )));
+        let proof = Block::proof(*first.id(), "By the universal property.");
+        let kernel = using(stated("lem:kernel", "The kernel is normal."), &quotient);
+        let image = stated("lem:image", "The image is a subgroup.");
+        let second = central(stated(
+            "thm:second",
+            "And so, by @lem:kernel and @lem:image, the two agree.",
+        ));
+
+        written(vec![
+            Block::prose("We start from quotients."),
+            quotient,
+            first,
+            proof,
+            kernel,
+            image,
+            second,
+        ])
+    }
+
     #[test]
     fn a_line_is_read_with_its_nodes_in_order() {
-        let line = Line::read(ORDINARY).unwrap();
+        let line = Line::read(&ordinary()).unwrap();
 
         let names: Vec<String> = line
             .nodes
@@ -954,11 +1088,12 @@ mod tests {
                 "thm:second"
             ]
         );
+        assert_eq!(line.nodes[0].at, 2, "prose counts as a block");
     }
 
     #[test]
     fn what_the_line_rests_on_is_what_the_source_says_it_does() {
-        let line = Line::read(ORDINARY).unwrap();
+        let line = Line::read(&ordinary()).unwrap();
 
         let central: Vec<String> = line
             .central()
@@ -971,16 +1106,21 @@ mod tests {
     }
 
     #[test]
-    fn a_proof_in_the_source_marks_what_it_proves() {
-        let line = Line::read(ORDINARY).unwrap();
+    fn a_written_proof_marks_what_it_proves_and_an_empty_one_does_not() {
+        let line = Line::read(&ordinary()).unwrap();
 
         assert!(line.node(&siglum("thm:first")).unwrap().proved);
         assert!(!line.node(&siglum("thm:second")).unwrap().proved);
+
+        let theorem = proved(stated("thm:open", "Open."));
+        let empty = Block::proof(*theorem.id(), "  \n");
+        let line = Line::read(&written(vec![theorem, empty])).unwrap();
+        assert!(!line.nodes[0].proved, "an empty proof is still to write");
     }
 
     #[test]
     fn everything_between_two_central_statements_is_a_box() {
-        let line = Line::read(ORDINARY).unwrap();
+        let line = Line::read(&ordinary()).unwrap();
         let boxes = line.boxes();
 
         assert_eq!(
@@ -1011,19 +1151,21 @@ mod tests {
     }
 
     #[test]
-    fn a_definition_is_a_node_and_not_something_buried_in_a_box() {
-        let line = Line::read(ORDINARY).unwrap();
+    fn a_definition_is_neither_inside_a_box_nor_one_of_its_ends() {
+        let definition = Block::definition(Some(siglum("def:group")), "A group.");
+        let lemma = stated("lem:a", "A step.");
+        let line = Line::read(&written(vec![definition, lemma])).unwrap();
 
-        assert!(
-            line.boxes()
-                .iter()
-                .all(|black_box| !black_box.interior.contains(&siglum("def:quotient")))
-        );
+        assert!(line.nodes[0].is_central(), "definitions are central");
+        let boxes = line.boxes();
+        assert_eq!(boxes.len(), 1);
+        assert_eq!(boxes[0].after, None);
+        assert_eq!(boxes[0].interior, [siglum("lem:a")]);
     }
 
     #[test]
     fn the_graph_shows_the_definitions_the_central_statements_and_the_boxes() {
-        let line = Line::read(ORDINARY).unwrap();
+        let line = Line::read(&ordinary()).unwrap();
         let shown: Vec<String> = line
             .skeleton()
             .iter()
@@ -1047,8 +1189,8 @@ mod tests {
     }
 
     #[test]
-    fn what_a_node_leans_on_is_read_out_of_the_source() {
-        let line = Line::read(ORDINARY).unwrap();
+    fn what_a_node_leans_on_is_declared_or_cited() {
+        let line = Line::read(&ordinary()).unwrap();
         let edges: Vec<String> = line
             .dependencies()
             .iter()
@@ -1067,24 +1209,44 @@ mod tests {
     }
 
     #[test]
-    fn a_declaration_with_no_name_is_reported_rather_than_skipped() {
-        let faults = Line::read(r#"#theorem(central: true)[Nameless.]"#).unwrap_err();
+    fn what_a_proof_cites_is_leaned_on_by_what_it_proves() {
+        let lemma = stated("lem:step", "A step.");
+        let theorem = proved(stated("thm:main", "The result."));
+        let proof = Block::proof(*theorem.id(), "By @lem:step, and @eq:unrelated.");
+        let line = Line::read(&written(vec![lemma, theorem, proof])).unwrap();
 
-        assert!(matches!(faults[0], Fault::Nameless { .. }));
-        assert!(faults[0].to_string().contains("has no `id`"));
+        assert_eq!(line.nodes[1].uses, [siglum("lem:step")]);
     }
 
     #[test]
-    fn a_siglum_whose_kind_is_not_the_environments_is_refused() {
-        let faults = Line::read(r#"#theorem(id: "lem:confused")[x]"#).unwrap_err();
+    fn a_statement_nobody_named_is_still_a_node() {
+        let theorem = Block::theorem("Lemma", None, "Unnamed.");
+        let proof = Block::proof(*theorem.id(), "");
+        let line = Line::read(&written(vec![theorem, proof])).unwrap();
+
+        assert_eq!(line.nodes[0].siglum.kind, NodeKind::Lemma);
+        assert_eq!(line.nodes[0].environment, "Lemma");
+    }
+
+    #[test]
+    fn a_siglum_whose_kind_is_not_the_blocks_is_refused() {
+        let mut theorem = stated("lem:confused", "x");
+        theorem = match theorem {
+            Block::Theorem(statement) => Block::Definition(statement),
+            other => other,
+        };
+        let faults = Line::read(&written(vec![theorem])).unwrap_err();
 
         assert!(matches!(faults[0], Fault::KindDisagrees { .. }));
     }
 
     #[test]
     fn two_things_with_one_name_are_reported_with_both_places() {
-        let faults =
-            Line::read("#lemma(id: \"lem:a\")[one]\n#lemma(id: \"lem:a\")[another]").unwrap_err();
+        let faults = Line::read(&written(vec![
+            stated("lem:a", "one"),
+            stated("lem:a", "another"),
+        ]))
+        .unwrap_err();
 
         let Fault::Twice { at, first, .. } = &faults[0] else {
             panic!("expected a repeat, got {:?}", faults[0]);
@@ -1094,36 +1256,56 @@ mod tests {
     }
 
     #[test]
-    fn leaning_on_what_is_not_there_is_reported() {
-        let faults = Line::read(r#"#lemma(id: "lem:a", uses: "def:missing")[x]"#).unwrap_err();
+    fn two_blocks_with_one_identifier_are_reported() {
+        let prose = Block::prose("x");
+        let faults = Line::read(&written(vec![prose.clone(), prose])).unwrap_err();
 
-        let Fault::Unknown { siglum, by, .. } = &faults[0] else {
-            panic!("expected an unknown reference, got {:?}", faults[0]);
-        };
-
-        assert_eq!(siglum.to_string(), "def:missing");
-        assert_eq!(
-            by.as_ref().map(ToString::to_string).as_deref(),
-            Some("lem:a")
-        );
+        assert!(matches!(faults[0], Fault::RepeatedBlock { .. }));
     }
 
     #[test]
-    fn leaning_on_itself_is_reported() {
-        let faults = Line::read(r#"#lemma(id: "lem:a", uses: "lem:a")[x]"#).unwrap_err();
+    fn leaning_on_what_is_not_there_is_reported() {
+        let gone = stated("def:missing", "x");
+        let faults = Line::read(&written(vec![using(stated("lem:a", "x"), &gone)])).unwrap_err();
 
+        let Fault::UsesMissing { by, .. } = &faults[0] else {
+            panic!("expected an unknown reference, got {:?}", faults[0]);
+        };
+        assert_eq!(by.to_string(), "lem:a");
+    }
+
+    #[test]
+    fn leaning_on_prose_is_reported() {
+        let prose = Block::prose("An idea.");
+        let lemma = using(stated("lem:a", "x"), &prose);
+        let faults = Line::read(&written(vec![prose, lemma])).unwrap_err();
+
+        assert!(matches!(
+            faults[0],
+            Fault::UsesWhatIsNotAStatement {
+                kind: BlockKind::Prose,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn leaning_on_itself_is_reported_and_citing_itself_is_not() {
+        let lemma = stated("lem:a", "As @lem:a says.");
+        let own = lemma.clone();
+        assert!(Line::read(&written(vec![lemma])).is_ok());
+
+        let faults = Line::read(&written(vec![using(own.clone(), &own)])).unwrap_err();
         assert!(matches!(faults[0], Fault::UsesItself { .. }));
     }
 
     #[test]
     fn mathematics_that_rests_on_itself_is_reported_once_and_in_full() {
-        let faults = Line::read(
-            r#"
-            #lemma(id: "lem:a", uses: "lem:c")[x]
-            #lemma(id: "lem:b", uses: "lem:a")[x]
-            #lemma(id: "lem:c", uses: "lem:b")[x]
-            "#,
-        )
+        let faults = Line::read(&written(vec![
+            stated("lem:a", "By @lem:c."),
+            stated("lem:b", "By @lem:a."),
+            stated("lem:c", "By @lem:b."),
+        ]))
         .unwrap_err();
 
         let circles: Vec<&Fault> = faults
@@ -1141,33 +1323,66 @@ mod tests {
 
     #[test]
     fn a_proof_of_something_that_is_not_there_is_reported() {
-        let faults = Line::read(r#"#proof(of: "thm:missing")[x]"#).unwrap_err();
+        let faults =
+            Line::read(&written(vec![Block::proof(BlockId::generate(), "x")])).unwrap_err();
 
-        assert!(matches!(faults[0], Fault::Unknown { by: None, .. }));
+        assert!(matches!(faults[0], Fault::ProofOfMissing { .. }));
     }
 
     #[test]
-    fn a_proof_of_a_definition_is_reported() {
-        let faults = Line::read(
-            r#"
-            #definition(id: "def:a")[x]
-            #proof(of: "def:a")[y]
-            "#,
-        )
-        .unwrap_err();
+    fn a_proof_of_prose_is_reported() {
+        let prose = Block::prose("x");
+        let proof = Block::proof(*prose.id(), "y");
+        let faults = Line::read(&written(vec![prose, proof])).unwrap_err();
 
         assert!(matches!(faults[0], Fault::NotProvable { .. }));
     }
 
     #[test]
+    fn a_definition_may_carry_a_proof_when_it_says_so() {
+        let definition = proved(stated("def:well", "Well defined."));
+        let proof = Block::proof(*definition.id(), "It is.");
+        let line = Line::read(&written(vec![definition, proof])).unwrap();
+
+        assert!(line.nodes[0].proved);
+    }
+
+    #[test]
+    fn a_proof_of_what_says_it_is_not_proved_here_is_reported() {
+        let theorem = stated("thm:quoted", "From elsewhere.");
+        let proof = Block::proof(*theorem.id(), "Anyway.");
+        let faults = Line::read(&written(vec![theorem, proof])).unwrap_err();
+
+        assert!(matches!(faults[0], Fault::ProofNotCarried { .. }));
+    }
+
+    #[test]
+    fn a_theorem_carrying_a_proof_needs_its_proof_block() {
+        let theorem = Block::theorem("Theorem", Some(siglum("thm:main")), "x");
+        let faults = Line::read(&written(vec![theorem.clone()])).unwrap_err();
+        assert!(matches!(faults[0], Fault::ProofMissing { at: 1, .. }));
+
+        let first = Block::proof(*theorem.id(), "One.");
+        let second = Block::proof(*theorem.id(), "Two.");
+        let faults = Line::read(&written(vec![theorem, first, second])).unwrap_err();
+        assert!(matches!(
+            faults[0],
+            Fault::ProofTwice {
+                at: 3,
+                first: 2,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn every_fault_is_collected_rather_than_only_the_first() {
-        let faults = Line::read(
-            r#"
-            #lemma(id: "lem:a", uses: "def:missing")[x]
-            #theorem(id: "not-a-siglum")[y]
-            #proof(of: "thm:nowhere")[z]
-            "#,
-        )
+        let gone = stated("def:missing", "x");
+        let faults = Line::read(&written(vec![
+            using(stated("lem:a", "x"), &gone),
+            Block::theorem("Theorem", Some(siglum("thm:b")), "y"),
+            Block::proof(BlockId::generate(), "z"),
+        ]))
         .unwrap_err();
 
         assert_eq!(faults.len(), 3);
@@ -1175,15 +1390,15 @@ mod tests {
 
     #[test]
     fn a_source_that_cannot_be_read_says_so_once() {
-        let faults = Line::read(r#"#theorem(id: "thm:a"[x]"#).unwrap_err();
+        let faults = Line::read("{\"format\": 1, \"title\": ").unwrap_err();
 
         assert_eq!(faults.len(), 1);
-        assert!(matches!(faults[0], Fault::Malformed(_)));
+        assert!(matches!(faults[0], Fault::Unreadable(_)));
     }
 
     #[test]
     fn a_line_with_nothing_in_it_is_a_line_with_nothing_in_it() {
-        let line = Line::read("= A heading and nothing else\n").unwrap();
+        let line = Line::read(&written(vec![Block::prose("Just an idea.")])).unwrap();
 
         assert!(line.nodes.is_empty());
         assert!(line.boxes().is_empty());

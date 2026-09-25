@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use stemma::api::{About, Claimed, Server};
-use stemma_core::line::Siglum;
-use stemma_core::reconcile::{Keep, Mark, Part};
+use stemma_core::id::BlockId;
+use stemma_core::reconcile::Keep;
 
 use crate::workspace::LineAt;
 use crate::{Session, said};
@@ -29,16 +29,16 @@ pub fn claim(path: String) -> Result<Claim, String> {
 /// ahead even if recording fails: a claim that cannot be released is worse
 /// than one released with work still uncommitted.
 #[tauri::command(async)]
-pub fn let_go(path: String) -> Result<Claim, String> {
+pub fn release(path: String) -> Result<Claim, String> {
     if let Ok(line) = LineAt::admit(&path) {
         let _ = stemma::writing::record(&line.path);
     }
     with_claim(&path, Server::release_claim)
 }
 
-/// Asks the machine holding the line to hand it back.
+/// Asks the machine holding the claim to release it.
 #[tauri::command(async)]
-pub fn ask_for_line(path: String) -> Result<Claim, String> {
+pub fn request_claim(path: String) -> Result<Claim, String> {
     with_claim(&path, Server::ask_for_claim)
 }
 
@@ -66,28 +66,26 @@ fn with_claim(
     })
 }
 
-/// One statement or proof on which the two versions differ.
+/// One block on which the two versions conflict.
 #[derive(Serialize)]
-pub struct Disagreement {
-    siglum: String,
-    part: Part,
-    mark: String,
+pub struct Conflict {
+    block: BlockId,
+    label: String,
     here: Option<String>,
     there: Option<String>,
     said: String,
 }
 
-/// Which version to keep for one disagreement.
+/// Which version to keep for one conflict.
 #[derive(Deserialize)]
 pub struct Decision {
-    siglum: Siglum,
-    part: Part,
+    block: BlockId,
     keep: Keep,
 }
 
-/// What the local and remote versions of this line disagree about.
+/// The blocks the local and server versions of this line conflict on.
 #[tauri::command(async)]
-pub fn parted(path: String) -> Result<Vec<Disagreement>, String> {
+pub fn parted(path: String) -> Result<Vec<Conflict>, String> {
     let line = LineAt::admit(&path)?;
     let clone = line.clone_root();
     let _ = stemma::git::fetch(clone);
@@ -98,15 +96,14 @@ pub fn parted(path: String) -> Result<Vec<Disagreement>, String> {
     };
 
     Ok(parted
-        .divergences
+        .conflicts
         .into_iter()
-        .map(|divergence| Disagreement {
-            siglum: divergence.mark.siglum.to_string(),
-            part: divergence.mark.part,
-            mark: divergence.mark.to_string(),
-            said: divergence.said().to_owned(),
-            here: divergence.here,
-            there: divergence.there,
+        .map(|conflict| Conflict {
+            said: conflict.said().to_owned(),
+            block: conflict.block,
+            label: conflict.label,
+            here: conflict.here,
+            there: conflict.there,
         })
         .collect())
 }
@@ -115,15 +112,9 @@ pub fn parted(path: String) -> Result<Vec<Disagreement>, String> {
 #[tauri::command(async)]
 pub fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, String> {
     let line = LineAt::admit(&path)?;
-    let decided: BTreeMap<Mark, Keep> = decisions
+    let decided: BTreeMap<BlockId, Keep> = decisions
         .into_iter()
-        .map(|decision| {
-            let mark = Mark {
-                siglum: decision.siglum,
-                part: decision.part,
-            };
-            (mark, decision.keep)
-        })
+        .map(|decision| (decision.block, decision.keep))
         .collect();
 
     let settled = stemma::conflicts::settle(

@@ -18,25 +18,53 @@ export type Known = {
   side: string;
   name: string;
   title: string | null;
-  question: string | null;
+  description: string | null;
   path: string;
 };
 
 export type Entry = { group: string; side: string; name: string; path: string };
 
+/** A block of a line (`stemma_core::document::Block`). */
+export type Prose = { kind: "prose"; id: string; content: string };
+
+export type Statement = {
+  kind: "definition" | "theorem";
+  id: string;
+  environment: string;
+  siglum?: string;
+  title?: string;
+  central: boolean;
+  proof: boolean;
+  uses?: string[];
+  bridges?: string[];
+  author?: string;
+  content: string;
+};
+
+export type Proof = { kind: "proof"; id: string; of: string; content: string };
+
+export type Block = Prose | Statement | Proof;
+
+export type BlockKind = Block["kind"];
+
+/** A line's source, `line.json`. */
+export type LineDocument = {
+  format: number;
+  title: string;
+  description?: string;
+  blocks: Block[];
+};
+
+/** What the line reads as (`stemma_core::line::Node`). */
 export type Node = {
   siglum: string;
+  block: string;
+  environment: string;
   name: string | null;
   centrality: "central" | "ordinary";
   uses: string[];
   proved: boolean;
-};
-
-export type BlackBox = {
-  after: string | null;
-  before: string | null;
-  interior: string[];
-  state: string;
+  at: number;
 };
 
 export type LeanDigest = {
@@ -47,16 +75,22 @@ export type LeanDigest = {
   diagnostic: string;
 };
 
+/** Something wrong with a line; `at` is the block, counting from one. */
+export type Fault = { at: number | null; message: string };
+
 export type OpenLine = {
   entry: Entry;
+  document: LineDocument | null;
   source: string;
   line: { nodes: Node[] } | null;
-  boxes: BlackBox[];
-  diagnostics: string[];
+  faults: Fault[];
   lean: LeanDigest | null;
 };
 
-export type Preview = { svg: string; diagnostics: string[] };
+/** What Typst said, placed in the block and line it is about. */
+export type Diagnostic = { error: boolean; block: string | null; line: number | null; message: string };
+
+export type Preview = { svg: string | null; diagnostics: Diagnostic[] };
 
 export type Agent = { name: string; called: string; availability: string; reason: string | null };
 
@@ -83,16 +117,15 @@ export type Claim = {
 
 export type Keep = "here" | "there";
 
-export type Disagreement = {
-  siglum: string;
-  part: string;
-  mark: string;
+export type Conflict = {
+  block: string;
+  label: string;
   here: string | null;
   there: string | null;
   said: string;
 };
 
-export type Decision = { siglum: string; part: string; keep: Keep };
+export type Decision = { block: string; keep: Keep };
 
 export type Waiting = {
   proposal: string;

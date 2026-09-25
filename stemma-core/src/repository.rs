@@ -20,8 +20,8 @@ pub const MANIFEST: &str = "stemma.toml";
 /// The directory lines live in.
 pub const LINES: &str = "lines";
 
-/// The file a line is written in.
-pub const ENTRY: &str = "main.typ";
+/// The file a line is written in: its blocks, as JSON.
+pub const ENTRY: &str = "line.json";
 
 /// The Lean module that formalizes one line.
 pub const LEAN_ENTRY: &str = "Main.lean";
@@ -50,7 +50,7 @@ spelled!(Side, BadSide("`{0}` is not one of a group's repositories") {
 /// that has not written anything: a pin somebody never chose would be a
 /// decision made by whichever release happened to create the repository.
 ///
-/// `notation` is the exception, and is set when the repository is made.
+/// `package` is the exception, and is set when the repository is made.
 /// It is not a tool the group goes and installs but Stemma's own
 /// package, and there is no version of it a line could be written
 /// without.
@@ -63,8 +63,9 @@ pub struct Pins {
     pub lean: Option<String>,
     /// The exact Mathlib revision used by the group's Lake project.
     pub mathlib: Option<String>,
-    /// The version of the notation package the group's lines import.
-    pub notation: Option<String>,
+    /// The version of the Typst package the group's lines are typeset with.
+    #[serde(alias = "notation")]
+    pub package: Option<String>,
 }
 
 /// The file at the root of a repository.
@@ -93,7 +94,7 @@ impl Manifest {
             side,
             description: Some(description.into()),
             pins: Pins {
-                notation: Some(crate::notation::VERSION.to_owned()),
+                package: Some(crate::package::VERSION.to_owned()),
                 ..Pins::default()
             },
         }
@@ -287,7 +288,7 @@ mod tests {
 
         assert_eq!(
             line_entry(root, &name),
-            Path::new("/home/ana/stemma/algebra/shared/lines/quotient-groups/main.typ")
+            Path::new("/home/ana/stemma/algebra/shared/lines/quotient-groups/line.json")
         );
     }
 
@@ -296,7 +297,7 @@ mod tests {
         let root = Path::new("/home/ana/stemma/algebra/shared");
 
         assert_eq!(
-            line_of(root, &root.join("lines/quotient-groups/main.typ")),
+            line_of(root, &root.join("lines/quotient-groups/line.json")),
             Some(Name::parse("quotient-groups").unwrap())
         );
         assert_eq!(line_of(root, &root.join("lines")), None);
