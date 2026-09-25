@@ -13,10 +13,10 @@
 pub const NAMESPACE: &str = "stemma";
 
 /// What the package is called.
-pub const NAME: &str = "notation";
+pub const NAME: &str = "line";
 
 /// The version this build writes and carries.
-pub const VERSION: &str = "0.2.0";
+pub const VERSION: &str = "0.1.0";
 
 /// The functions the package defines and a rendered line calls.
 ///
@@ -39,6 +39,6 @@ mod tests {
 
     #[test]
     fn a_document_imports_everything_the_environments_need() {
-        assert_eq!(import(), "#import \"@stemma/notation:0.2.0\": *");
+        assert_eq!(import(), "#import \"@stemma/line:0.1.0\": *");
     }
 }

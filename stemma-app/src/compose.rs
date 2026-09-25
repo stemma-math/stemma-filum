@@ -48,10 +48,10 @@ pub fn preview(path: String, document: Document) -> Result<Preview, String> {
     compose(line.directory(), &document)
 }
 
-/// Typesets one line to SVG. The notation package is installed first (a
+/// Typesets one line to SVG. The line package is installed first (a
 /// no-op when it is already there) so that the rendered import resolves.
 fn compose(root: &Path, document: &Document) -> Result<Preview, String> {
-    stemma::notation::install().map_err(said)?;
+    stemma::package::install().map_err(said)?;
 
     let rendered = render::typst(document);
     let main = Source::detached(rendered.source.clone());

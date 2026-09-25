@@ -22,7 +22,7 @@ pub mod lean;
 pub mod lines;
 pub mod machines;
 pub mod node;
-pub mod notation;
+pub mod package;
 pub mod pin;
 pub mod program;
 pub mod proposals;

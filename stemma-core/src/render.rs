@@ -65,7 +65,7 @@ pub fn typst(document: &Document) -> Rendered {
 
     source.push_str(PREAMBLE);
     source.push('\n');
-    source.push_str(&crate::notation::import());
+    source.push_str(&crate::package::import());
     source.push_str("\n\n#show: stemma.with(\n  title: ");
     source.push_str(&quoted(&document.title));
     source.push_str(",\n");
@@ -229,7 +229,7 @@ mod tests {
         let rendered = typst(&document);
 
         assert!(rendered.source.starts_with(PREAMBLE));
-        assert!(rendered.source.contains(&crate::notation::import()));
+        assert!(rendered.source.contains(&crate::package::import()));
         assert!(
             rendered
                 .source
