@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use stemma_core::PROTOCOL_VERSION;
-use stemma_core::protocol::ProtocolVersion;
+use stemma_core::protocol::{Behind, ProtocolVersion};
 
 /// The header both sides announce their protocol in.
 const PROTOCOL_HEADER: &str = stemma_core::PROTOCOL_HEADER;
@@ -1019,9 +1019,13 @@ impl Server {
             );
         };
 
-        PROTOCOL_VERSION
-            .check_against(spoken)
-            .with_context(|| format!("cannot talk to {}", self.address))?;
+        if let Err(mismatch) = PROTOCOL_VERSION.check_against(spoken) {
+            let update = match mismatch.who_is_behind() {
+                Behind::Server => "the server has to be updated to this version",
+                Behind::Client => "this app has to be updated to the server's version",
+            };
+            bail!("cannot talk to {}: {mismatch}; {update}", self.address);
+        }
 
         Ok(())
     }
@@ -1129,6 +1133,20 @@ mod tests {
         let error = server.sign_out("token").unwrap_err();
         worker.join().unwrap();
         assert!(error.to_string().contains("revocation failed"));
+    }
+
+    #[test]
+    fn an_older_server_is_named_as_the_side_to_update() {
+        let (server, worker) = reply_once(
+            "400 Bad Request",
+            Some("0.5"),
+            r#"{"error":"A line needs the question it exists to answer."}"#,
+        );
+        let error = server.sign_out("token").unwrap_err();
+        worker.join().unwrap();
+        let said = error.to_string();
+        assert!(said.contains("the server speaks 0.5"), "{said}");
+        assert!(said.contains("the server has to be updated"), "{said}");
     }
 
     #[test]
