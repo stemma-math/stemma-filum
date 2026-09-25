@@ -1278,9 +1278,11 @@ select:focus {
 
 /* ── What the window has to say ────────────────────────────────────── */
 
+/* Above everything, the settings scrim included: a message answers what
+ * was just done, and that is often done inside the settings panel. */
 #said {
     position: fixed;
-    z-index: 8;
+    z-index: 20;
     right: 18px;
     bottom: 18px;
     max-width: 30rem;
