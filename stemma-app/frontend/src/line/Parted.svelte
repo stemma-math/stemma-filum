@@ -39,12 +39,12 @@
           <pre class="version">{one.here ?? "Deleted"}</pre>
           <pre class="version">{one.there ?? "Deleted"}</pre>
           <span>
-            <button class:kept={kept[one.block] === "here"} onclick={() => (kept[one.block] = "here")}>Keep this machine's</button>
-            <button class:kept={kept[one.block] === "there"} onclick={() => (kept[one.block] = "there")}>Keep the server's</button>
+            <button class="button" aria-pressed={kept[one.block] === "here"} onclick={() => (kept[one.block] = "here")}>Keep this machine's</button>
+            <button class="button" aria-pressed={kept[one.block] === "there"} onclick={() => (kept[one.block] = "there")}>Keep the server's</button>
           </span>
         </div>
       {/each}
-      <button disabled={!complete} onclick={merge}>Merge</button>
+      <button class="button" disabled={!complete} onclick={merge}>Merge</button>
       <p class="quiet">The version you do not keep stays in this machine's history.</p>
     {/if}
   </section>

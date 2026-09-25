@@ -25,25 +25,25 @@
 {#if line.mine}
   <p class="quiet">Only you can see this line. Sharing moves it to the group's repository and cannot be undone.</p>
   <div class="row__actions">
-    <button onclick={() => (sharing = true)}>Share with the group</button>
-    <button class="quiet-button" onclick={deleteLine}>Delete</button>
+    <button class="button" onclick={() => (sharing = true)}>Share with the group</button>
+    <button class="button button--quiet" onclick={deleteLine}>Delete</button>
   </div>
   {#if sharing}
     <form class="sharing stack" onsubmit={share}>
       <p class="quiet">Move this line to the shared group repository.</p>
-      <fieldset>
+      <fieldset class="fieldset">
         <legend>History to share</legend>
         <label class="choice"><input type="radio" bind:group={travels} value="today" /><span>Today's state only</span></label>
         <label class="choice"><input type="radio" bind:group={travels} value="everything" /><span>Everything from the beginning</span></label>
       </fieldset>
-      <fieldset>
+      <fieldset class="fieldset">
         <legend>Who can write</legend>
         <label class="choice"><input type="radio" bind:group={writer} value="author" /><span>Only me; others send proposals</span></label>
         <label class="choice"><input type="radio" bind:group={writer} value="anyone" /><span>Anyone in the group, one at a time</span></label>
       </fieldset>
       <div class="row__actions">
-        <button type="submit">Share</button>
-        <button type="button" class="quiet-button" onclick={() => (sharing = false)}>Cancel</button>
+        <button class="button" type="submit">Share</button>
+        <button type="button" class="button button--quiet" onclick={() => (sharing = false)}>Cancel</button>
       </div>
     </form>
   {/if}

@@ -62,16 +62,16 @@
 
 {#snippet actions(target: AuditTarget, id: string)}
   <div class="row__actions">
-    <button onclick={() => (auditing = { target, id, action: "attest", note: "" })}>Attest</button>
-    <button onclick={() => (auditing = { target, id, action: "withdraw", note: "" })}>Withdraw</button>
+    <button class="button" onclick={() => (auditing = { target, id, action: "attest", note: "" })}>Attest</button>
+    <button class="button" onclick={() => (auditing = { target, id, action: "withdraw", note: "" })}>Withdraw</button>
   </div>
   {#if auditing && isAuditing(target, id)}
     <form class="auditing stack" onsubmit={auditIt}>
-      <label>{auditing.action === "attest" ? "What did you check?" : "Why is the guarantee withdrawn?"}
-        <textarea rows="2" bind:value={auditing.note} required></textarea></label>
+      <label class="field"><span class="field__label">{auditing.action === "attest" ? "What did you check?" : "Why is the guarantee withdrawn?"}</span>
+        <textarea class="input input--mono" rows="2" bind:value={auditing.note} required></textarea></label>
       <div class="row__actions">
-        <button type="submit">{auditing.action === "attest" ? "Attest" : "Withdraw"}</button>
-        <button type="button" class="quiet-button" onclick={() => (auditing = null)}>Cancel</button>
+        <button class="button" type="submit">{auditing.action === "attest" ? "Attest" : "Withdraw"}</button>
+        <button type="button" class="button button--quiet" onclick={() => (auditing = null)}>Cancel</button>
       </div>
     </form>
   {/if}
@@ -116,22 +116,22 @@
     <section>
       <p class="label">Admit a definition</p>
       <form class="stack" onsubmit={admitIt}>
-        <label>Siglum<input type="text" bind:value={admit.siglum} placeholder="def:group" required /></label>
-        <label>Distinguishing name<input type="text" bind:value={admit.name} required /></label>
-        <label>The prose admitted<textarea bind:value={admit.prose} rows="3" required></textarea></label>
-        <label>The complete Lean module<textarea bind:value={admit.lean} rows="5" required></textarea></label>
-        <button type="submit">Admit</button>
+        <label class="field"><span class="field__label">Siglum</span><input class="input" type="text" bind:value={admit.siglum} placeholder="def:group" required /></label>
+        <label class="field"><span class="field__label">Distinguishing name</span><input class="input" type="text" bind:value={admit.name} required /></label>
+        <label class="field"><span class="field__label">The prose admitted</span><textarea class="input input--mono" bind:value={admit.prose} rows="3" required></textarea></label>
+        <label class="field"><span class="field__label">The complete Lean module</span><textarea class="input input--mono" bind:value={admit.lean} rows="5" required></textarea></label>
+        <button class="button" type="submit">Admit</button>
         <p class="quiet">The module is compiled locally against the group's pinned version before submission.</p>
       </form>
     </section>
     <section>
       <p class="label">Admit a bridge</p>
       <form class="stack" onsubmit={bridgeIt}>
-        <label>From<input type="text" bind:value={bridge.left} required /></label>
-        <label>To<input type="text" bind:value={bridge.right} required /></label>
-        <label>Kind<select bind:value={bridge.kind}><option value="predicate">predicate</option><option value="structure">structure</option></select></label>
-        <label>The complete Lean module<textarea bind:value={bridge.lean} rows="5" required></textarea></label>
-        <button type="submit">Admit the bridge</button>
+        <label class="field"><span class="field__label">From</span><input class="input" type="text" bind:value={bridge.left} required /></label>
+        <label class="field"><span class="field__label">To</span><input class="input" type="text" bind:value={bridge.right} required /></label>
+        <label class="field"><span class="field__label">Kind</span><select class="input" bind:value={bridge.kind}><option value="predicate">predicate</option><option value="structure">structure</option></select></label>
+        <label class="field"><span class="field__label">The complete Lean module</span><textarea class="input input--mono" bind:value={bridge.lean} rows="5" required></textarea></label>
+        <button class="button" type="submit">Admit the bridge</button>
         <p class="quiet">Bridges must be unconditional. Equivalences with hypotheses should be added as regular theorems.</p>
       </form>
     </section>

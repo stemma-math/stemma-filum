@@ -248,9 +248,9 @@
   </div>
 
   {#if statement}
-    <div class="block__fields">
+    <div class="input block__fields">
       <input
-        class="block__field block__field--environment"
+        class="input block__field block__field--environment"
         list={statement.kind === "definition" ? "definition-environments" : "theorem-environments"}
         value={statement.environment}
         disabled={!line.editable}
@@ -261,7 +261,7 @@
         }}
       />
       <input
-        class="block__field"
+        class="input block__field"
         placeholder="Title"
         value={statement.title ?? ""}
         disabled={!line.editable}
@@ -272,7 +272,7 @@
         }}
       />
       <input
-        class="block__field block__field--siglum"
+        class="input block__field block__field--siglum"
         placeholder={`${siglumPrefix(statement)}:name`}
         bind:value={siglumDraft}
         disabled={!line.editable}

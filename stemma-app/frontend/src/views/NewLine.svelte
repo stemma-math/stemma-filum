@@ -19,17 +19,17 @@
     <h1>New line</h1>
     <form class="stack" onsubmit={create}>
       <!-- svelte-ignore a11y_autofocus -->
-      <label>Title<input type="text" bind:value={title} required autofocus /></label>
-      <label>Description<textarea bind:value={description} rows="3"></textarea>
+      <label class="field"><span class="field__label">Title</span><input class="input" type="text" bind:value={title} required autofocus /></label>
+      <label class="field"><span class="field__label">Description</span><textarea class="input input--mono" bind:value={description} rows="3"></textarea>
         <span class="quiet">Optional. What this line is about, in a sentence or two.</span></label>
-      <fieldset>
+      <fieldset class="fieldset">
         <legend>Visibility</legend>
         <label class="choice"><input type="radio" bind:group={seen} value="me" /><span>Only me</span></label>
         <label class="choice"><input type="radio" bind:group={seen} value="group" /><span>Everybody in {app.group}</span></label>
       </fieldset>
       <div class="row__actions">
-        <button type="submit" class="primary">Create</button>
-        <button type="button" class="quiet-button" onclick={() => app.goTo("welcome")}>Cancel</button>
+        <button type="submit" class="button button--primary">Create</button>
+        <button type="button" class="button button--quiet" onclick={() => app.goTo("welcome")}>Cancel</button>
       </div>
     </form>
   </div>

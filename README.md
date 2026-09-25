@@ -91,8 +91,18 @@ STEMMA_HOME="$PWD/.test-state/client" just app-dev
 (`stemma-identity`), which the server embeds, and an npm package
 (`@stemma-math/identity`), which the desktop frontend imports:
 
-- `tokens.css` defines every colour, face, type step and spacing as custom
-  properties. Neither stylesheet defines tokens of its own.
+- `tokens.json` holds every colour, face, type step, spacing, radius and
+  control density in the Design Tokens Community Group format. Style
+  Dictionary generates `tokens.css` (custom properties) and `tokens.typ`
+  (colours and faces for Typst) from it: run `npm run build` in `identity/`
+  after editing it; `just check` fails while they are out of date. Neither
+  stylesheet defines tokens of its own.
+- `components.css` holds the shared components as classes over native HTML,
+  in cascade layers so each surface's own rules win: `.button` (with
+  `--primary`, `--quiet` and `--link`), `.field`, `.input`, `.choice`,
+  `.fieldset`, `.menu`, `.problem`, `.label` and the mark. Controls are
+  comfortable by default and compact inside `[data-density="compact"]`, as the
+  desktop window is.
 - `fonts.css` and `fonts/` carry Libertinus Serif, Archivo, Archivo Narrow and
   Iosevka, subset to Latin, each beside its SIL Open Font License. The server
   serves them from its own origin, so no page sends a reader to a font host.

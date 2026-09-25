@@ -50,7 +50,7 @@
   {#if menuOpen}
     <div bind:this={menu} class="menu" role="menu">
       {#each app.groups as group (group)}
-        <button role="menuitem" class:here={group === app.group} onclick={() => choose(group)}>{group}</button>
+        <button class="menu__item" role="menuitem" aria-current={group === app.group} onclick={() => choose(group)}>{group}</button>
       {:else}
         <p class="rail__empty">No groups on this machine.</p>
       {/each}

@@ -8,7 +8,7 @@
   <p class="welcome__group">{app.group ?? "No group"}</p>
   {#if app.group}
     <p class="quiet">Choose a line on the left, or start one.</p>
-    <button class="primary" onclick={() => app.goTo("new-line")}>New line</button>
+    <button class="button button--primary" onclick={() => app.goTo("new-line")}>New line</button>
   {:else}
     <p class="quiet">Sync this machine to bring your groups here.</p>
   {/if}

@@ -66,9 +66,9 @@
     <h1>Type this code</h1>
     <p class="code">{beginning.code}</p>
     <p class="quiet">at {beginning.url}</p>
-    <button onclick={() => api.openLink(beginning!.url_complete).catch(() => {})}>Open it in the browser</button>
+    <button class="button" onclick={() => api.openLink(beginning!.url_complete).catch(() => {})}>Open it in the browser</button>
     <p class="quiet">Waiting for approval in your browser...</p>
-    <button class="quiet-button" onclick={() => restart()}>Use a different server</button>
+    <button class="button button--quiet" onclick={() => restart()}>Use a different server</button>
   {:else}
     <span class="entrance-kicker">Desktop workspace</span>
     <h1>Connect this machine</h1>
@@ -76,8 +76,8 @@
     {#if problem}<p class="problem">{problem}</p>{/if}
     <form onsubmit={begin}>
       <!-- svelte-ignore a11y_autofocus -->
-      <input type="text" bind:value={server} placeholder="stemma.example.org" aria-label="Server address" autofocus />
-      <button type="submit">Continue</button>
+      <input class="input" type="text" bind:value={server} placeholder="stemma.example.org" aria-label="Server address" autofocus />
+      <button class="button" type="submit">Continue</button>
     </form>
   {/if}
 </Entrance>

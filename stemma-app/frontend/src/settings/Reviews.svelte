@@ -70,7 +70,7 @@
           <p class="row__name">{one.line}</p>
           <p class="quiet">{one.task} · {one.agent} · {one.vendor} {one.model}</p>
         </div>
-        <div class="row__actions"><button onclick={() => read(one.proposal)}>Open</button></div>
+        <div class="row__actions"><button class="button" onclick={() => read(one.proposal)}>Open</button></div>
       </div>
     {:else}
       <p class="quiet">There are no proposals awaiting your review.</p>
@@ -105,14 +105,14 @@
     </ul>
     {#if review.state === "awaiting_review"}
       <div class="row__actions">
-        <button onclick={() => decide(review.proposal, "reject")}>Reject</button>
-        <button onclick={() => decide(review.proposal, "ask_again")}>Ask again</button>
-        <button class="primary" onclick={() => decide(review.proposal, "accept")}>Accept</button>
+        <button class="button" onclick={() => decide(review.proposal, "reject")}>Reject</button>
+        <button class="button" onclick={() => decide(review.proposal, "ask_again")}>Ask again</button>
+        <button class="button button--primary" onclick={() => decide(review.proposal, "accept")}>Accept</button>
       </div>
       <p class="quiet">Accepting records you as the reviewer and preserves the model information.</p>
     {:else}
       <p class="quiet">This proposal was {review.state}.</p>
-      <button onclick={() => write(review.proposal)}>Apply</button>
+      <button class="button" onclick={() => write(review.proposal)}>Apply</button>
     {/if}
   {/if}
 </section>

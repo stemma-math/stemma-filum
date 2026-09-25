@@ -28,7 +28,7 @@
 </script>
 
 <h2>This machine</h2>
-<div class="field">
+<div class="setting">
   {#if problem}
     {problem}
   {:else if machine}
@@ -41,17 +41,17 @@
     Loading...
   {/if}
 </div>
-<section class="field">
+<section class="setting">
   <p class="label">Command line</p>
   <p class="quiet">Install the bundled <code>stemma</code> command to manage this workspace from a terminal.</p>
-  <div class="row__actions"><button onclick={() => run(api.installCli)}>Install</button></div>
+  <div class="row__actions"><button class="button" onclick={() => run(api.installCli)}>Install</button></div>
 </section>
-<section class="field">
+<section class="setting">
   <p class="label">Background service</p>
   <p class="quiet">The daemon accepts jobs while this machine is running, without the application open.</p>
-  <div class="row__actions"><button onclick={() => run(api.daemonInstall)}>Install the daemon</button></div>
+  <div class="row__actions"><button class="button" onclick={() => run(api.daemonInstall)}>Install the daemon</button></div>
 </section>
-<section class="field">
+<section class="setting">
   <p class="label">Run jobs for groups</p>
   <form class="stack" onsubmit={offer}>
     <div>
@@ -61,10 +61,10 @@
         <p class="quiet">No groups are available on this machine.</p>
       {/each}
     </div>
-    <div class="row__actions"><button type="submit">Save</button></div>
+    <div class="row__actions"><button class="button" type="submit">Save</button></div>
   </form>
 </section>
-<section class="field">
+<section class="setting">
   <p class="label">Jobs</p>
   {#if machine}
     <JobList jobs={machine.jobs} empty="No jobs have been assigned to this machine." />

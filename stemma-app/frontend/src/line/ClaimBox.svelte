@@ -15,11 +15,11 @@
         <span class="quiet">expires in {Math.max(1, Math.ceil(claim.left / 60))} min</span>
       {/if}
       {#if claim.standing === "open"}
-        <button onclick={() => line.takeClaim()}>Claim</button>
+        <button class="button" onclick={() => line.takeClaim()}>Claim</button>
       {:else if line.writing}
-        <button onclick={() => line.release()}>Release</button>
+        <button class="button" onclick={() => line.release()}>Release</button>
       {:else}
-        <button disabled={claim.asked} onclick={() => line.requestClaim()}>{claim.asked ? "Requested" : "Request"}</button>
+        <button class="button" disabled={claim.asked} onclick={() => line.requestClaim()}>{claim.asked ? "Requested" : "Request"}</button>
       {/if}
     </div>
   {:else}

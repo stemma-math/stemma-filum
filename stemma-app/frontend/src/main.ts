@@ -1,5 +1,6 @@
 import "@stemma-math/identity/fonts.css";
 import "@stemma-math/identity/tokens.css";
+import "@stemma-math/identity/components.css";
 import "./app.css";
 import { mount } from "svelte";
 import App from "./App.svelte";

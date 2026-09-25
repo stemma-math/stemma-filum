@@ -38,7 +38,7 @@
 <div class="blocks">
   <div class="blocks__head">
     <input
-      class="blocks__title"
+      class="input blocks__title"
       value={document.title}
       placeholder="Title"
       aria-label="Title"
@@ -49,7 +49,7 @@
       }}
     />
     <textarea
-      class="blocks__description"
+      class="input blocks__description"
       rows="2"
       placeholder="Description (optional)"
       aria-label="Description"
@@ -91,7 +91,7 @@
     {/each}
     <div class="blocks__end">
       <AddBlock {line} at={document.blocks.length} />
-      <button type="button" class="quiet-button" disabled={!line.offers.length} onclick={() => onask(["explore"])}>
+      <button type="button" class="button button--quiet" disabled={!line.offers.length} onclick={() => onask(["explore"])}>
         ✦ Explore next steps
       </button>
     </div>

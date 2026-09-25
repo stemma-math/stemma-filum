@@ -21,7 +21,7 @@
   <div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
     <header class="panel__head">
       <strong>Settings</strong>
-      <button class="quiet-button" aria-label="Close settings" onclick={close}>Done</button>
+      <button class="button button--quiet" aria-label="Close settings" onclick={close}>Done</button>
     </header>
     <div class="panel__body">
       <nav class="panel__nav" aria-label="Settings">

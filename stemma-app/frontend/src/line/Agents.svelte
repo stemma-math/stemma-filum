@@ -14,7 +14,7 @@
 
 {#if line.agents.length}
   <label class="field">
-    <select bind:value={line.agent} aria-label="Agent">
+    <select class="input" bind:value={line.agent} aria-label="Agent">
       {#each line.agents as agent (agent.value)}
         <option value={agent.value} disabled={!!agent.reason}>
           {agent.label}{agent.reason ? ` · ${agent.reason}` : ""}
@@ -26,12 +26,12 @@
   {#if chosen.length}
     <p class="quiet">
       {chosen.length === 1 ? "1 block selected" : `${chosen.length} blocks selected`}
-      · <button type="button" class="link-button" onclick={() => line.selected.clear()}>Clear</button>
+      · <button type="button" class="button button--link" onclick={() => line.selected.clear()}>Clear</button>
     </p>
     {#if offered.length}
       <div class="agent-tasks">
         {#each offered as task (task.verb)}
-          <button type="button" onclick={() => onask(task.tasks)}>{task.label}</button>
+          <button class="button" type="button" onclick={() => onask(task.tasks)}>{task.label}</button>
         {/each}
       </div>
       {#if chosen.length > 1}
