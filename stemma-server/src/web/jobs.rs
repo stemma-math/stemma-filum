@@ -589,7 +589,7 @@ pub fn launcher(
 
                         (choices("anyone", "Whoever is free", None, &free(offers)))
 
-                        button class="button" type="submit" { "Ask" }
+                        button class="button button--primary" type="submit" { "Ask" }
                     }
                 }
             }

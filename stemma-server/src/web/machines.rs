@@ -394,7 +394,7 @@ fn body(
                                 input type="hidden" name="group" value=(group.slug());
                                 input type="hidden" name="serve"
                                       value=@if *serving { "no" } @else { "yes" };
-                                button class="button button--quiet" type="submit" {
+                                button class="button" type="submit" {
                                     @match serving {
                                         true => "Stop running jobs",
                                         false => "Run jobs",
@@ -416,7 +416,7 @@ fn body(
             }
             form method="post" action={ "/machines/" (machine.id) "/retire" } {
                 (signature(signed))
-                button class="button button--quiet" type="submit" { "Revoke access" }
+                button class="button" type="submit" { "Revoke access" }
             }
         }
     }
@@ -480,7 +480,7 @@ fn job_list(signed: &SignedIn, machine: &Machine, ran: &[jobs::Job], owed: usize
                                      action={ "/machines/" (machine.id) "/jobs/"
                                               (job.id) "/clear" } {
                                     (signature(signed))
-                                    button class="button button--quiet" type="submit" {
+                                    button class="button" type="submit" {
                                         "Mark as resolved"
                                     }
                                 }

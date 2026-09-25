@@ -428,7 +428,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                              action={ "/g/" (group.slug()) "/private/" (digest.name)
                                       "/delete" } {
                             (signature(signed))
-                            button class="button button--quiet" type="submit" {
+                            button class="button" type="submit" {
                                 "Delete this line"
                             }
                         }

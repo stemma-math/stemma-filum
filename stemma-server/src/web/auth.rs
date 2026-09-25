@@ -296,18 +296,18 @@ fn login_body(next: Option<&str>, registration_open: bool, problem: Option<&str>
                 }
 
                 div class="field" {
-                    label for="login" { "Name or email address" }
-                    input type="text" id="login" name="login" autocomplete="username"
+                    label class="field__label" for="login" { "Name or email address" }
+                    input class="input" type="text" id="login" name="login" autocomplete="username"
                           autofocus required;
                 }
 
                 div class="field" {
-                    label for="password" { "Password" }
-                    input type="password" id="password" name="password"
+                    label class="field__label" for="password" { "Password" }
+                    input class="input" type="password" id="password" name="password"
                           autocomplete="current-password" required;
                 }
 
-                button class="button" type="submit" { "Log in" }
+                button class="button button--primary" type="submit" { "Log in" }
             }
 
             p class="quiet" {
@@ -340,14 +340,14 @@ fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup 
 
             form method="post" action="/register" {
                 div class="field" {
-                    label for="display_name" { "Your name" }
-                    input type="text" id="display_name" name="display_name"
+                    label class="field__label" for="display_name" { "Your name" }
+                    input class="input" type="text" id="display_name" name="display_name"
                           value=(value(|form| &form.display_name)) autocomplete="name";
                 }
 
                 div class="field" {
-                    label for="slug" { "Short name" }
-                    input type="text" id="slug" name="slug" value=(value(|form| &form.slug))
+                    label class="field__label" for="slug" { "Short name" }
+                    input class="input input--mono" type="text" id="slug" name="slug" value=(value(|form| &form.slug))
                           autocomplete="username" required;
                     span class="field__hint" {
                         "Use lowercase letters, numbers and hyphens."
@@ -355,21 +355,21 @@ fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup 
                 }
 
                 div class="field" {
-                    label for="email" { "Email address" }
-                    input type="email" id="email" name="email" value=(value(|form| &form.email))
+                    label class="field__label" for="email" { "Email address" }
+                    input class="input" type="email" id="email" name="email" value=(value(|form| &form.email))
                           autocomplete="email" required;
                 }
 
                 div class="field" {
-                    label for="password" { "Password" }
-                    input type="password" id="password" name="password"
+                    label class="field__label" for="password" { "Password" }
+                    input class="input" type="password" id="password" name="password"
                           autocomplete="new-password" required;
                     span class="field__hint" {
                         "Use at least " (password::MINIMUM_LENGTH) " characters."
                     }
                 }
 
-                button class="button" type="submit" { "Create the account" }
+                button class="button button--primary" type="submit" { "Create the account" }
             }
         }
     }

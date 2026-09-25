@@ -1,7 +1,8 @@
 /* The web interface's stylesheet.
  *
- * Served after the identity's `fonts.css` and `tokens.css`, which define
- * every custom property used here.
+ * Served after the identity's `fonts.css`, `tokens.css` and
+ * `components.css`, which define every custom property used here and the
+ * shared components: buttons, fields, choices, menus and problems.
  */
 
 *,
@@ -60,12 +61,6 @@ a:hover {
     text-decoration-thickness: 2px;
 }
 
-/* Focus is never removed and never a glow. */
-:focus-visible {
-    outline: 2px solid var(--ditto);
-    outline-offset: 2px;
-}
-
 code,
 .mono,
 .identifier {
@@ -77,23 +72,6 @@ code,
     font-family: var(--serif);
     font-size: var(--step-4);
     line-height: 1.62;
-}
-
-/* An eyebrow labels a block. It is never a heading and never a link. */
-.label {
-    font-size: var(--step-1);
-    line-height: 1.2;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    margin: 0;
-}
-
-.quiet {
-    color: var(--ink-3);
-}
-
-.numeric {
-    font-variant-numeric: tabular-nums;
 }
 
 /* ── The page ──────────────────────────────────────────────────────────── */
@@ -260,58 +238,9 @@ form {
     gap: var(--space-4);
 }
 
-.field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-}
-
-.field__hint {
-    font-size: var(--step-2);
-    color: var(--ink-3);
-}
-
-input[type="text"],
-input[type="email"],
-input[type="password"],
-textarea,
-select {
-    font-family: inherit;
-    font-size: var(--step-3);
-    color: var(--ink);
-    border: 1px solid var(--rule);
-    padding: var(--space-2) var(--space-3);
-    width: 100%;
-}
-
-input[name="code"],
-input[name="slug"] {
-    font-family: var(--mono);
-}
-
-textarea {
-    resize: vertical;
-}
-
-.button {
-    font-family: var(--grotesk);
-    font-size: var(--step-3);
-    font-weight: 500;
-    color: var(--ink);
-    border: 1px solid var(--ink);
-    padding: var(--space-2) var(--space-4);
-    cursor: pointer;
-    text-decoration: none;
+/* A form's action sits under its fields, as wide as its words. */
+form > .button {
     align-self: flex-start;
-}
-
-.button:hover {
-    background: var(--paper-sunk);
-}
-
-.button--quiet {
-    border-color: var(--rule);
-    color: var(--ink-2);
 }
 
 .actions {
@@ -323,15 +252,6 @@ textarea {
 
 .actions form {
     display: inline;
-}
-
-/* A problem with what was typed. No colour: red means a negation was
- * proved, and nothing here is a mathematical result. */
-.problem {
-    background: var(--paper-sunk);
-    border-left: 2px solid var(--ink);
-    padding: var(--space-3) var(--space-4);
-    font-size: var(--step-3);
 }
 
 .done {
@@ -705,34 +625,6 @@ th.numeric {
     }
 }
 
-/* A set of choices where exactly one holds: the question is the legend,
- * and each answer is a whole line, so the words are the target and not
- * the eight pixels of the control. */
-
-fieldset {
-    border: 1px solid var(--rule);
-    padding: var(--space-3) var(--space-4) var(--space-4);
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-}
-
-legend {
-    padding: 0 var(--space-2);
-}
-
-.choice {
-    display: flex;
-    align-items: baseline;
-    gap: var(--space-3);
-    font-size: var(--step-3);
-}
-
-.choice input {
-    accent-color: var(--ditto);
-}
-
 /* ── What changed ──────────────────────────────────────────────────────
  *
  * A proposal arrives whole and is read by what moved. Added and taken
@@ -844,12 +736,6 @@ legend {
  * the document grammar above, which they restyle for the shared shell.
  */
 
-*,
-*::before,
-*::after {
-    border-radius: 0;
-}
-
 body {
     min-height: 100vh;
     background: var(--paper);
@@ -867,55 +753,6 @@ h3 {
     letter-spacing: -0.025em;
 }
 
-.button,
-input[type="text"],
-input[type="email"],
-input[type="password"],
-textarea,
-select {
-    border-radius: 9px;
-}
-
-.button {
-    min-height: 38px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-color: var(--rule);
-    background: var(--paper-raise);
-    box-shadow: 0 1px 2px rgb(15 35 60 / 5%);
-}
-
-.button:not(.button--quiet) {
-    color: #fff;
-    border-color: var(--ditto);
-    background: var(--ditto);
-}
-
-.button:not(.button--quiet):hover {
-    background: #205fcf;
-}
-
-input[type="text"],
-input[type="email"],
-input[type="password"],
-textarea,
-select {
-    min-height: 42px;
-    background: #f8fafc;
-    border-color: #cbd7e5;
-    transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
-}
-
-input:focus,
-textarea:focus,
-select:focus {
-    background: #fff;
-    border-color: var(--blue);
-    box-shadow: var(--focus-ring);
-}
-
-.label,
 .topbar__eyebrow,
 .sidebar__label {
     font-family: var(--grotesk);

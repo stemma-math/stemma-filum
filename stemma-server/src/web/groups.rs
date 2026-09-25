@@ -139,14 +139,14 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
                 (signature(signed))
 
                 div class="field" {
-                    label for="name" { "Name" }
-                    input type="text" id="name" name="name" value=(value(|asked| &asked.name))
+                    label class="field__label" for="name" { "Name" }
+                    input class="input" type="text" id="name" name="name" value=(value(|asked| &asked.name))
                           required;
                 }
 
                 div class="field" {
-                    label for="slug" { "Short name" }
-                    input type="text" id="slug" name="slug" value=(value(|asked| &asked.slug))
+                    label class="field__label" for="slug" { "Short name" }
+                    input class="input input--mono" type="text" id="slug" name="slug" value=(value(|asked| &asked.slug))
                           required;
                     span class="field__hint" {
                         "Use lowercase letters, numbers and hyphens."
@@ -154,11 +154,11 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
                 }
 
                 div class="field" {
-                    label for="reason" { "Purpose" }
-                    textarea id="reason" name="reason" required { (value(|asked| &asked.reason)) }
+                    label class="field__label" for="reason" { "Purpose" }
+                    textarea class="input" id="reason" name="reason" required { (value(|asked| &asked.reason)) }
                 }
 
-                button class="button" type="submit" { "Send the request" }
+                button class="button button--primary" type="submit" { "Send the request" }
             }
         }
     }
@@ -640,7 +640,7 @@ fn invitations_block(
                                  action={ "/g/" (group.slug()) "/invitations/"
                                           (invitation.id) "/withdraw" } {
                                 (signature(signed))
-                                button class="button button--quiet" type="submit" {
+                                button class="button" type="submit" {
                                     "Withdraw"
                                 }
                             }
@@ -653,16 +653,16 @@ fn invitations_block(
                 (signature(signed))
 
                 div class="field" {
-                    label for="email" { "Email address (optional)" }
-                    input type="email" id="email" name="email";
+                    label class="field__label" for="email" { "Email address (optional)" }
+                    input class="input" type="email" id="email" name="email";
                     span class="field__hint" {
                         "Used to identify the invitation and send the link when email is configured."
                     }
                 }
 
                 div class="field" {
-                    label for="role" { "Role" }
-                    select id="role" name="role" {
+                    label class="field__label" for="role" { "Role" }
+                    select class="input" id="role" name="role" {
                         option value="member" { "Member: reads and writes mathematics" }
                         @if role.is_at_least(GroupRole::Admin) {
                             option value="admin" { "Admin: invites members and manages the group" }
@@ -673,7 +673,7 @@ fn invitations_block(
                     }
                 }
 
-                button class="button" type="submit" { "Create invitation" }
+                button class="button button--primary" type="submit" { "Create invitation" }
             }
         }
     }

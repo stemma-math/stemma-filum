@@ -288,7 +288,7 @@ fn body(
                     }
                     form method="post" action={ "/invite/" (secret) "/join" } {
                         (signature(signed))
-                        button class="button" type="submit" { "Join the group" }
+                        button class="button button--primary" type="submit" { "Join the group" }
                     }
                 }
                 None => (registration_form(invitation, secret)),
@@ -306,29 +306,29 @@ fn registration_form(invitation: &Invitation, secret: &str) -> Markup {
                     p class="quiet" { "Create an account for " (email) " to accept the invitation." }
 
                     div class="field" {
-                        label for="display_name" { "Your name" }
-                        input type="text" id="display_name" name="display_name"
+                        label class="field__label" for="display_name" { "Your name" }
+                        input class="input" type="text" id="display_name" name="display_name"
                               autocomplete="name";
                     }
 
                     div class="field" {
-                        label for="slug" { "Short name" }
-                        input type="text" id="slug" name="slug" autocomplete="username" required;
+                        label class="field__label" for="slug" { "Short name" }
+                        input class="input input--mono" type="text" id="slug" name="slug" autocomplete="username" required;
                         span class="field__hint" {
                             "Use lowercase letters, numbers and hyphens."
                         }
                     }
 
                     div class="field" {
-                        label for="password" { "Password" }
-                        input type="password" id="password" name="password"
+                        label class="field__label" for="password" { "Password" }
+                        input class="input" type="password" id="password" name="password"
                               autocomplete="new-password" required;
                         span class="field__hint" {
                             "At least " (password::MINIMUM_LENGTH) " characters."
                         }
                     }
 
-                    button class="button" type="submit" { "Create the account and join" }
+                    button class="button button--primary" type="submit" { "Create the account and join" }
                 }
             }
             None => {
@@ -337,7 +337,7 @@ fn registration_form(invitation: &Invitation, secret: &str) -> Markup {
                     "to create a new account."
                 }
                 p {
-                    a class="button" href={ "/login?next=/invite/" (secret) } { "Log in" }
+                    a class="button button--primary" href={ "/login?next=/invite/" (secret) } { "Log in" }
                 }
             }
         }

@@ -667,29 +667,29 @@ fn body(
                 span class="register__aside" { (format!("{:?}", stored.bridge.correspondence)) } } } }
         }
         details { summary { "Admit a verified definition" } form method="post" action={ "/g/" (slug) "/vault/entries" } {
-            (signature(signed)) input name="siglum" placeholder="def:topological-group" required; input name="name" placeholder="Topological group" required;
-            textarea name="prose" placeholder="Exact prose" required {} textarea name="formalization" placeholder="Exact compiled Lean declaration" required {}
-            button class="button" { "Admit definition" }
+            (signature(signed)) input class="input" name="siglum" placeholder="def:topological-group" required; input class="input" name="name" placeholder="Topological group" required;
+            textarea class="input" name="prose" placeholder="Exact prose" required {} textarea class="input" name="formalization" placeholder="Exact compiled Lean declaration" required {}
+            button class="button button--primary" { "Admit definition" }
         } }
         details { summary { "Admit or derive a bridge" } form method="post" action={ "/g/" (slug) "/vault/bridges" } {
-            (signature(signed)) input name="left" placeholder="vlt:…" required; input name="right" placeholder="vlt:…" required;
-            select name="kind" { option value="predicate" { "predicate" } option value="structure" { "structure" } }
-            textarea name="theorem" placeholder="Compiled unconditional Lean theorem" required {}
-            input name="first_parent" placeholder="First audited parent (for derived bridge)"; input name="second_parent" placeholder="Second audited parent";
-            button class="button" { "Admit bridge" }
+            (signature(signed)) input class="input" name="left" placeholder="vlt:…" required; input class="input" name="right" placeholder="vlt:…" required;
+            select class="input" name="kind" { option value="predicate" { "predicate" } option value="structure" { "structure" } }
+            textarea class="input" name="theorem" placeholder="Compiled unconditional Lean theorem" required {}
+            input class="input" name="first_parent" placeholder="First audited parent (for derived bridge)"; input class="input" name="second_parent" placeholder="Second audited parent";
+            button class="button button--primary" { "Admit bridge" }
         } }
         details { summary { "Record an audit" } form method="post" action={ "/g/" (slug) "/vault/audits" } {
-            (signature(signed)) select name="target_kind" { option value="entry" { "definition" } option value="bridge" { "bridge" } }
-            input name="target" placeholder="vlt:… or brg:…" required; select name="action" { option value="attest" { "attest" } option value="withdraw" { "withdraw" } }
-            textarea name="note" placeholder="What was checked, or why the guarantee is withdrawn" required {} button class="button" { "Record signed audit" }
+            (signature(signed)) select class="input" name="target_kind" { option value="entry" { "definition" } option value="bridge" { "bridge" } }
+            input class="input" name="target" placeholder="vlt:… or brg:…" required; select class="input" name="action" { option value="attest" { "attest" } option value="withdraw" { "withdraw" } }
+            textarea class="input" name="note" placeholder="What was checked, or why the guarantee is withdrawn" required {} button class="button button--primary" { "Record signed audit" }
         } }
         @if bridges.iter().any(|stored| stored.bridge.correspondence == Correspondence::AuditWithdrawn) {
             details { summary { "Assign an affected downstream decision" }
                 form method="post" action={ "/g/" (slug) "/vault/obligations" } {
-                    (signature(signed)) input name="bridge" placeholder="Withdrawn brg:…" required;
-                    input name="statement" placeholder="thm:affected" required;
-                    input name="assigned_to" placeholder="usr:author" required;
-                    button class="button" { "Assign decision" }
+                    (signature(signed)) input class="input" name="bridge" placeholder="Withdrawn brg:…" required;
+                    input class="input" name="statement" placeholder="thm:affected" required;
+                    input class="input" name="assigned_to" placeholder="usr:author" required;
+                    button class="button button--primary" { "Assign decision" }
                 }
             }
         }

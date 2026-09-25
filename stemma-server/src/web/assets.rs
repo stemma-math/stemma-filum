@@ -48,11 +48,13 @@ const JAVASCRIPT: &str = "text/javascript; charset=utf-8";
 const SVG: &str = "image/svg+xml; charset=utf-8";
 const WOFF2: &str = "font/woff2";
 
-/// The identity's faces and tokens, then the web interface's own rules.
+/// The identity's faces, tokens and components, then the web interface's own
+/// rules.
 static STYLESHEET: LazyLock<Asset> = LazyLock::new(|| {
     let joined = [
         stemma_identity::FONTS_CSS,
         stemma_identity::TOKENS_CSS,
+        stemma_identity::COMPONENTS_CSS,
         include_str!("../../assets/stemma.css"),
     ]
     .join("\n");

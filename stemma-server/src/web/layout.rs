@@ -200,7 +200,7 @@ fn masthead(chrome: &Chrome) -> Markup {
                             }
                             span class="quiet identifier" { (user.id.to_string()) }
                             form method="post" action="/logout" {
-                                button class="button button--quiet" type="submit" { "Log out" }
+                                button class="button" type="submit" { "Log out" }
                             }
                         }
                         None if chrome.offer_ways_in => {
@@ -318,7 +318,7 @@ fn topbar(chrome: &Chrome) -> Markup {
                     }
                 }
                 form method="post" action="/logout" {
-                    button class="button button--quiet" type="submit" { "Log out" }
+                    button class="button" type="submit" { "Log out" }
                 }
             }
         }

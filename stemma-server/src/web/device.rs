@@ -239,12 +239,12 @@ fn ask(signed: &SignedIn, code: &str, problem: Option<&str>) -> Markup {
 
             form method="get" action="/device" {
                 div class="field" {
-                    label for="code" { "The code on the machine" }
-                    input type="text" id="code" name="code" value=(code)
+                    label class="field__label" for="code" { "The code on the machine" }
+                    input class="input input--mono" type="text" id="code" name="code" value=(code)
                           autocomplete="off" autocapitalize="characters" autofocus required;
                 }
 
-                button class="button" type="submit" { "Continue" }
+                button class="button button--primary" type="submit" { "Continue" }
             }
 
             p class="quiet identifier" { (signed.user.id.to_string()) }
@@ -275,10 +275,10 @@ fn confirm(signed: &SignedIn, grant: &Grant, code: &str) -> Markup {
                 input type="hidden" name="code" value=(code);
 
                 div class="actions" {
-                    button class="button" type="submit" name="approve" value="yes" {
+                    button class="button button--primary" type="submit" name="approve" value="yes" {
                         "Approve"
                     }
-                    button class="button button--quiet" type="submit" { "Deny" }
+                    button class="button" type="submit" { "Deny" }
                 }
             }
         }

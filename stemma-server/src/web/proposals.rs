@@ -133,13 +133,13 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
         @if proposal.state == "awaiting_review" {
             form method="post" action={ "/proposals/" (proposal.id) "/decide" } {
                 (signature(signed))
-                button class="button button--quiet" name="decision" value="reject" {
+                button class="button" name="decision" value="reject" {
                     "Reject"
                 }
-                button class="button button--quiet" name="decision" value="ask_again" {
+                button class="button" name="decision" value="ask_again" {
                     "Ask again"
                 }
-                button class="button" name="decision" value="accept" { "Accept" }
+                button class="button button--primary" name="decision" value="accept" { "Accept" }
             }
             p class="quiet" {
                 "Accepting records you as the reviewer and preserves the model information. "

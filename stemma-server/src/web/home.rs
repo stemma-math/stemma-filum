@@ -245,13 +245,13 @@ fn decisions(signed: &SignedIn, obligations: &[crate::store::vault::Obligation])
                         (super::layout::signature(signed))
                         p { "The audit of bridge " code { (obligation.bridge) } " was withdrawn; "
                             code { (obligation.statement) } " depends on it." }
-                        select name="decision" {
+                        select class="input" name="decision" {
                             option value="stands" { "It stands as it is" }
                             option value="rewrite" { "I will rewrite it" }
                             option value="waiting_for_audit" { "I am waiting for another audit" }
                         }
-                        input name="note" placeholder="Record why" required;
-                        button class="button" { "Record signed decision" }
+                        input class="input" name="note" placeholder="Record why" required;
+                        button class="button button--primary" { "Record signed decision" }
                     }
                 }
             }

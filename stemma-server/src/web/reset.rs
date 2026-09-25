@@ -120,11 +120,11 @@ fn ask(sends_mail: bool, sent_to: Option<&str>) -> Markup {
 
                 form method="post" action="/forgotten" class="stack" {
                     div class="field" {
-                        label for="email" { "Email address" }
-                        input type="email" id="email" name="email" autofocus required;
+                        label class="field__label" for="email" { "Email address" }
+                        input class="input" type="email" id="email" name="email" autofocus required;
                     }
 
-                    button class="button" type="submit" { "Send me a link" }
+                    button class="button button--primary" type="submit" { "Send me a link" }
                 }
             }
 
@@ -222,15 +222,15 @@ fn body(secret: &str, problem: Option<&str>) -> Markup {
 
             form method="post" action={ "/reset/" (secret) } {
                 div class="field" {
-                    label for="password" { "New password" }
-                    input type="password" id="password" name="password"
+                    label class="field__label" for="password" { "New password" }
+                    input class="input" type="password" id="password" name="password"
                           autocomplete="new-password" autofocus required;
                     span class="field__hint" {
                         "At least " (password::MINIMUM_LENGTH) " characters."
                     }
                 }
 
-                button class="button" type="submit" { "Set it" }
+                button class="button button--primary" type="submit" { "Set it" }
             }
 
             p class="quiet" {
