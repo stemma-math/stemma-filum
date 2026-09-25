@@ -4,7 +4,8 @@ mod support;
 
 use axum::http::StatusCode;
 use serde_json::Value;
-use stemma_core::id::Slug;
+use stemma_core::document::{Block, Document};
+use stemma_core::id::{BlockId, Slug};
 use stemma_core::job::{Choice, Task};
 use stemma_core::line::Name;
 use stemma_core::proposal::Offer;
@@ -15,17 +16,32 @@ use support::{Harness, Page};
 /// The password every account in these tests uses.
 const PASSWORD: &str = "a long enough password";
 
-/// What a line says before the agent touches it.
-const STANDS: &str = "= Quotient groups\n\n\
-    #question[Does it split?]\n\n\
-    #theorem(id: \"thm:main\", central: true)[Every finite group is finite.]\n\n\
-    #proof(of: \"thm:main\")[It is.]\n";
+/// What a line says before the agent touches it. Its blocks have fixed
+/// identifiers, so the agent's version is the same blocks changed.
+fn stands() -> String {
+    let mut theorem = Block::theorem(
+        "Theorem",
+        Some("thm:main".parse().unwrap()),
+        "Every finite group is finite.",
+    )
+    .central(true);
+    let id: BlockId = format!("blk:{:026}", 1).parse().unwrap();
+    theorem.statement_mut().unwrap().id = id;
+    let Block::Proof(mut proof) = Block::proof(id, "It is.") else {
+        unreachable!()
+    };
+    proof.id = format!("blk:{:026}", 2).parse().unwrap();
+
+    Document::new("Quotient groups", Some("Does it split?".to_owned()))
+        .with(theorem)
+        .with(Block::Proof(proof))
+        .to_text()
+}
 
 /// What the agent offers instead.
-const OFFERED: &str = "= Quotient groups\n\n\
-    #question[Does it split?]\n\n\
-    #theorem(id: \"thm:main\", central: true)[Every finite group is finite.]\n\n\
-    #proof(of: \"thm:main\")[By induction on the order of the group.]\n";
+fn proposed() -> String {
+    stands().replace("It is.", "By induction on the order of the group.")
+}
 
 /// What an answer said, as JSON.
 fn parsed(page: &Page) -> Value {
@@ -77,7 +93,7 @@ async fn awaiting(harness: &mut Harness) -> String {
             stemma_server::git::start_line(
                 &mine,
                 &Name::parse("quotient-groups").unwrap(),
-                STANDS,
+                &stands(),
                 &stemma_server::git::Author {
                     name: "Ana",
                     email: "ana@example.org",
@@ -106,7 +122,7 @@ async fn awaiting(harness: &mut Harness) -> String {
                 connection,
                 &job,
                 &Offer {
-                    source: OFFERED.to_owned(),
+                    source: proposed(),
                     lean_source: None,
                     vendor: "Anthropic".to_owned(),
                     model: "claude-opus-4".to_owned(),
@@ -150,7 +166,7 @@ async fn the_review_screen_shows_what_moved_and_what_may_not_be_touched() {
 async fn a_proposal_that_changes_what_the_line_rests_on_says_so() {
     let mut harness = Harness::new();
     let proposal = awaiting(&mut harness).await;
-    let moved = OFFERED.replace("Every finite group is finite.", "Every group is finite.");
+    let moved = proposed().replace("Every finite group is finite.", "Every group is finite.");
 
     harness
         .instance
@@ -189,8 +205,8 @@ async fn a_machine_reads_and_decides_the_same_proposal() {
             .await,
     );
 
-    assert_eq!(offered["stands"].as_str(), Some(STANDS));
-    assert_eq!(offered["source"].as_str(), Some(OFFERED));
+    assert_eq!(offered["stands"].as_str(), Some(stands().as_str()));
+    assert_eq!(offered["source"].as_str(), Some(proposed().as_str()));
     assert_eq!(offered["model"].as_str(), Some("claude-opus-4"));
     assert!(
         offered["findings"]
@@ -219,7 +235,7 @@ async fn a_machine_reads_and_decides_the_same_proposal() {
             .await,
     );
 
-    assert_eq!(accepted["source"].as_str(), Some(OFFERED));
+    assert_eq!(accepted["source"].as_str(), Some(proposed().as_str()));
 }
 
 #[tokio::test]

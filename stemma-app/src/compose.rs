@@ -1,10 +1,17 @@
-//! Typesetting a line and laying out its descent.
+//! Typesetting a line.
+//!
+//! The line is rendered to Typst and compiled in memory; nothing is
+//! written next to it, because the document is built from the line and
+//! is not part of it. What Typst says is taken back to the block it is
+//! about, so the editor can show it where it was written.
 
 use std::path::Path;
 
 use serde::Serialize;
-use stemma_core::line::{Line, Siglum};
-use typst::diag::SourceDiagnostic;
+use stemma_core::document::Document;
+use stemma_core::id::BlockId;
+use stemma_core::render::{self, Rendered};
+use typst::diag::{Severity, SourceDiagnostic};
 use typst::syntax::Source;
 use typst_as_lib::{TypstAsLibError, TypstEngine, typst_kit_options::TypstKitFontOptions};
 use typst_library::layout::PagedDocument;
@@ -12,49 +19,42 @@ use typst_library::layout::PagedDocument;
 use crate::said;
 use crate::workspace::LineAt;
 
+/// What composing a line gave.
 #[derive(Serialize)]
 pub struct Preview {
-    svg: String,
-    diagnostics: Vec<String>,
+    /// The pages, when it compiled.
+    svg: Option<String>,
+    /// What Typst said, errors first.
+    diagnostics: Vec<Diagnostic>,
 }
 
-/// Typesets the editor's text, resolving imports relative to the line.
+/// One thing Typst said, placed where it was written.
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Diagnostic {
+    /// Whether it stopped the document from compiling.
+    error: bool,
+    /// The block it is about, when it is about one.
+    block: Option<BlockId>,
+    /// The line of that block's content, counting from one, when it is in it.
+    line: Option<usize>,
+    /// What Typst said, with its hints.
+    message: String,
+}
+
+/// Typesets the editor's line, resolving files relative to the line.
 #[tauri::command(async)]
-pub fn preview(path: String, source: String) -> Result<Preview, String> {
+pub fn preview(path: String, document: Document) -> Result<Preview, String> {
     let line = LineAt::admit(&path)?;
-    compose(line.directory(), source)
+    compose(line.directory(), &document)
 }
 
-/// The descent placement of the editor's text, or `null` when the source
-/// does not read as a line. The same placement the instance's pages draw.
-#[tauri::command(async)]
-pub fn descent(
-    source: String,
-    verified: Vec<String>,
-    bridges: Vec<Vec<String>>,
-) -> Result<serde_json::Value, String> {
-    let Ok(line) = Line::read(&source) else {
-        return Ok(serde_json::Value::Null);
-    };
-
-    let verified: Vec<Siglum> = verified.iter().filter_map(|at| at.parse().ok()).collect();
-    let spanned: Vec<(Siglum, Siglum)> = bridges
-        .iter()
-        .filter_map(|pair| match pair.as_slice() {
-            [left, right] => Some((left.parse().ok()?, right.parse().ok()?)),
-            _ => None,
-        })
-        .collect();
-
-    serde_json::to_value(stemma_core::descent::of(&line, &verified, &spanned)).map_err(said)
-}
-
-/// Typesets one source to SVG. The notation package is installed first
-/// (a no-op when it is already there) so that the import resolves.
-fn compose(root: &Path, source: String) -> Result<Preview, String> {
+/// Typesets one line to SVG. The notation package is installed first (a
+/// no-op when it is already there) so that the rendered import resolves.
+fn compose(root: &Path, document: &Document) -> Result<Preview, String> {
     stemma::notation::install().map_err(said)?;
 
-    let main = Source::detached(source);
+    let rendered = render::typst(document);
+    let main = Source::detached(rendered.source.clone());
     let engine = TypstEngine::builder()
         .main_file(main.clone())
         .with_file_system_resolver(root)
@@ -65,53 +65,64 @@ fn compose(root: &Path, source: String) -> Result<Preview, String> {
         )
         .build();
     let compiled = engine.compile();
-    let diagnostics = compiled
+    let mut diagnostics: Vec<Diagnostic> = compiled
         .warnings
         .iter()
-        .map(|warning| complaint(&main, warning))
+        .map(|warning| placed(&main, &rendered, warning))
         .collect();
-    let document: PagedDocument = compiled.output.map_err(|error| refused(&main, &error))?;
-    let svg = document
-        .pages
-        .iter()
-        .map(typst_svg::svg)
-        .collect::<Vec<_>>()
-        .join("\n");
+
+    let svg = match compiled.output {
+        Ok(pages) => {
+            let pages: PagedDocument = pages;
+            Some(
+                pages
+                    .pages
+                    .iter()
+                    .map(typst_svg::svg)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        }
+        Err(TypstAsLibError::TypstSource(errors)) => {
+            let mut errors: Vec<Diagnostic> = errors
+                .iter()
+                .map(|error| placed(&main, &rendered, error))
+                .collect();
+            errors.append(&mut diagnostics);
+            diagnostics = errors;
+            None
+        }
+        Err(other) => return Err(other.to_string()),
+    };
+
     Ok(Preview { svg, diagnostics })
 }
 
-/// A Typst diagnostic as `line L, column C: message` followed by its hints,
-/// instead of a byte span.
-fn complaint(main: &Source, diagnostic: &SourceDiagnostic) -> String {
-    let at = main
-        .range(diagnostic.span)
-        .and_then(|range| main.lines().byte_to_line_column(range.start))
-        .map(|(line, column)| format!("line {}, column {}: ", line + 1, column + 1))
-        .unwrap_or_default();
+/// A Typst diagnostic, taken back to the block and line it is about.
+fn placed(main: &Source, rendered: &Rendered, diagnostic: &SourceDiagnostic) -> Diagnostic {
     let hints: String = diagnostic
         .hints
         .iter()
         .map(|hint| format!("\n  {hint}"))
         .collect();
-
-    format!("{at}{}{hints}", diagnostic.message)
-}
-
-/// Why the document did not compile. When the notation import is missing
-/// that is said too, since "unknown variable: theorem" does not explain it.
-fn refused(main: &Source, error: &TypstAsLibError) -> String {
-    let said = match error {
-        TypstAsLibError::TypstSource(diagnostics) => diagnostics
-            .iter()
-            .map(|diagnostic| complaint(main, diagnostic))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        other => other.to_string(),
+    let at = main.range(diagnostic.span).map(|range| range.start);
+    let block = at.and_then(|at| rendered.block_at(at));
+    let line = match (at, block) {
+        (Some(at), Some(block)) if block.content.contains(&at) || at == block.content.end => Some(
+            rendered.source[block.content.start..at]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1,
+        ),
+        _ => None,
     };
 
-    match stemma_core::notation::missing_from(main.text()) {
-        true => format!("{said}\n\n{}", stemma_core::notation::how_to_add_it()),
-        false => said,
+    Diagnostic {
+        error: diagnostic.severity == Severity::Error,
+        block: block.map(|block| block.id),
+        line,
+        message: format!("{}{hints}", diagnostic.message),
     }
 }
 
@@ -119,40 +130,49 @@ fn refused(main: &Source, error: &TypstAsLibError) -> String {
 mod tests {
     use std::path::Path;
 
-    use super::{Source, SourceDiagnostic, complaint, compose};
+    use stemma_core::document::{Block, Document};
+
+    use super::compose;
 
     #[test]
-    fn a_line_written_the_way_the_instance_starts_one_composes() {
-        let source = format!(
-            "{}\n\n= Things\n\n#question[What is a thing?]\n\n\
-             #definition(id: \"def:thing\", name: \"Thing\")[A thing is a thing.]\n\n\
-             #theorem(id: \"thm:one\", central: true, uses: \"def:thing\")[Every thing is one.]\n\n\
-             #proof(of: \"thm:one\")[Immediate.]\n",
-            stemma_core::notation::import()
-        );
+    fn a_line_with_every_kind_of_block_composes() {
+        let group = Block::definition(Some("def:group".parse().unwrap()), "A group is a set.")
+            .titled("Group");
+        let main = Block::theorem(
+            "Lemma",
+            Some("lem:one".parse().unwrap()),
+            "By @def:group, $1 = 1$.",
+        )
+        .central(true)
+        .using(&group);
+        let proof = Block::proof(*main.id(), "");
+        let document = Document::new("Things", Some("What a thing is.".to_owned()))
+            .with(Block::prose("We begin."))
+            .with(group)
+            .with(main)
+            .with(proof);
 
-        let composed = compose(Path::new("."), source).expect("a document");
+        let composed = compose(Path::new("."), &document).expect("a document");
 
-        assert!(composed.svg.contains("<svg"));
-        assert_eq!(composed.diagnostics, Vec::<String>::new());
+        assert!(composed.svg.is_some_and(|svg| svg.contains("<svg")));
+        assert_eq!(composed.diagnostics, Vec::new());
     }
 
     #[test]
-    fn a_diagnostic_names_its_line_and_column_and_keeps_its_hints() {
-        let text = "= Things\n\n#question[What is a thing?]\n";
-        let main = Source::detached(text.to_owned());
-        let at = text.find("question").unwrap();
-        let node = typst::syntax::LinkedNode::new(main.root())
-            .leaf_at(at + 1, typst::syntax::Side::Before)
-            .unwrap();
-        let diagnostic = SourceDiagnostic::error(node.span(), "unknown variable: question")
-            .with_hint("nothing here defines it");
+    fn an_error_is_placed_in_the_block_and_line_it_was_written_on() {
+        let broken = Block::prose("Fine.\nAlso fine.\n#nonexistent");
+        let id = *broken.id();
+        let document = Document::new("Things", None)
+            .with(Block::prose("Before."))
+            .with(broken);
 
-        let said = complaint(&main, &diagnostic);
+        let composed = compose(Path::new("."), &document).expect("an answer");
 
-        assert_eq!(
-            said,
-            "line 3, column 2: unknown variable: question\n  nothing here defines it"
-        );
+        assert!(composed.svg.is_none());
+        let first = &composed.diagnostics[0];
+        assert!(first.error);
+        assert_eq!(first.block, Some(id));
+        assert_eq!(first.line, Some(3));
+        assert!(first.message.contains("nonexistent"), "{}", first.message);
     }
 }

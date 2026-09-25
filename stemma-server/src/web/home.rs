@@ -179,8 +179,8 @@ fn group_card(card: &Card) -> Markup {
                         @for line in card.shared.iter().take(ON_A_CARD) {
                             li {
                                 span class="card__line" { (line.shown_as()) }
-                                @if let Some(question) = &line.question {
-                                    span class="quiet" { (question) }
+                                @if let Some(description) = &line.description {
+                                    span class="quiet" { (description) }
                                 }
                             }
                         }

@@ -13,7 +13,7 @@ model, and the Tauri desktop application.
 | `stemma-server/` | The `stemma-server` binary: API, web interface, database, git remotes, job queue |
 | `stemma-app/` | The Tauri desktop application; its Svelte frontend is in `stemma-app/frontend` |
 | `identity/` | The visual identity: design tokens, faces, the mark, icons and the descent drawing |
-| `notation/` | The `@stemma/notation` Typst package every line imports |
+| `typst/` | The `@stemma/notation` Typst package every line is typeset with |
 
 Dependencies point one way: `stemma` and `stemma-server` depend on
 `stemma-core`, never on each other, and the app depends on `stemma`.

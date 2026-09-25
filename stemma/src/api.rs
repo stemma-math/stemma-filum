@@ -344,8 +344,8 @@ pub struct Starting {
     pub group: String,
     /// What the line is called.
     pub title: String,
-    /// What it exists to answer.
-    pub question: String,
+    /// What it is about, where its author says.
+    pub description: Option<String>,
     /// `me` or `group`.
     pub seen_by: String,
 }

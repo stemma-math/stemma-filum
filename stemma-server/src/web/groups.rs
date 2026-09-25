@@ -570,8 +570,8 @@ fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
                                         (line.shown_as())
                                     }
                                 }
-                                @if let Some(question) = &line.question {
-                                    span class="register__aside" { (question) }
+                                @if let Some(description) = &line.description {
+                                    span class="register__aside" { (description) }
                                 }
                                 span class="quiet" {
                                     @match side {

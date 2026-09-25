@@ -74,9 +74,9 @@ fn run(cli: Cli) -> Result<bool> {
             LineCommand::New {
                 group,
                 title,
-                question,
+                description,
                 shared,
-            } => lines::start(home, &group, &title, &question, shared, out)?,
+            } => lines::start(home, &group, &title, description.as_deref(), shared, out)?,
             LineCommand::Delete { line } => lines::delete(home, &here(), line.as_deref(), out)?,
             LineCommand::Share {
                 line,

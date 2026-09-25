@@ -277,7 +277,7 @@ mod tests {
     fn a_command_run_anywhere_else_asks_which_line_and_says_what_there_is() {
         let clone = somewhere("outside");
         std::fs::create_dir_all(clone.join("lines/quotient-groups")).unwrap();
-        std::fs::write(clone.join("lines/quotient-groups/main.typ"), "").unwrap();
+        std::fs::write(clone.join("lines/quotient-groups/line.json"), "").unwrap();
 
         let error = line_of(&clone, &clone, None).unwrap_err();
 

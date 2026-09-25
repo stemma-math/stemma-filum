@@ -1,20 +1,23 @@
 //! What changed between two versions of a source.
 //!
-//! A proposal arrives as a whole document, because that is the only
-//! thing an agent can be trusted to produce and the only thing a person
-//! can sign. What a person needs to *read*, though, is what moved — so
-//! this says it, line by line, and the screens draw it.
+//! A proposal arrives as a whole line, because that is the only thing an
+//! agent can be trusted to produce and the only thing a person can sign.
+//! What a person needs to *read*, though, is what moved — so this says
+//! it, line by line, and the screens draw it.
 //!
-//! Lines and not characters: mathematics written in Typst is written in
-//! paragraphs, and a diff that highlights three words inside a rewritten
-//! statement invites reading the statement as mostly unchanged.
+//! The two versions are compared as the Typst documents they become,
+//! which is how mathematics reads, rather than as the JSON they are kept
+//! in. Lines and not characters: a diff that highlights three words
+//! inside a rewritten statement invites reading the statement as mostly
+//! unchanged.
 
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-use crate::line::{Line, Siglum};
-use crate::source;
+use crate::document::Document;
+use crate::line::Line;
+use crate::render;
 
 /// The most changed lines per version this compares using a quadratic table.
 ///
@@ -73,25 +76,33 @@ impl Extent {
     pub fn said(self) -> String {
         match (self.added, self.removed) {
             (0, 0) => "nothing changed".to_owned(),
-            (added, 0) => format!("{} added", lines(added)),
-            (0, removed) => format!("{} taken out", lines(removed)),
+            (added, 0) => format!("{} added", counted(added)),
+            (0, removed) => format!("{} taken out", counted(removed)),
             (added, removed) => {
-                format!("{} added, {} taken out", lines(added), lines(removed))
+                format!("{} added, {} taken out", counted(added), counted(removed))
             }
         }
     }
 }
 
 /// A count of lines, with the right noun.
-fn lines(count: usize) -> String {
+fn counted(count: usize) -> String {
     match count {
         1 => "1 line".to_owned(),
         many => format!("{many} lines"),
     }
 }
 
-/// The two versions, line by line.
+/// Two versions of a line, line by line of the documents they become.
+///
+/// A version that is not a readable line is compared as the text it is,
+/// so that what is wrong with it can still be seen.
 pub fn between(before: &str, after: &str) -> Vec<Row> {
+    lines(&render::readable(before), &render::readable(after))
+}
+
+/// Two texts, line by line.
+pub fn lines(before: &str, after: &str) -> Vec<Row> {
     let old: Vec<&str> = before.lines().collect();
     let new: Vec<&str> = after.lines().collect();
 
@@ -162,40 +173,29 @@ pub fn extent(rows: &[Row]) -> Extent {
     }
 }
 
-/// The lines a statement the line rests on occupies.
+/// The lines a statement the line rests on occupies in its document.
 ///
-/// What the freeze guard forbids touching, said in line numbers, so a
-/// screen can put corner marks around it without reading any
-/// mathematics.
+/// What the freeze guard forbids touching, said in the line numbers of
+/// [`between`], so a screen can put corner marks around it without
+/// reading any mathematics.
 pub fn frozen(source: &str) -> BTreeSet<usize> {
-    let Ok(read) = Line::read(source) else {
+    let Ok(document) = Document::parse(source) else {
         return BTreeSet::new();
     };
-    let Ok(declarations) = source::read(source) else {
+    if Line::of(&document).is_err() {
         return BTreeSet::new();
-    };
-    let central: Vec<&Siglum> = read
-        .central()
-        .into_iter()
-        .map(|node| &node.siglum)
-        .collect();
+    }
+    let rendered = render::typst(&document);
     let mut found = BTreeSet::new();
 
-    for declaration in declarations {
-        let named = declaration
-            .text("id")
-            .and_then(|id| id.parse::<Siglum>().ok());
-
-        if !named.is_some_and(|siglum| central.contains(&&siglum)) {
+    for (placed, block) in rendered.blocks.iter().zip(&document.blocks) {
+        if !block.statement().is_some_and(|statement| statement.central) {
             continue;
         }
 
-        let written = &source[declaration.span.clone()];
-        let height = written.lines().count().max(1);
-
-        for at in declaration.line..declaration.line + height {
-            found.insert(at);
-        }
+        let first = rendered.line_of(placed.whole.start);
+        let last = rendered.line_of(placed.whole.end);
+        found.extend(first..=last);
     }
 
     found
@@ -261,9 +261,28 @@ fn longest_common(old: &[&str], new: &[&str]) -> Vec<(usize, usize)> {
 mod tests {
     use super::*;
 
+    use crate::document::Block;
+
     const BEFORE: &str = "= Quotient groups\n\n\
         #theorem(id: \"thm:main\", central: true)[Every finite group is finite.]\n\n\
         #proof(of: \"thm:main\")[It is.]\n";
+
+    /// A line with a central theorem, its proof and a lemma after them.
+    fn line() -> Document {
+        let mut document = Document::new("Quotient groups", None);
+        let mut theorem = Block::theorem(
+            "Theorem",
+            Some("thm:main".parse().unwrap()),
+            "Every finite group\nis finite.",
+        );
+        theorem.statement_mut().unwrap().central = true;
+        let theorem = document.push(theorem);
+        document.push(Block::proof(theorem, "It is."));
+        let mut lemma = Block::theorem("Lemma", Some("lem:step".parse().unwrap()), "A step.");
+        lemma.statement_mut().unwrap().proof = false;
+        document.push(lemma);
+        document
+    }
 
     fn texts(rows: &[Row], change: Change) -> Vec<String> {
         rows.iter()
@@ -274,7 +293,7 @@ mod tests {
 
     #[test]
     fn two_documents_that_are_the_same_moved_nothing() {
-        let rows = between(BEFORE, BEFORE);
+        let rows = lines(BEFORE, BEFORE);
 
         assert!(rows.iter().all(|row| row.change == Change::Kept));
         assert!(extent(&rows).is_nothing());
@@ -284,7 +303,7 @@ mod tests {
     #[test]
     fn large_unchanged_documents_are_not_reported_as_replacements() {
         let source = "A line.\n".repeat(LONGEST + 1);
-        assert!(extent(&between(&source, &source)).is_nothing());
+        assert!(extent(&lines(&source, &source)).is_nothing());
     }
 
     #[test]
@@ -292,7 +311,7 @@ mod tests {
         let prefix = "Before.\n".repeat(LONGEST);
         let before = format!("{prefix}Old.\nAfter.\n");
         let after = format!("{prefix}New.\nAfter.\n");
-        let rows = between(&before, &after);
+        let rows = lines(&before, &after);
         assert_eq!(
             extent(&rows),
             Extent {
@@ -309,7 +328,7 @@ mod tests {
     fn wholesale_fallback_retains_the_common_edges() {
         let before = format!("Heading\n{}End\n", "Old.\n".repeat(LONGEST + 1));
         let after = format!("Heading\n{}End\n", "New.\n".repeat(LONGEST + 1));
-        let rows = between(&before, &after);
+        let rows = lines(&before, &after);
         assert_eq!(
             extent(&rows),
             Extent {
@@ -324,7 +343,7 @@ mod tests {
     #[test]
     fn what_moved_is_what_is_shown_as_moved() {
         let after = BEFORE.replace("It is.", "By induction on the order.");
-        let rows = between(BEFORE, &after);
+        let rows = lines(BEFORE, &after);
 
         assert_eq!(
             texts(&rows, Change::Removed),
@@ -346,7 +365,7 @@ mod tests {
     #[test]
     fn a_line_added_in_the_middle_leaves_the_rest_where_it_was() {
         let after = BEFORE.replace("#proof", "#lemma(id: \"lem:step\")[A step.]\n\n#proof");
-        let rows = between(BEFORE, &after);
+        let rows = lines(BEFORE, &after);
 
         assert_eq!(
             texts(&rows, Change::Added),
@@ -361,7 +380,7 @@ mod tests {
     #[test]
     fn the_numbers_a_row_carries_are_the_numbers_of_its_own_version() {
         let after = BEFORE.replace("= Quotient groups\n", "= Quotients\n= In general\n");
-        let rows = between(BEFORE, &after);
+        let rows = lines(BEFORE, &after);
         let kept = rows
             .iter()
             .find(|row| row.text.starts_with("#theorem"))
@@ -372,22 +391,48 @@ mod tests {
     }
 
     #[test]
-    fn what_the_guard_forbids_touching_is_said_in_line_numbers() {
-        let frozen = frozen(BEFORE);
+    fn two_lines_are_compared_as_the_documents_they_become() {
+        let before = line();
+        let mut after = before.clone();
+        let Block::Proof(proof) = &mut after.blocks[1] else {
+            panic!("the second block is the proof");
+        };
+        proof.content = "By induction.".to_owned();
+        let rows = between(&before.to_text(), &after.to_text());
 
-        assert!(frozen.contains(&3), "the central statement is on line 3");
-        assert!(!frozen.contains(&5), "its proof is the agent's to write");
-        assert!(!frozen.contains(&1));
+        assert_eq!(texts(&rows, Change::Removed), ["It is.".to_owned()]);
+        assert_eq!(texts(&rows, Change::Added), ["By induction.".to_owned()]);
+        assert!(rows.iter().all(|row| !row.text.contains("\"format\"")));
     }
 
     #[test]
-    fn a_statement_written_over_several_lines_is_frozen_whole() {
-        let source = "= A line\n\n\
-            #theorem(\n  id: \"thm:main\",\n  central: true,\n)[\n  Every finite group is finite.\n]\n";
-        let frozen = frozen(source);
+    fn what_is_not_a_line_is_compared_as_the_text_it_is() {
+        let rows = between("not a line", "still not one");
 
-        assert!(frozen.contains(&3));
-        assert!(frozen.contains(&8), "down to its closing bracket");
+        assert_eq!(texts(&rows, Change::Removed), ["not a line".to_owned()]);
+    }
+
+    #[test]
+    fn what_the_guard_forbids_touching_is_said_in_line_numbers() {
+        let document = line();
+        let source = document.to_text();
+        let frozen = frozen(&source);
+        let rendered = render::typst(&document);
+        let theorem = &rendered.blocks[0];
+        let proof = &rendered.blocks[1];
+
+        let first = rendered.line_of(theorem.whole.start);
+        let last = rendered.line_of(theorem.whole.end);
+        assert!(last > first, "a statement written over several lines");
+        assert!(
+            (first..=last).all(|at| frozen.contains(&at)),
+            "frozen whole"
+        );
+        assert!(
+            !frozen.contains(&rendered.line_of(proof.content.start)),
+            "its proof is the agent's to write"
+        );
+        assert!(!frozen.contains(&1));
     }
 
     #[test]

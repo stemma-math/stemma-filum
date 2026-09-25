@@ -4,6 +4,7 @@ mod support;
 
 use axum::http::StatusCode;
 use stemma_core::access::GroupRole;
+use stemma_core::document::{Block, Document};
 use stemma_core::id::Slug;
 use stemma_core::line::Name;
 use stemma_core::repository::{self, Side};
@@ -116,7 +117,7 @@ async fn make_repositories(harness: &mut Harness, who: &str) {
 }
 
 /// Starts a line through the form.
-async fn start(harness: &mut Harness, title: &str, question: &str, seen_by: &str) -> Page {
+async fn start(harness: &mut Harness, title: &str, description: &str, seen_by: &str) -> Page {
     let form = harness.get("/g/algebra/lines/new").await;
     let token = form_token(&form);
 
@@ -126,7 +127,7 @@ async fn start(harness: &mut Harness, title: &str, question: &str, seen_by: &str
             &[
                 ("form_token", &token),
                 ("title", title),
-                ("question", question),
+                ("description", description),
                 ("seen_by", seen_by),
             ],
         )
@@ -164,7 +165,7 @@ async fn source(harness: &Harness, who: Option<&str>, line: &str) -> Option<Stri
 }
 
 #[tokio::test]
-async fn a_line_is_born_private_with_the_question_it_exists_to_answer() {
+async fn a_line_is_created_private_with_its_title_and_description() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
@@ -191,28 +192,34 @@ async fn a_line_is_born_private_with_the_question_it_exists_to_answer() {
         .await
         .expect("the line was written");
 
-    assert!(written.contains("= Quotient groups"));
-    assert!(written.contains("#question[Does every finite group split?]"));
+    let written = Document::parse(&written).expect("a line");
+    assert_eq!(written.title, "Quotient groups");
     assert_eq!(
-        stemma_core::source::question(&written).as_deref(),
+        written.description.as_deref(),
         Some("Does every finite group split?")
     );
+    assert!(written.blocks.is_empty());
 
     // Private is physical: it is in her repository and in nobody else's.
     assert_eq!(source(&harness, None, "quotient-groups").await, None);
 }
 
 #[tokio::test]
-async fn a_line_without_its_question_is_a_folder_and_is_refused() {
+async fn a_line_needs_a_title_and_not_a_description() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
 
-    let refused = start(&mut harness, "Quotient groups", "   ", "me").await;
-
+    let refused = start(&mut harness, "   ", "About something", "me").await;
     assert_eq!(refused.status, StatusCode::OK);
-    assert!(refused.says("not a folder"));
-    assert_eq!(source(&harness, Some("ana"), "quotient-groups").await, None);
+    assert!(refused.says("A line needs a title."));
+
+    let made = start(&mut harness, "Quotient groups", "   ", "me").await;
+    assert_eq!(made.status, StatusCode::SEE_OTHER);
+    let written = source(&harness, Some("ana"), "quotient-groups")
+        .await
+        .expect("the line was written");
+    assert_eq!(Document::parse(&written).unwrap().description, None);
 }
 
 #[tokio::test]
@@ -272,14 +279,14 @@ async fn nothing_shared_may_lean_on_something_only_its_author_can_see() {
             let found =
                 groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
             let mine = group.personal(&found.id, &user.id);
-            let leaning = "= Quotient groups\n\n\
-                           #question[Does it split?]\n\n\
-                           #import \"../notation/main.typ\": *\n";
+            let leaning = Document::new("Quotient groups", None)
+                .with(Block::prose("#import \"../notation/main.typ\": *"))
+                .to_text();
 
             stemma_server::git::start_line(
                 &mine,
                 &Name::parse("quotient-groups").unwrap(),
-                leaning,
+                &leaning,
                 &stemma_server::git::Author {
                     name: "Ana",
                     email: "ana@example.org",
@@ -405,7 +412,7 @@ async fn a_machine_with_no_desktop_starts_and_shares_a_line_too() {
             "/api/lines",
             &token,
             r#"{"group":"algebra","title":"Quotient groups",
-                "question":"Does it split?","seen_by":"me"}"#,
+                "description":"Does it split?","seen_by":"me"}"#,
         )
         .await;
 
@@ -427,7 +434,7 @@ async fn a_machine_with_no_desktop_starts_and_shares_a_line_too() {
 }
 
 #[tokio::test]
-async fn the_question_is_what_a_listing_shows_when_a_title_is_not_enough() {
+async fn the_description_is_what_a_listing_shows_when_a_title_is_not_enough() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
@@ -443,11 +450,6 @@ async fn the_question_is_what_a_listing_shows_when_a_title_is_not_enough() {
     let built = source(&harness, None, "quotient-groups")
         .await
         .expect("the line");
-
-    assert_eq!(
-        stemma_core::source::question(&built).as_deref(),
-        Some("Does every finite group split?")
-    );
 
     publish(&mut harness, &built).await;
 
@@ -477,11 +479,12 @@ async fn publish(harness: &mut Harness, built: &str) {
             let commit = "0123456789abcdef0123456789abcdef01234567";
 
             let mut nodes = Nodes::new(group.id.clone(), Side::Shared, commit.to_owned());
+            let document = Document::parse(&built).expect("a line");
             nodes.lines.push(LineDigest {
                 name: Name::parse("quotient-groups").unwrap(),
-                title: stemma_core::source::title(&built),
-                question: stemma_core::source::question(&built),
-                line: stemma_core::line::Line::read(&built).expect("a line that reads"),
+                title: Some(document.title.clone()),
+                description: document.description.clone(),
+                line: stemma_core::line::Line::of(&document).expect("a line that reads"),
                 lean: None,
             });
 
@@ -676,7 +679,10 @@ async fn what_a_machine_pushed_is_shown_as_it_was_written() {
         &harness,
         Some("ana"),
         "quotient-groups",
-        &format!("{started}\nIt does, and here is why.\n"),
+        &Document::parse(&started)
+            .unwrap()
+            .with(Block::prose("It does, and here is why."))
+            .to_text(),
     )
     .await;
 
@@ -701,9 +707,15 @@ async fn a_build_older_than_what_was_pushed_does_not_hide_it() {
         &harness,
         None,
         "quotient-groups",
-        &format!(
-            "{started}\n#theorem(id: \"thm:split\", name: \"Splitting\", central: true)[It splits.]\n"
-        ),
+        &Document::parse(&started)
+            .unwrap()
+            .with(
+                Block::theorem("Theorem", Some("thm:split".parse().unwrap()), "It splits.")
+                    .titled("Splitting")
+                    .central(true)
+                    .carrying_proof(false),
+            )
+            .to_text(),
     )
     .await;
 

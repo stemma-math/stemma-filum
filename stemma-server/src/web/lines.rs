@@ -5,8 +5,8 @@
 //! so what it can show is what the source declares: the definitions, the
 //! statements the line rests on, and the boxes between them.
 //!
-//! The prose is shown as it was written: the source at the head of the
-//! repository, uncompiled. A composed document would be a different
+//! The prose is shown as the Typst document the line at the head of the
+//! repository becomes, uncompiled. A composed document would be a different
 //! artefact, and a page that typeset the mathematics itself would be
 //! pretending to be that document.
 
@@ -237,13 +237,21 @@ async fn written(
 /// added — the Lean result, the composed document — and the page says
 /// so where it would have shown them.
 fn declared(name: &Name, source: &str) -> LineDigest {
+    let document = stemma_core::document::Document::parse(source).ok();
+
     LineDigest {
         name: name.clone(),
-        title: stemma_core::source::title(source),
-        question: stemma_core::source::question(source),
+        title: document
+            .as_ref()
+            .map(|document| document.title.clone())
+            .filter(|title| !title.trim().is_empty()),
+        description: document
+            .as_ref()
+            .and_then(|document| document.description.clone()),
         // A source with a fault in it is still a line somebody is
         // writing; what it declares so far is nothing.
-        line: stemma_core::line::Line::read(source)
+        line: document
+            .and_then(|document| stemma_core::line::Line::of(&document).ok())
             .unwrap_or(stemma_core::line::Line { nodes: Vec::new() }),
         lean: None,
     }
@@ -398,8 +406,8 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             }
             h1 { (digest.shown_as()) }
 
-            @if let Some(question) = &digest.question {
-                p class="serif" { (question) }
+            @if let Some(description) = &digest.description {
+                p class="serif" { (description) }
             }
 
             p class="quiet identifier" { "lines/" (digest.name) }
@@ -473,15 +481,15 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             }
         }
 
-        // What was written, prose and all, as it was written. It has the
-        // width of the page because most of it is prose.
+        // What was written, prose and all, as the Typst it becomes. It has
+        // the width of the page because most of it is prose.
         @if let Some(written) = written {
             div class="block source" {
                 p class="label" {
-                    "The source · "
+                    "Typst source · "
                     span class="identifier" { (short(&written.commit)) }
                 }
-                pre class="source__text" { (written.source) }
+                pre class="source__text" { (stemma_core::render::readable(&written.source)) }
             }
         }
     }

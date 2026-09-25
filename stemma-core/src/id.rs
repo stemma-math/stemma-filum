@@ -332,6 +332,8 @@ id_kinds! {
     Line: "lin" => LineId as UniqueId,
     /// A statement, definition or black box inside a line.
     Node: "nod" => NodeId as UniqueId,
+    /// One block of a line's source: prose, a statement or a proof.
+    Block: "blk" => BlockId as UniqueId,
     /// A single-use link into a group.
     Invitation: "inv" => InvitationId as UniqueId,
     /// Somebody asking for a group to be created.

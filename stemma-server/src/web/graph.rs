@@ -116,31 +116,40 @@ mod tests {
     use super::*;
     use stemma_core::line::{Line, Name};
 
-    const SOURCE: &str = r#"
-= Quotient groups
+    use stemma_core::document::{Block, Document};
 
-#definition(id: "def:group", name: "Group")[A group.]
+    /// A definition, two statements the line rests on, and a lemma
+    /// inside the box between them.
+    fn source() -> Document {
+        let statement = |named: &str, environment: &str, content: &str| {
+            Block::theorem(environment, Some(named.parse().unwrap()), content).carrying_proof(false)
+        };
+        let group =
+            Block::definition(Some("def:group".parse().unwrap()), "A group.").titled("Group");
+        let first = statement("thm:first", "Theorem", "First.")
+            .central(true)
+            .using(&group);
 
-#theorem(id: "thm:first", central: true, uses: "def:group")[First.]
+        Document::new("Quotient groups", None)
+            .with(group)
+            .with(first)
+            .with(statement("lem:step", "Lemma", "A step."))
+            .with(statement("thm:second", "Theorem", "By @thm:first.").central(true))
+    }
 
-#lemma(id: "lem:step")[A step.]
-
-#theorem(id: "thm:second", central: true, uses: "thm:first")[Second.]
-"#;
-
-    fn digest(source: &str) -> LineDigest {
+    fn digest(source: &Document) -> LineDigest {
         LineDigest {
             name: Name::parse("quotient-groups").unwrap(),
-            title: stemma_core::source::title(source),
-            question: None,
-            line: Line::read(source).unwrap(),
+            title: Some(source.title.clone()),
+            description: None,
+            line: Line::of(source).unwrap(),
             lean: None,
         }
     }
 
     #[test]
     fn the_block_carries_both_the_placement_and_the_list_it_falls_back_to() {
-        let drawn = drawn(&digest(SOURCE), &[]).into_string();
+        let drawn = drawn(&digest(&source()), &[]).into_string();
 
         assert!(drawn.contains("descent__canvas"));
         assert!(drawn.contains("descent__placement"));
@@ -155,12 +164,15 @@ mod tests {
 
     #[test]
     fn a_line_that_declares_nothing_draws_nothing() {
-        assert_eq!(drawn(&digest("= Nothing yet\n"), &[]).into_string(), "");
+        assert_eq!(
+            drawn(&digest(&Document::new("Nothing yet", None)), &[]).into_string(),
+            ""
+        );
     }
 
     #[test]
     fn the_drawing_says_what_it_is_for_somebody_who_cannot_see_it() {
-        let drawn = drawn(&digest(SOURCE), &[]).into_string();
+        let drawn = drawn(&digest(&source()), &[]).into_string();
 
         assert!(drawn.contains("1 definitions"));
         assert!(drawn.contains("2 statements it rests on"));

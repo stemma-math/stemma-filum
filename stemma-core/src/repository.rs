@@ -20,8 +20,8 @@ pub const MANIFEST: &str = "stemma.toml";
 /// The directory lines live in.
 pub const LINES: &str = "lines";
 
-/// The file a line is written in.
-pub const ENTRY: &str = "main.typ";
+/// The file a line is written in: its blocks, as JSON.
+pub const ENTRY: &str = "line.json";
 
 /// The Lean module that formalizes one line.
 pub const LEAN_ENTRY: &str = "Main.lean";
@@ -287,7 +287,7 @@ mod tests {
 
         assert_eq!(
             line_entry(root, &name),
-            Path::new("/home/ana/stemma/algebra/shared/lines/quotient-groups/main.typ")
+            Path::new("/home/ana/stemma/algebra/shared/lines/quotient-groups/line.json")
         );
     }
 
@@ -296,7 +296,7 @@ mod tests {
         let root = Path::new("/home/ana/stemma/algebra/shared");
 
         assert_eq!(
-            line_of(root, &root.join("lines/quotient-groups/main.typ")),
+            line_of(root, &root.join("lines/quotient-groups/line.json")),
             Some(Name::parse("quotient-groups").unwrap())
         );
         assert_eq!(line_of(root, &root.join("lines")), None);

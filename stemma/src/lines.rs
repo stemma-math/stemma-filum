@@ -18,7 +18,7 @@ pub fn start(
     home: &Home,
     group: &str,
     title: &str,
-    question: &str,
+    description: Option<&str>,
     shared: bool,
     out: &mut impl Write,
 ) -> Result<()> {
@@ -29,7 +29,7 @@ pub fn start(
         &Starting {
             group: group.to_owned(),
             title: title.to_owned(),
-            question: question.to_owned(),
+            description: description.map(str::to_owned),
             seen_by: match shared {
                 true => "group".to_owned(),
                 false => "me".to_owned(),

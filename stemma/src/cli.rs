@@ -233,9 +233,9 @@ pub enum LineCommand {
         #[arg(long)]
         title: String,
 
-        /// What it exists to answer.
+        /// What it is about, in a sentence or two.
         #[arg(long)]
-        question: String,
+        description: Option<String>,
 
         /// Let the whole group see it. Left out, it is yours alone.
         #[arg(long)]
@@ -490,10 +490,10 @@ mod tests {
     }
 
     #[test]
-    fn a_new_line_says_what_it_answers_and_who_sees_it() {
+    fn a_new_line_says_what_it_is_called_and_who_sees_it() {
         assert!(
             Cli::try_parse_from(["stemma", "line", "new", "--group", "algebra"]).is_err(),
-            "a line with no title and no question is a folder"
+            "a line needs a title"
         );
 
         let Command::Line {
@@ -501,7 +501,7 @@ mod tests {
                 LineCommand::New {
                     group,
                     title,
-                    question,
+                    description,
                     shared,
                 },
         } = Cli::try_parse_from([
@@ -512,7 +512,7 @@ mod tests {
             "algebra",
             "--title",
             "Quotient groups",
-            "--question",
+            "--description",
             "Does it split?",
         ])
         .unwrap()
@@ -523,7 +523,7 @@ mod tests {
 
         assert_eq!(group, "algebra");
         assert_eq!(title, "Quotient groups");
-        assert_eq!(question, "Does it split?");
+        assert_eq!(description.as_deref(), Some("Does it split?"));
         assert!(!shared, "a line is its author's until they say otherwise");
     }
 

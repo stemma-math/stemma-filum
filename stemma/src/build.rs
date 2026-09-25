@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use stemma_core::artefact::{LineDigest, Nodes};
+use stemma_core::document::Document;
 use stemma_core::line::{Fault, Line, Name};
 use stemma_core::repository::{self, Manifest};
-use stemma_core::source;
 
 use crate::api::Server;
 use crate::config::Config;
@@ -139,13 +139,17 @@ pub fn read(clone: &Path) -> Result<Built> {
         let text = std::fs::read_to_string(&source_path)
             .with_context(|| format!("cannot read {}", source_path.display()))?;
 
-        match Line::read(&text) {
-            Ok(line) => {
+        let read = Document::parse(&text)
+            .map_err(|unreadable| vec![Fault::from(unreadable)])
+            .and_then(|document| Line::of(&document).map(|line| (document, line)));
+
+        match read {
+            Ok((document, line)) => {
                 let lean = crate::lean::check(clone, &name, &pins)?;
                 nodes.lines.push(LineDigest {
                     name,
-                    title: source::title(&text),
-                    question: source::question(&text),
+                    title: Some(document.title).filter(|title| !title.trim().is_empty()),
+                    description: document.description,
                     line,
                     lean,
                 });
