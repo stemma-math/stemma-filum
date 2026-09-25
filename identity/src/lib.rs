@@ -1,16 +1,21 @@
 //! Stemma's visual identity, embedded for Rust consumers.
 //!
 //! The files in this crate's directory are the single source of the design
-//! tokens, the faces, the mark and the descent drawing. The server embeds
-//! them through the constants here; the desktop application imports the same
-//! files through `package.json`.
+//! tokens, the shared components, the faces, the mark and the descent drawing.
+//! The tokens are written in `tokens.json`, from which `tokens.css` and
+//! `tokens.typ` are generated. The server embeds them through the constants
+//! here; the desktop application imports the same files through
+//! `package.json`.
 
 /// The faces' `@font-face` rules. URLs are relative (`fonts/<file>`), so the
 /// stylesheet must be served from the directory that also serves [`FONTS`].
 pub const FONTS_CSS: &str = include_str!("../fonts.css");
 
-/// Custom properties and the mark's intrinsic styling.
+/// The design tokens, as custom properties.
 pub const TOKENS_CSS: &str = include_str!("../tokens.css");
+
+/// The shared components' classes, in cascade layers. Needs [`TOKENS_CSS`].
+pub const COMPONENTS_CSS: &str = include_str!("../components.css");
 
 /// The mark, as inline SVG carrying the `brand-mark` classes.
 pub const MARK_SVG: &str = include_str!("../mark.svg");

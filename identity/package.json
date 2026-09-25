@@ -2,11 +2,14 @@
   "name": "@stemma-math/identity",
   "version": "0.0.0",
   "private": true,
-  "description": "Stemma's visual identity: design tokens, faces, the mark and shared drawings.",
+  "description": "Stemma's visual identity: design tokens, components, faces, the mark and shared drawings.",
   "license": "MIT",
   "type": "module",
   "exports": {
     "./tokens.css": "./tokens.css",
+    "./tokens.json": "./tokens.json",
+    "./tokens.typ": "./tokens.typ",
+    "./components.css": "./components.css",
     "./fonts.css": "./fonts.css",
     "./mark.svg": "./mark.svg",
     "./noise.svg": "./noise.svg",
@@ -15,5 +18,21 @@
       "default": "./descent.js"
     }
   },
-  "files": ["*.css", "*.js", "*.d.ts", "*.svg", "fonts", "icons"]
+  "files": [
+    "*.css",
+    "*.js",
+    "*.d.ts",
+    "*.svg",
+    "tokens.json",
+    "tokens.typ",
+    "fonts",
+    "icons"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check"
+  },
+  "devDependencies": {
+    "style-dictionary": "^5.5.5"
+  }
 }

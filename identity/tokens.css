@@ -1,15 +1,6 @@
-/* Stemma design tokens.
- *
- * Deep blue identifies the product and its navigation; cool paper-like
- * surfaces hold the work. Serif is reserved for mathematics and signed
- * prose, grotesk for interface language and mono for verbatim material.
- * Only three colours carry meaning: a human commitment (`--ditto`), a
- * machine proof (`--verified`) and a refutation (`--refuted`).
- */
+/* Generated from tokens.json by build.mjs. Do not edit. */
 
 :root {
-    color-scheme: light;
-
     /* Surfaces and ink. */
     --paper: #f1f5f9;
     --paper-raise: #ffffff;
@@ -19,12 +10,17 @@
     --ink-3: #758298;
     --rule: #d5dfea;
     --rule-soft: #e6edf4;
-
-    /* Earned colours. */
+    /* A control that takes typing. */
+    --field: #f8fafc;
+    --field-rule: #cbd7e5;
+    /* Earned: a human commitment. */
     --ditto: #2d6de7;
+    /* Ditto under the pointer. */
+    --ditto-strong: #205fcf;
+    /* Earned: a machine proof. */
     --verified: #0c7a66;
+    /* Earned: a refutation. */
     --refuted: #b33b4a;
-
     /* The product's blue. */
     --night: #031a3b;
     --night-deep: #01122d;
@@ -32,21 +28,16 @@
     --navy: #06234c;
     --blue: #69a7ff;
     --blue-soft: #dceaff;
-    --focus-ring: 0 0 0 3px rgb(45 109 231 / 12%);
-    --panel-shadow: 0 12px 36px rgb(25 53 84 / 8%);
-
     /* The mark, one colour per node and the edge leaving it. */
     --mark-top: #f3f9ff;
     --mark-left: #a9ceff;
     --mark-right: #72aaf2;
-
-    /* Faces. */
-    --serif: "Libertinus Serif", "Linux Libertine O", Georgia, serif;
-    --grotesk: "Archivo", "Archivo Narrow", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    --narrow: "Archivo Narrow", "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    --mono: "Iosevka", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-
-    /* Type scale. */
+    --focus-ring: 0 0 0 3px rgb(45 109 231 / 12%);
+    --panel-shadow: 0 12px 36px 0 rgb(25 53 84 / 8%);
+    --serif: 'Libertinus Serif', 'Linux Libertine O', Georgia, serif;
+    --grotesk: Archivo, 'Archivo Narrow', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --narrow: 'Archivo Narrow', Archivo, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --mono: Iosevka, 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
     --step-1: 12px;
     --step-2: 13px;
     --step-3: 15px;
@@ -54,8 +45,6 @@
     --step-5: 21px;
     --step-6: 27px;
     --step-7: 34px;
-
-    /* Spacing. */
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
@@ -64,17 +53,27 @@
     --space-6: 32px;
     --space-7: 48px;
     --space-8: 64px;
+    /* Corners, from a row inside a panel out to the panel. */
+    --radius-item: 7px;
+    --radius-control: 8px;
+    --radius-panel: 10px;
 }
 
-/* The mark (`mark.svg`). Size and placement belong to whoever uses it. */
-
-.brand-mark__edge {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 3;
-    stroke-linecap: round;
+:root,
+[data-density="comfortable"] {
+    --control-height: 40px;
+    --control-font: var(--step-3);
+    --control-small-font: var(--step-2);
+    --control-block: var(--space-2);
+    --control-inline: var(--space-3);
+    --button-inline: var(--space-4);
 }
 
-.brand-mark__node {
-    fill: currentColor;
+[data-density="compact"] {
+    --control-height: 36px;
+    --control-font: var(--step-2);
+    --control-small-font: var(--step-1);
+    --control-block: 7px;
+    --control-inline: 10px;
+    --button-inline: var(--space-3);
 }

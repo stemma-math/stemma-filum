@@ -1,0 +1,290 @@
+/* Stemma's shared components: classes over native HTML, for any consumer.
+ *
+ * Needs `tokens.css`. Every rule sits in a cascade layer, so a consumer's
+ * own unlayered rules win whatever their specificity. Placement and layout
+ * belong to the consumer; a component only says how it looks.
+ *
+ * Size follows the density: comfortable by default, compact inside
+ * `[data-density="compact"]`.
+ */
+
+@layer stemma.base, stemma.components;
+
+@layer stemma.base {
+    :root {
+        color-scheme: light;
+    }
+
+    /* Focus is never removed and never a glow. */
+    :focus-visible {
+        outline: 2px solid var(--ditto);
+        outline-offset: 2px;
+    }
+}
+
+@layer stemma.components {
+    /* An eyebrow labels a block. It is never a heading and never a link. */
+    .label {
+        margin: 0;
+        font: 600 var(--step-1) / 1.2 var(--grotesk);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+    }
+
+    .quiet {
+        color: var(--ink-3);
+    }
+
+    .numeric {
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Button ────────────────────────────────────────────────────────
+     *
+     * On a `button` or an `a`. Plain by default; `--primary` is the one
+     * action a surface is for, `--quiet` has no edge until it is pointed
+     * at and `--link` reads as a link. `aria-pressed="true"` and
+     * `aria-current` mark the one chosen among several. */
+
+    .button {
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        min-height: var(--control-height);
+        padding: 0 var(--button-inline);
+        font: 500 var(--control-font) / 1.2 var(--grotesk);
+        color: var(--ink);
+        text-decoration: none;
+        background: var(--paper-raise);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-control);
+        box-shadow: 0 1px 2px rgb(15 35 60 / 5%);
+        cursor: pointer;
+        transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, color 140ms ease;
+    }
+
+    .button:hover {
+        border-color: var(--blue);
+        box-shadow: var(--focus-ring);
+    }
+
+    .button[aria-pressed="true"],
+    .button[aria-current]:not([aria-current="false"]) {
+        color: var(--ditto);
+        border-color: var(--ditto);
+    }
+
+    .button--primary {
+        color: #fff;
+        background: var(--ditto);
+        border-color: var(--ditto);
+    }
+
+    .button--primary:hover {
+        background: var(--ditto-strong);
+        border-color: var(--ditto-strong);
+    }
+
+    .button--quiet {
+        color: var(--ink-3);
+        background: transparent;
+        border-color: transparent;
+        box-shadow: none;
+    }
+
+    .button--quiet:hover {
+        color: var(--ink);
+        background: var(--paper-sunk);
+        border-color: transparent;
+        box-shadow: none;
+    }
+
+    .button--link {
+        min-height: 0;
+        padding: 0;
+        color: var(--ditto);
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+    }
+
+    .button--link:hover {
+        text-decoration: underline;
+        box-shadow: none;
+    }
+
+    .button:disabled,
+    .button[aria-disabled="true"] {
+        color: var(--ink-3);
+        background: var(--paper-sunk);
+        border-color: var(--rule);
+        box-shadow: none;
+        cursor: not-allowed;
+    }
+
+    /* ── Field ─────────────────────────────────────────────────────────
+     *
+     * A label, the control and an optional hint, stacked. `.input` goes
+     * on the `input`, `textarea` or `select` itself, so a control outside
+     * a field looks the same. */
+
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+    }
+
+    .field__label {
+        font-size: var(--control-font);
+        color: var(--ink);
+    }
+
+    .field__hint {
+        font-size: var(--control-small-font);
+        color: var(--ink-3);
+    }
+
+    .input {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: var(--control-height);
+        padding: var(--control-block) var(--control-inline);
+        font: 400 var(--control-font) / 1.4 var(--grotesk);
+        color: var(--ink);
+        background: var(--field);
+        border: 1px solid var(--field-rule);
+        border-radius: var(--radius-control);
+        transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+    }
+
+    .input:focus {
+        background: var(--paper-raise);
+        border-color: var(--blue);
+        box-shadow: var(--focus-ring);
+    }
+
+    .input:disabled {
+        color: var(--ink-3);
+        cursor: not-allowed;
+    }
+
+    textarea.input {
+        resize: vertical;
+    }
+
+    /* Verbatim input: codes, identifiers, source. */
+    .input--mono {
+        font-family: var(--mono);
+    }
+
+    /* ── Choice ────────────────────────────────────────────────────────
+     *
+     * A checkbox or radio and its words, as one line, so the words are
+     * the target and not the eight pixels of the control. */
+
+    .choice {
+        display: flex;
+        align-items: baseline;
+        gap: var(--space-2);
+        font-size: var(--control-font);
+        color: var(--ink);
+    }
+
+    .choice input {
+        margin: 0;
+        accent-color: var(--ditto);
+    }
+
+    /* A set of choices: the question is the legend. */
+    .fieldset {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        margin: 0;
+        padding: var(--space-3) var(--space-4) var(--space-4);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-control);
+    }
+
+    .fieldset > legend {
+        padding: 0 var(--space-2);
+        font: 600 var(--step-1) / 1.2 var(--grotesk);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-3);
+    }
+
+    /* ── Menu ──────────────────────────────────────────────────────────
+     *
+     * A panel of actions or destinations, one `.menu__item` each. Works as
+     * a `popover`; where it opens is the consumer's to say.
+     * `aria-current` or `aria-checked="true"` marks where you are. */
+
+    .menu {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 5px;
+        color: var(--ink);
+        background: var(--paper-raise);
+        border: 1px solid var(--rule);
+        border-radius: var(--radius-panel);
+        box-shadow: 0 12px 30px rgb(12 22 38 / 18%);
+    }
+
+    .menu__item {
+        box-sizing: border-box;
+        display: block;
+        width: 100%;
+        padding: var(--space-2) 10px;
+        font: 400 var(--control-font) / 1.3 var(--grotesk);
+        color: inherit;
+        text-align: left;
+        text-decoration: none;
+        background: transparent;
+        border: 0;
+        border-radius: var(--radius-item);
+        cursor: pointer;
+    }
+
+    .menu__item:hover,
+    .menu__item:focus-visible,
+    .menu__item[aria-current]:not([aria-current="false"]),
+    .menu__item[aria-checked="true"] {
+        background: var(--paper-sunk);
+    }
+
+    .menu__item[aria-current]:not([aria-current="false"]),
+    .menu__item[aria-checked="true"] {
+        font-weight: 600;
+    }
+
+    /* ── Problem ───────────────────────────────────────────────────────
+     *
+     * Something that went wrong with what was asked. No colour: red means
+     * a negation was proved, and nothing here is a mathematical result. */
+
+    .problem {
+        padding: var(--space-3) var(--space-4);
+        font-size: var(--control-font);
+        background: var(--paper-sunk);
+        border-left: 2px solid var(--ink);
+    }
+
+    /* ── The mark (`mark.svg`) ─────────────────────────────────────────
+     *
+     * Size and placement belong to whoever uses it. */
+
+    .brand-mark__edge {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 3;
+        stroke-linecap: round;
+    }
+
+    .brand-mark__node {
+        fill: currentColor;
+    }
+}

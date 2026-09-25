@@ -3,12 +3,14 @@ default:
     @just --list --unsorted
 
 # Application variables
+identity_dir := "identity"
 frontend_dir := "stemma-app/frontend"
 app_bundle := "target/release/bundle/macos/Stemma.app"
 
 [group("env")]
 [doc("Install the frontend dependencies.")]
 setup:
+  npm ci --prefix {{identity_dir}}
   npm ci --prefix {{frontend_dir}}
 
 [group("test")]
@@ -17,6 +19,11 @@ format:
   cargo fmt --all --check
 
 alias fmt := format
+
+[group("test")]
+[doc("Check the generated identity tokens are up to date.")]
+identity:
+  npm run check --prefix {{identity_dir}}
 
 [group("test")]
 [doc("Test, type-check and build the frontend.")]
@@ -52,7 +59,7 @@ test-repositories:
 
 [group("test")]
 [doc("Run the complete pre-commit verification suite.")]
-check: format frontend docs
+check: format identity frontend docs
   cargo clippy --workspace --all-targets -- -D warnings
   cargo test --workspace
 
