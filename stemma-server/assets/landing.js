@@ -2,11 +2,11 @@
 //
 // The front page draws a dome of dark with the brand light rising under
 // it. Going in, the light withdraws towards the top edge and the page
-// turns into the pale sign-in; the passage is split across the two pages,
-// the first half drawn here before leaving and the second after arriving.
-// A sign-in reached directly shows none of it: a still, pale page.
+// turns into the pale sign-in. The sign-in and the registration are on
+// this page, so the passage is one movement; the address follows it, and
+// the browser's back and forward buttons play it either way. Reached
+// directly, the sign-in is a page of its own and nothing moves.
 
-const STORE = "stemma-surface";
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** The drawing's settings. */
@@ -14,9 +14,6 @@ const P = { int: 0.7, size: 1.18, cy: 0.75, haze: 0.32, grain: 0.36, speed: redu
 
 /** How long the whole passage takes, in milliseconds. */
 const DURATION = reduce ? 500 : 1600;
-
-/** Where the passage hands over from one page to the other. */
-const HANDOVER = 0.45;
 
 const FRAGMENT = `
 precision highp float;
@@ -80,8 +77,6 @@ const smooth = (from, to, x) => {
 /** Starts fast, so the first frame already answers the click. */
 const easeOut = (k) => 1 - Math.pow(1 - Math.min(Math.max(k, 0), 1), 3);
 
-/** The moment of the passage at which it has come this far. */
-const whenAt = (far) => 1 - Math.cbrt(1 - Math.min(Math.max(far, 0), 1));
 
 /** The light, drawn on a canvas; null where WebGL is not available. */
 function light(canvas) {
@@ -166,183 +161,146 @@ function light(canvas) {
     return { draw, advance };
 }
 
-/**
- * Runs the part of the passage from `from` to `to`, calling `step` with
- * each point of it, and resolves when it gets there. The whole passage
- * runs from `origin` to the other end, and each part keeps its timing, so
- * the two halves on two pages read as one movement.
- */
-function passage(origin, from, to, drawn, step) {
-    const direction = origin === 0 ? 1 : -1;
-    const begin = whenAt(Math.abs(from - origin));
-    const end = whenAt(Math.abs(to - origin));
-    const span = (end - begin) * DURATION;
-    const start = performance.now();
-    let last = start;
+const doorway = document.querySelector(".doorway");
+const canvas = document.getElementById("doorway-light");
+const hero = document.querySelector(".doorway__hero");
+const stage = document.querySelector(".doorway__stage");
+const inside = document.querySelector(".doorway__inside");
+const panels = [...document.querySelectorAll(".doorway__panel")];
 
-    return new Promise((resolve) => {
-        function frame(now) {
-            const k = span > 0 ? begin + (end - begin) * Math.min((now - start) / span, 1) : end;
-            const at = origin + direction * easeOut(k);
-            drawn?.advance(Math.min((now - last) / 1000, 0.1), true);
-            last = now;
-            drawn?.draw(at);
-            step(at);
-            if (k < end) requestAnimationFrame(frame);
-            else resolve();
-        }
-        requestAnimationFrame(frame);
+const drawn = canvas ? light(canvas) : null;
+if (drawn) document.body.classList.add("lit");
+
+const mark = window.StemmaLogo && stage
+    ? window.StemmaLogo.mount(stage.querySelector("canvas"), {
+        mode: 2,
+        intensity: 1,
+        speed: 1,
+        onBreath: (value) => stage.style.setProperty("--glow", value.toFixed(3)),
+        onFail: () => stage.classList.add("still"),
+    })
+    : null;
+if (!mark) stage?.classList.add("still");
+
+/** Where each view lives. */
+const PATHS = { home: "/", login: "/login", register: "/register" };
+
+const viewAt = (path) => Object.keys(PATHS).find((view) => PATHS[view] === path) ?? "home";
+
+/** How far in the passage is: 0 on the front page, 1 at the sign-in. */
+let at = 0;
+/** Where it is heading, and since when. */
+let heading = null;
+
+/** Lays the page out for a point of the passage. */
+function show(point) {
+    const gone = smooth(0, 0.22, point);
+    const come = smooth(0.45, 0.85, point);
+    hero.style.opacity = String(1 - gone);
+    hero.style.transform = `scale(${1 - 0.035 * gone})`;
+    inside.style.opacity = String(come);
+    inside.style.visibility = point > 0.001 ? "visible" : "hidden";
+    const card = inside.querySelector(".doorway__panel:not([hidden]) > *");
+    if (card) card.style.transform = `translateY(${((1 - come) * 16).toFixed(2)}px)`;
+    document.body.classList.toggle("inside", point > 0.5);
+}
+
+/** Shows the sign-in or the registration inside. */
+function choose(view) {
+    for (const panel of panels) panel.hidden = panel.dataset.panel !== view;
+    inside.querySelectorAll("[data-view]").forEach((link) => {
+        if (!link.closest(".nav")) return;
+        if (link.dataset.view === view) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
     });
 }
 
-/** Leaves for `href` once the passage has reached the handover. */
-async function leave(href, from, to, drawn, step) {
-    try {
-        sessionStorage.setItem(STORE, JSON.stringify({ to, at: to > from ? HANDOVER : 1 - HANDOVER }));
-    } catch {
-        window.location.assign(href);
+function settle() {
+    const isInside = at === 1;
+    hero.inert = isInside;
+    inside.inert = !isInside;
+    document.querySelectorAll(".pressed").forEach((pressed) => pressed.classList.remove("pressed"));
+    if (isInside) {
+        mark?.pause();
+        const first = inside.querySelector(".doorway__panel:not([hidden]) input:not([type=hidden])");
+        if (first && window.matchMedia("(pointer: fine)").matches) first.focus({ preventScroll: true });
+    } else {
+        mark?.play();
+    }
+}
+
+/** Goes to a view, moving the light when it means going in or out. */
+function go(view, { instant = false } = {}) {
+    const target = view === "home" ? 0 : 1;
+    if (view !== "home") choose(view);
+    const title = view === "home" ? doorway.dataset.title : panels.find((panel) => panel.dataset.panel === view)?.dataset.title;
+    if (title) document.title = title;
+    if (instant) {
+        at = target;
+        heading = null;
+        show(at);
+        drawn?.draw(at);
+        settle();
         return;
     }
-    await passage(from, from, to > from ? HANDOVER : 1 - HANDOVER, drawn, step);
-    window.location.assign(href);
+    if (target === at && !heading) return;
+    hero.inert = true;
+    inside.inert = true;
+    mark?.play();
+    heading = { from: at, to: target, since: performance.now() };
 }
 
-/** What the page before this one left for it, taken once. */
-function handedOver() {
-    try {
-        const said = sessionStorage.getItem(STORE);
-        sessionStorage.removeItem(STORE);
-        return said ? JSON.parse(said) : null;
-    } catch {
-        return null;
-    }
-}
-
-function frontPage() {
-    const canvas = document.getElementById("doorway-light");
-    const hero = document.querySelector(".doorway__hero");
-    const stage = document.querySelector(".doorway__stage");
-    const drawn = canvas ? light(canvas) : null;
-    if (drawn) document.body.classList.add("lit");
-
-    const mark = window.StemmaLogo && stage
-        ? window.StemmaLogo.mount(stage.querySelector("canvas"), {
-            mode: 2,
-            intensity: 1,
-            speed: 1,
-            onBreath: (value) => stage.style.setProperty("--glow", value.toFixed(3)),
-            onFail: () => stage.classList.add("still"),
-        })
-        : null;
-    if (!mark) stage?.classList.add("still");
-
-    const show = (at) => {
-        const gone = smooth(0, 0.22, at);
-        hero.style.opacity = String(1 - gone);
-        hero.style.transform = `scale(${1 - 0.035 * gone})`;
-    };
-
-    // The light moves while the front page is showing, and only then.
-    let idle = false;
-    let last = performance.now();
-    function breathe(now) {
-        if (idle) return;
-        drawn.advance(Math.min((now - last) / 1000, 0.1), false);
-        last = now;
-        drawn.draw(0);
-        requestAnimationFrame(breathe);
-    }
-
-    const arriving = handedOver();
-    if (arriving && arriving.to === 0) {
-        document.documentElement.classList.remove("surface-pending");
-        passage(1, arriving.at, 0, drawn, show).then(() => {
-            if (drawn) requestAnimationFrame(breathe);
-        });
-    } else {
-        document.documentElement.classList.remove("surface-pending");
-        if (drawn) requestAnimationFrame(breathe);
-    }
-
-    document.querySelectorAll("[data-surface-exit]").forEach((link) => {
-        link.addEventListener("click", (event) => {
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            idle = true;
-            mark?.pause();
-            hero.inert = true;
-            link.classList.add("pressed");
-            void leave(link.href, 0, 1, drawn, show);
-        });
-    });
-
-    // Coming back to a page restored as it was left shows it as it was
-    // before leaving.
-    window.addEventListener("pageshow", (event) => {
-        if (!event.persisted) return;
-        hero.inert = false;
-        hero.style.opacity = "";
-        hero.style.transform = "";
-        document.querySelectorAll(".pressed").forEach((pressed) => pressed.classList.remove("pressed"));
-        mark?.play();
-        if (idle && drawn) {
-            idle = false;
-            last = performance.now();
-            requestAnimationFrame(breathe);
+// One loop draws everything: the light breathing on the front page, and
+// the passage. At the sign-in, once still, it draws nothing.
+let last = performance.now();
+function frame(now) {
+    const seconds = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    if (heading) {
+        const span = Math.abs(heading.to - heading.from) * DURATION;
+        const k = span ? Math.min((now - heading.since) / span, 1) : 1;
+        at = heading.from + (heading.to - heading.from) * easeOut(k);
+        show(at);
+        if (k === 1) {
+            at = heading.to;
+            heading = null;
+            settle();
         }
-    });
-}
-
-function signInPage() {
-    const card = document.querySelector(".sheet > *");
-    const arriving = handedOver();
-
-    const lit = () => {
-        const canvas = document.createElement("canvas");
-        canvas.className = "surface-light";
-        canvas.setAttribute("aria-hidden", "true");
-        document.body.prepend(canvas);
-        const drawn = light(canvas);
-        if (!drawn) canvas.remove();
-        return { canvas, drawn };
-    };
-
-    const show = (at) => {
-        const shown = smooth(0.45, 0.85, at);
-        document.body.style.setProperty("--arrival", String(shown));
-        if (card) card.style.transform = `translateY(${((1 - shown) * 16).toFixed(2)}px)`;
-    };
-
-    if (arriving && arriving.to === 1) {
-        const { canvas, drawn } = lit();
-        document.body.classList.add("surface-arriving");
-        document.documentElement.classList.remove("surface-pending");
-        show(arriving.at);
-        passage(0, arriving.at, 1, drawn, show).then(() => {
-            document.body.classList.remove("surface-arriving");
-            document.body.style.removeProperty("--arrival");
-            if (card) card.style.transform = "";
-            // The last frame is the still page; the canvas steps aside so
-            // nothing keeps drawing.
-            canvas.classList.add("surface-light--done");
-            window.setTimeout(() => canvas.remove(), 400);
-            const first = document.querySelector(".sheet input:not([type=hidden])");
-            if (first && window.matchMedia("(pointer: fine)").matches) first.focus({ preventScroll: true });
-        });
-    } else {
-        document.documentElement.classList.remove("surface-pending");
     }
-
-    document.querySelectorAll("[data-surface-back]").forEach((link) => {
-        link.addEventListener("click", (event) => {
-            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            const { drawn } = lit();
-            document.body.classList.add("surface-arriving");
-            void leave(link.href, 1, 0, drawn, show);
-        });
-    });
+    if (drawn && (heading || at < 1)) {
+        drawn.advance(seconds, !!heading);
+        drawn.draw(at);
+    }
+    requestAnimationFrame(frame);
 }
 
-if (document.body.classList.contains("landing-page")) frontPage();
-else signInPage();
+document.addEventListener("click", (event) => {
+    const link = event.target instanceof Element ? event.target.closest("a[data-view]") : null;
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    const view = link.dataset.view;
+    if (view === viewAt(location.pathname)) return;
+    link.classList.add("pressed");
+    history.pushState({ view }, "", PATHS[view]);
+    go(view);
+});
+
+// A link inside the sign-in to the registration, or back, stays here.
+inside.querySelectorAll('a[href="/login"], a[href="/register"]').forEach((link) => {
+    if (!link.dataset.view) link.dataset.view = viewAt(link.getAttribute("href"));
+});
+
+window.addEventListener("popstate", () => go(viewAt(location.pathname)));
+
+// A page brought back from the browser's cache is shown as its address
+// says, without moving.
+window.addEventListener("pageshow", (event) => {
+    if (event.persisted) go(viewAt(location.pathname), { instant: true });
+});
+
+window.addEventListener("resize", () => {
+    if (drawn && at === 1) drawn.draw(1);
+});
+
+go(viewAt(location.pathname), { instant: true });
+requestAnimationFrame(frame);

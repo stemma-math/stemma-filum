@@ -327,7 +327,8 @@ th.numeric {
     border-bottom-color: var(--accent);
 }
 
-.auth-page .sheet {
+.auth-page .sheet,
+.doorway__inside .sheet {
     display: flex;
     flex: 1;
     flex-direction: column;
@@ -346,27 +347,32 @@ th.numeric {
     box-shadow: var(--shadow-auth);
 }
 
-.auth-page .sheet--narrow h1 {
+.auth-page .sheet--narrow h1,
+.doorway__inside .sheet--narrow h1 {
     font-size: clamp(36px, 6vw, 48px);
     font-weight: 500;
     line-height: 1.05;
 }
 
-.auth-page .sheet--narrow.stack {
+.auth-page .sheet--narrow.stack,
+.doorway__inside .sheet--narrow.stack {
     gap: 20px;
 }
 
-.auth-page .sheet--narrow .button--primary {
+.auth-page .sheet--narrow .button--primary,
+.doorway__inside .sheet--narrow .button--primary {
     min-height: 46px;
     font-size: 16px;
 }
 
-.auth-page .input {
+.auth-page .input,
+.doorway__inside .input {
     min-height: 48px;
     font-size: 16px;
 }
 
-.auth-page .field__label {
+.auth-page .field__label,
+.doorway__inside .field__label {
     font-weight: 400;
     font-size: 16px;
 }
@@ -397,15 +403,16 @@ th.numeric {
  * ways in. The light is drawn on a canvas behind everything; without
  * WebGL it is this gradient. */
 
+html:has(.landing-page) {
+    background: var(--navy-950);
+}
+
 .landing-page {
     min-height: 100vh;
     color: #f2f6fd;
     background: var(--navy-950);
 }
 
-.landing-page .sheet {
-    min-height: 100vh;
-}
 
 .doorway {
     display: flex;
@@ -413,6 +420,7 @@ th.numeric {
     align-items: center;
     justify-content: center;
     min-height: 100vh;
+    min-height: 100dvh;
     padding: 24px;
     text-align: center;
     background: radial-gradient(120% 90% at 50% 30%, #051740 55%, #1a4f9e 74%, #8fb6e8 90%, #eef4fc 100%);
@@ -422,8 +430,7 @@ th.numeric {
     background: none;
 }
 
-.doorway__light,
-.surface-light {
+.doorway__light {
     position: fixed;
     inset: 0;
     z-index: 0;
@@ -585,25 +592,43 @@ th.numeric {
     color: #7f9ac4;
 }
 
-/* Arriving through the passage, the page is hidden until it is drawn,
- * then its content comes in over the light as the light withdraws. */
-.surface-pending body {
+/* The sign-in and the registration wait over the front page, shown by the
+ * passage as the light withdraws. */
+.doorway__inside {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    color: var(--ink-1);
+    text-align: left;
+    visibility: hidden;
     opacity: 0;
+    background:
+        radial-gradient(110% 95% at -8% 112%, rgb(219 232 249) 0%, rgb(219 232 249 / 0%) 70%),
+        #f5f7fc;
 }
 
-.auth-page.surface-arriving {
-    background: transparent;
+.lit .doorway__inside {
+    background: none;
 }
 
-.surface-arriving > :not(.surface-light) {
-    position: relative;
-    z-index: 1;
-    opacity: var(--arrival, 0);
+.doorway__inside .masthead,
+.doorway__inside .foot {
+    flex-shrink: 0;
 }
 
-.surface-light--done {
-    opacity: 0;
-    transition: opacity 360ms var(--ease-out);
+.doorway__inside .sheet {
+    min-height: auto;
+}
+
+.doorway__panel {
+    display: contents;
+}
+
+.landing-page.inside {
+    overflow: hidden;
 }
 
 /* ── The signed-in shell ───────────────────────────────────────────────

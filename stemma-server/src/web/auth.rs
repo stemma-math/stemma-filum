@@ -68,7 +68,7 @@ pub async fn login_form(
 
     Ok(page(
         &chrome,
-        login_body(next.next.as_deref(), policy.registration_open, None),
+        login_body(next.next.as_deref(), policy.registration_open, None, true),
     )
     .into_response())
 }
@@ -117,6 +117,7 @@ pub async fn log_in(
                     credentials.next.as_deref(),
                     policy.registration_open,
                     Some("The login details are incorrect."),
+                    true,
                 ),
             ),
         )
@@ -280,8 +281,14 @@ fn signed_in(instance: &Instance, cookie: &str, destination: &str) -> Response {
     (headers, Redirect::to(destination)).into_response()
 }
 
-/// The log-in form's body.
-fn login_body(next: Option<&str>, registration_open: bool, problem: Option<&str>) -> Markup {
+/// The log-in form's body. The front page carries one too, hidden until
+/// somebody goes in, and there nothing takes the focus.
+pub(super) fn login_body(
+    next: Option<&str>,
+    registration_open: bool,
+    problem: Option<&str>,
+    focus: bool,
+) -> Markup {
     html! {
         div class="sheet--narrow stack" {
             h1 { "Log in" }
@@ -298,7 +305,7 @@ fn login_body(next: Option<&str>, registration_open: bool, problem: Option<&str>
                 div class="field" {
                     label class="field__label" for="login" { "Name or email address" }
                     input class="input" type="text" id="login" name="login" autocomplete="username"
-                          autofocus required;
+                          autofocus[focus] required;
                 }
 
                 div class="field" {
@@ -324,7 +331,7 @@ fn login_body(next: Option<&str>, registration_open: bool, problem: Option<&str>
 }
 
 /// The registration form's body.
-fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup {
+pub(super) fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup {
     let value = |pick: fn(&Registration) -> &str| given.map(pick).unwrap_or_default().to_owned();
 
     html! {
@@ -361,8 +368,8 @@ fn register_body(problem: Option<&str>, given: Option<&Registration>) -> Markup 
                 }
 
                 div class="field" {
-                    label class="field__label" for="password" { "Password" }
-                    input class="input" type="password" id="password" name="password"
+                    label class="field__label" for="new-password" { "Password" }
+                    input class="input" type="password" id="new-password" name="password"
                           autocomplete="new-password" required;
                     span class="field__hint" {
                         "Use at least " (password::MINIMUM_LENGTH) " characters."

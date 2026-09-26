@@ -1,6 +1,6 @@
 //! The shell every page is drawn in.
 
-use maud::{DOCTYPE, Markup, PreEscaped, html};
+use maud::{DOCTYPE, Markup, html};
 
 use super::assets::{
     GLYPHS_PATH, LANDING_PATH, MANIFEST_PATH, MARK_ANIMATED_PATH, MARK_ON_DARK_PATH,
@@ -169,17 +169,8 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 link rel="stylesheet" href=(STYLESHEET_PATH);
                 @if chrome.visitor.is_some() {
                     script src=(SHELL_PATH) type="module" {}
-                } @else {
-                    // A page arrived at through the front page's passage
-                    // stays hidden until the passage draws it.
-                    script {
-                        (PreEscaped(
-                            "try{if(sessionStorage.getItem('stemma-surface'))document.documentElement.classList.add('surface-pending')}catch(_){}"
-                        ))
-                    }
-                    @if chrome.landing {
-                        script src=(MARK_ANIMATED_PATH) {}
-                    }
+                } @else if chrome.landing {
+                    script src=(MARK_ANIMATED_PATH) {}
                     script src=(LANDING_PATH) type="module" {}
                 }
             }
@@ -193,6 +184,8 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                             main class="page" id="content" { (content) }
                         }
                     }
+                } @else if chrome.landing {
+                    main class="sheet" { (content) }
                 } @else {
                     (masthead(chrome))
                     main class="sheet" { (content) }
@@ -207,12 +200,12 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
 fn masthead(chrome: &Chrome) -> Markup {
     html! {
         header class="masthead" {
-            a class="brand" href="/" data-surface-back {
+            a class="brand" href="/" {
                 (mark_on_light())
                 span class="wordmark" { "Stemma" }
             }
 
-            nav class="nav" hidden[chrome.landing] aria-label="Account" {
+            nav class="nav" aria-label="Account" {
                 @if chrome.offer_ways_in {
                     (destination("/login", "Log in", &chrome.current))
                     @if chrome.registration_open {
