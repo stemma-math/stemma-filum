@@ -696,7 +696,7 @@
 }
 
 .autosize input {
-    width: 100%;
+    width: calc(100% + 8px);
     margin: 0 -4px;
     padding: 0 4px;
     color: inherit;
@@ -721,14 +721,16 @@
     cursor: default;
 }
 
+/* The title keeps its width and the description gives way first. */
 .editor-head__name {
-    flex-shrink: 1;
+    flex-shrink: 0;
+    max-width: 65%;
     font: var(--text-title);
     letter-spacing: -0.01em;
 }
 
 .editor-head__about {
-    flex-shrink: 2;
+    flex-shrink: 1;
     font-size: 15px;
     color: var(--ink-3);
 }
@@ -964,7 +966,6 @@
     height: 16px;
     margin: 0;
     opacity: 0;
-    accent-color: var(--accent);
     cursor: pointer;
 }
 
@@ -983,8 +984,10 @@
     visibility: visible;
 }
 
+/* Pointing at the grip moves the box out into the margin, clear of the
+ * card's edge, so both can be reached. */
 .block:hover .block__lead:hover .block__select {
-    inset: 4px auto auto -18px;
+    inset: 4px auto auto -30px;
 }
 
 .block__type {
@@ -1040,9 +1043,10 @@ button.block__label:disabled {
 
 .block__title {
     flex: 1;
-    min-width: 0;
+    min-width: 88px;
     height: 30px;
     padding: 0 6px;
+    text-overflow: ellipsis;
     font: 600 16px / 1 var(--font-ui);
     color: var(--ink-1);
     background: transparent;
@@ -1069,9 +1073,10 @@ button.block__label:disabled {
     color: var(--ink-1);
 }
 
+/* In a narrow window the siglum gives way before the title does. */
 .block__siglum {
-    flex-shrink: 0;
-    width: 160px;
+    flex: 0 1 160px;
+    min-width: 96px;
     height: 30px;
     padding: 0 10px;
     font: 12px / 1 var(--font-mono);
@@ -1293,7 +1298,6 @@ button.block__label:disabled {
 }
 
 .uses__list .choice {
-    align-items: center;
     font-size: 13px;
 }
 
@@ -1771,12 +1775,15 @@ button.block__label:disabled {
     gap: var(--space-4);
 }
 
+/* One height for every page and every answer, so the window never
+ * resizes under the pointer; a long page scrolls inside its pane. */
 .settings {
     display: grid;
     grid-template-columns: 180px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: 24px;
-    min-height: 420px;
-    max-height: calc(100vh - 220px);
+    height: min(560px, calc(100vh - 240px));
+    min-height: 280px;
 }
 
 .settings__nav {
@@ -1815,8 +1822,10 @@ button.block__label:disabled {
     flex-direction: column;
     gap: 18px;
     min-width: 0;
+    min-height: 0;
     padding-right: 4px;
     overflow-y: auto;
+    scrollbar-gutter: stable;
 }
 
 .settings__title {

@@ -235,7 +235,7 @@
 
     .button--quiet:disabled,
     .button--icon:disabled,
-    .button--danger:disabled,
+    .button--danger:not(.button--primary):disabled,
     .button--link:disabled {
         background: transparent;
         border-color: transparent;
@@ -340,15 +340,69 @@
 
     .choice {
         display: flex;
-        align-items: baseline;
+        align-items: flex-start;
         gap: var(--space-2);
         font-size: var(--control-font);
+        line-height: 20px;
         color: var(--ink-1);
+        cursor: pointer;
     }
 
+    /* The box sits on the first line of the words, however many there are. */
     .choice input {
+        margin: 2px 0 0;
+    }
+
+    .choice:has(input:disabled) {
+        cursor: default;
+    }
+
+    /* Drawn rather than native, so the box is the same size, colour and
+     * alignment in every browser and in the desktop window. */
+    input[type="checkbox"],
+    input[type="radio"] {
+        box-sizing: border-box;
+        flex-shrink: 0;
+        width: 16px;
+        height: 16px;
         margin: 0;
-        accent-color: var(--accent);
+        vertical-align: -3px;
+        background: var(--surface-card) center / 12px no-repeat;
+        border: 1.5px solid var(--border-dashed);
+        border-radius: 4px;
+        appearance: none;
+        cursor: pointer;
+        transition:
+            background-color 120ms var(--ease-out),
+            border-color 120ms var(--ease-out),
+            box-shadow 120ms var(--ease-out);
+    }
+
+    input[type="radio"] {
+        border-radius: 50%;
+    }
+
+    input[type="checkbox"]:hover:not(:disabled),
+    input[type="radio"]:hover:not(:disabled) {
+        border-color: var(--accent);
+    }
+
+    input[type="checkbox"]:checked {
+        background-color: var(--accent);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        border-color: var(--accent);
+    }
+
+    input[type="radio"]:checked {
+        background-color: var(--surface-card);
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 3px var(--surface-card), inset 0 0 0 8px var(--accent);
+    }
+
+    input[type="checkbox"]:disabled,
+    input[type="radio"]:disabled {
+        opacity: 0.5;
+        cursor: default;
     }
 
     /* A set of choices: the question is the legend. */
@@ -362,7 +416,10 @@
         border-radius: var(--radius-md);
     }
 
+    /* WebKit lays a legend out as a flex item and stretches it, which
+     * takes the whole top border away with it. */
     .fieldset > legend {
+        width: fit-content;
         padding: 0 var(--space-1);
         font: var(--text-small);
         color: var(--ink-2);
@@ -658,6 +715,12 @@
         border: 0;
         border-radius: var(--radius-xl);
         box-shadow: var(--shadow-float);
+    }
+
+    /* A dialog takes the focus itself when opened; the ring is for its
+     * controls. */
+    .dialog:focus {
+        outline: none;
     }
 
     .dialog::backdrop {

@@ -1,7 +1,8 @@
 <script lang="ts">
   // A modal dialog: a title in a sentence, what will happen, and the
   // buttons at the right. Escape and a click on the backdrop close it, and
-  // focus goes back to whatever opened it.
+  // focus goes back to whatever opened it. Opening focuses the field marked
+  // `autofocus`, or else the dialog itself, never whichever button is first.
   import type { Snippet } from "svelte";
 
   let {
@@ -16,7 +17,10 @@
 
   $effect(() => {
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      if (!dialog.querySelector("[autofocus]")) dialog.focus();
+    }
     else if (!open && dialog.open) dialog.close();
   });
 </script>
@@ -26,6 +30,7 @@
   bind:this={dialog}
   class="dialog"
   class:dialog--wide={wide}
+  tabindex="-1"
   aria-label={title}
   onclose={() => (open = false)}
   onclick={(event) => { if (event.target === dialog) open = false; }}
