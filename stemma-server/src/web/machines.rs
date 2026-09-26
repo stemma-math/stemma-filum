@@ -421,9 +421,12 @@ fn body(
             p class="quiet" {
                 "Remove access for this machine and stop assigning new work to it."
             }
-            form method="post" action={ "/machines/" (machine.id) "/retire" } {
+            form method="post" action={ "/machines/" (machine.id) "/retire" }
+                 data-confirm-title="Revoke this machine?"
+                 data-confirm-text="It loses access to this instance and gets no new work. Signing it in again makes it a new machine."
+                 data-confirm-verb="Revoke access" {
                 (signature(signed))
-                button class="button" type="submit" { "Revoke access" }
+                button class="button button--danger" type="submit" { "Revoke access" }
             }
         }
     }

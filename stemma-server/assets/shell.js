@@ -43,3 +43,51 @@ document.querySelectorAll("dialog.dialog").forEach((dialog) => {
         if (event.target === dialog) dialog.close();
     });
 });
+
+// A form that does something hard to take back names the consequence and
+// asks first: `data-confirm-title`, `data-confirm-text` and the exact verb
+// in `data-confirm-verb`. Without JavaScript it simply submits.
+document.querySelectorAll("form[data-confirm-title]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+        if (form.dataset.confirmed) return;
+        event.preventDefault();
+
+        const dialog = document.createElement("dialog");
+        dialog.className = "dialog";
+        const body = document.createElement("div");
+        body.className = "dialog__body";
+        const title = document.createElement("h2");
+        title.className = "dialog__title";
+        title.textContent = form.dataset.confirmTitle;
+        const text = document.createElement("p");
+        text.className = "dialog__text";
+        text.textContent = form.dataset.confirmText ?? "";
+        const actions = document.createElement("div");
+        actions.className = "dialog__actions";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "button";
+        cancel.textContent = "Cancel";
+        const confirm = document.createElement("button");
+        confirm.type = "button";
+        confirm.className = "button button--primary button--danger";
+        confirm.textContent = form.dataset.confirmVerb ?? "Confirm";
+        actions.append(cancel, confirm);
+        body.append(title, text, actions);
+        dialog.append(body);
+        document.body.append(dialog);
+
+        cancel.addEventListener("click", () => dialog.close());
+        dialog.addEventListener("click", (click) => {
+            if (click.target === dialog) dialog.close();
+        });
+        dialog.addEventListener("close", () => dialog.remove());
+        confirm.addEventListener("click", () => {
+            form.dataset.confirmed = "true";
+            dialog.close();
+            form.requestSubmit(event.submitter);
+        });
+        dialog.showModal();
+        cancel.focus();
+    });
+});

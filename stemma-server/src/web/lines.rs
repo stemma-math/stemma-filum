@@ -435,9 +435,12 @@ fn body(viewing: &Viewing<'_>) -> Markup {
 
                         form method="post"
                              action={ "/g/" (group.slug()) "/private/" (digest.name)
-                                      "/delete" } {
+                                      "/delete" }
+                             data-confirm-title="Delete this line?"
+                             data-confirm-text="It is removed from your repository. Its history is kept."
+                             data-confirm-verb="Delete line" {
                             (signature(signed))
-                            button class="button" type="submit" {
+                            button class="button button--danger" type="submit" {
                                 "Delete this line"
                             }
                         }

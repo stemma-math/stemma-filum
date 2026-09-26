@@ -666,11 +666,13 @@ fn body(
             p class="page-subtitle" { "Definitions are immutable. Every line between them is a proved object with its own audit state." }
         }
         div class="block" { h2 class="block__title" { "Definitions" span class="count" { (entries.len()) } }
+            @if entries.is_empty() { p class="empty" { "Nothing has been admitted yet." } }
             ul class="register" { @for stored in entries { li { span class="register__name" { (stored.entry.name) }
                 span class="quiet identifier" { (stored.entry.id) " · " (stored.entry.siglum) }
                 span class="register__aside" { (format!("{:?}", stored.entry.correspondence)) } } } }
         }
         div class="block" { h2 class="block__title" { "Bridges" span class="count" { (bridges.len()) } }
+            @if bridges.is_empty() { p class="empty" { "No bridges yet." } }
             ul class="register" { @for stored in bridges { li { span class="register__name" { (stored.bridge.left) " ↔ " (stored.bridge.right) }
                 span class="quiet identifier" { (stored.bridge.id) " · " (format!("{:?}", stored.bridge.kind)) }
                 span class="register__aside" { (format!("{:?}", stored.bridge.correspondence)) } } } }
