@@ -8,7 +8,7 @@ use support::Harness;
 async fn the_instance_serves_its_own_faces() {
     let mut instance = Harness::new();
 
-    let face = instance.get("/assets/fonts/iosevka-400.woff2").await;
+    let face = instance.get("/assets/fonts/jetbrains-mono-400.woff2").await;
 
     assert!(face.status.is_success());
     assert_eq!(face.content_type.as_deref(), Some("font/woff2"));

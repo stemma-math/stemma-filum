@@ -17,7 +17,7 @@
 
 body {
     margin: 0;
-    font-family: var(--grotesk);
+    font-family: var(--font-ui);
     font-size: var(--step-3);
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -26,7 +26,7 @@ body {
 h1,
 h2,
 h3 {
-    font-family: var(--grotesk);
+    font-family: var(--font-ui);
     font-weight: 600;
     text-wrap: balance;
     margin: 0;
@@ -52,7 +52,7 @@ p {
 }
 
 a {
-    color: var(--ditto);
+    color: var(--accent);
     text-decoration-thickness: 1px;
     text-underline-offset: 2px;
 }
@@ -64,12 +64,12 @@ a:hover {
 code,
 .mono,
 .identifier {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-2);
 }
 
 .serif {
-    font-family: var(--serif);
+    font-family: var(--font-math);
     font-size: var(--step-4);
     line-height: 1.62;
 }
@@ -77,8 +77,8 @@ code,
 /* ── The page ──────────────────────────────────────────────────────────── */
 
 .masthead {
-    border-bottom: 1px solid var(--rule);
-    background: var(--paper-raise);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-card);
 }
 
 .masthead__inner,
@@ -86,14 +86,14 @@ code,
 .foot__inner {
     max-width: 68rem;
     margin: 0 auto;
-    padding: 0 var(--space-5);
+    padding: 0 var(--space-6);
 }
 
 .masthead__inner {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--space-5);
+    gap: var(--space-6);
     padding-top: var(--space-3);
     padding-bottom: var(--space-3);
 }
@@ -102,11 +102,11 @@ code,
     display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    font-family: var(--grotesk);
+    font-family: var(--font-ui);
     font-size: var(--step-4);
     font-weight: 500;
     letter-spacing: 0.01em;
-    color: var(--ink);
+    color: var(--ink-1);
     text-decoration: none;
 }
 
@@ -132,20 +132,20 @@ code,
 }
 
 .nav a:hover {
-    color: var(--ink);
+    color: var(--ink-1);
 }
 
 .nav a[aria-current="page"] {
-    color: var(--ink);
-    border-bottom-color: var(--ditto);
+    color: var(--ink-1);
+    border-bottom-color: var(--accent);
 }
 
 .sheet {
-    padding-top: var(--space-7);
-    padding-bottom: var(--space-8);
+    padding-top: var(--space-12);
+    padding-bottom: var(--space-16);
     display: flex;
     flex-direction: column;
-    gap: var(--space-6);
+    gap: var(--space-8);
 }
 
 .sheet--narrow {
@@ -153,7 +153,7 @@ code,
 }
 
 .foot {
-    border-top: 1px solid var(--rule);
+    border-top: 1px solid var(--border);
     color: var(--ink-3);
 }
 
@@ -163,7 +163,7 @@ code,
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-4);
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-1);
 }
 
@@ -176,8 +176,8 @@ code,
 }
 
 .block + .block {
-    border-top: 1px solid var(--rule);
-    padding-top: var(--space-5);
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-6);
 }
 
 .stack {
@@ -213,11 +213,11 @@ code,
     flex-wrap: wrap;
     align-items: baseline;
     gap: var(--space-3);
-    border-top: 1px solid var(--rule-soft);
+    border-top: 1px solid var(--divider);
 }
 
 .register li:last-child {
-    border-bottom: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--divider);
 }
 
 .register__name {
@@ -255,17 +255,17 @@ form > .button {
 }
 
 .done {
-    background: var(--paper-sunk);
-    border-left: 2px solid var(--rule);
+    background: var(--fill-muted);
+    border-left: 2px solid var(--border);
     padding: var(--space-3) var(--space-4);
 }
 
 /* Something given out once, which has to be copied before it is gone. */
 .secret {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-2);
-    background: var(--paper-sunk);
-    border: 1px solid var(--rule);
+    background: var(--fill-muted);
+    border: 1px solid var(--border);
     padding: var(--space-3);
     overflow-wrap: anywhere;
 }
@@ -282,7 +282,7 @@ table {
 }
 
 th {
-    font-family: var(--narrow);
+    font-family: var(--font-ui);
     font-size: var(--step-1);
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -290,12 +290,12 @@ th {
     text-align: left;
     font-weight: 400;
     padding: 0 var(--space-4) var(--space-2) 0;
-    border-bottom: 1px solid var(--rule);
+    border-bottom: 1px solid var(--border);
 }
 
 td {
     padding: var(--space-2) var(--space-4) var(--space-2) 0;
-    border-bottom: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--divider);
     vertical-align: baseline;
 }
 
@@ -313,8 +313,8 @@ th.numeric {
 .doorway {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
-    padding-top: var(--space-8);
+    gap: var(--space-6);
+    padding-top: var(--space-16);
 }
 
 /* The instance's name is the largest type on the page because it is a fact,
@@ -351,7 +351,7 @@ th.numeric {
 .apparatus {
     display: grid;
     grid-template-columns: 11rem minmax(0, 1fr) 21rem;
-    gap: var(--space-5);
+    gap: var(--space-6);
     align-items: start;
 }
 
@@ -359,7 +359,7 @@ th.numeric {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    font-family: var(--narrow);
+    font-family: var(--font-ui);
     font-size: var(--step-1);
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -369,7 +369,7 @@ th.numeric {
 }
 
 .apparatus__gutter .identifier {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-2);
     letter-spacing: 0;
     text-transform: none;
@@ -378,15 +378,15 @@ th.numeric {
 .apparatus__document {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
+    gap: var(--space-6);
     min-width: 0;
 }
 
 .apparatus__register {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
-    border-left: 1px solid var(--rule);
+    gap: var(--space-6);
+    border-left: 1px solid var(--border);
     padding-left: var(--space-4);
 }
 
@@ -396,12 +396,12 @@ th.numeric {
 .node {
     display: grid;
     grid-template-columns: 11rem minmax(0, 1fr);
-    gap: var(--space-5);
+    gap: var(--space-6);
     align-items: start;
 }
 
 .node__mark {
-    font-family: var(--narrow);
+    font-family: var(--font-ui);
     font-size: var(--step-1);
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -413,7 +413,7 @@ th.numeric {
 }
 
 .node__mark .identifier {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-2);
     letter-spacing: 0;
     text-transform: none;
@@ -421,7 +421,7 @@ th.numeric {
 }
 
 .node__body {
-    border-left: 1px solid var(--rule);
+    border-left: 1px solid var(--border);
     padding-left: var(--space-4);
     display: flex;
     flex-direction: column;
@@ -431,17 +431,17 @@ th.numeric {
 
 .node--central > .node__body {
     border-left-width: 1.6px;
-    border-left-color: var(--ditto);
+    border-left-color: var(--accent);
 }
 
 .node__name {
-    font-family: var(--serif);
+    font-family: var(--font-math);
     font-size: var(--step-4);
     line-height: 1.3;
 }
 
 .node__uses {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-2);
     color: var(--ink-3);
 }
@@ -451,13 +451,13 @@ th.numeric {
 .box {
     display: grid;
     grid-template-columns: 11rem minmax(0, 1fr);
-    gap: var(--space-5);
+    gap: var(--space-6);
     align-items: start;
 }
 
 .box__band {
     min-height: 3rem;
-    border: 1px solid var(--rule);
+    border: 1px solid var(--border);
     padding: var(--space-3) var(--space-4);
     display: flex;
     align-items: center;
@@ -468,8 +468,8 @@ th.numeric {
         45deg,
         transparent,
         transparent 7px,
-        var(--rule-soft) 7px,
-        var(--rule-soft) 8px
+        var(--divider) 7px,
+        var(--divider) 8px
     );
 }
 
@@ -490,9 +490,9 @@ th.numeric {
     .apparatus__register {
         grid-column: 1 / -1;
         border-left: 0;
-        border-top: 1px solid var(--rule);
+        border-top: 1px solid var(--border);
         padding-left: 0;
-        padding-top: var(--space-5);
+        padding-top: var(--space-6);
     }
 }
 
@@ -525,7 +525,7 @@ th.numeric {
 
 .launcher > summary {
     display: inline-block;
-    font-family: var(--grotesk);
+    font-family: var(--font-ui);
     font-size: var(--step-2);
     color: var(--ink-3);
     cursor: pointer;
@@ -541,8 +541,8 @@ th.numeric {
 .launcher > summary:hover,
 .launcher > summary:focus-visible,
 .launcher[open] > summary {
-    color: var(--ink);
-    border-left-color: var(--ditto);
+    color: var(--ink-1);
+    border-left-color: var(--accent);
 }
 
 .launcher__panel {
@@ -550,8 +550,8 @@ th.numeric {
     margin-top: var(--space-3);
     margin-left: var(--space-4);
     max-width: 32rem;
-    border: 1px solid var(--rule);
-    background: var(--paper-raise);
+    border: 1px solid var(--border);
+    background: var(--surface-card);
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
@@ -565,7 +565,7 @@ th.numeric {
     top: var(--space-4);
     left: calc(-1 * var(--space-4));
     width: var(--space-4);
-    border-top: 1px solid var(--rule);
+    border-top: 1px solid var(--border);
 }
 
 .launcher__machine {
@@ -575,7 +575,7 @@ th.numeric {
 }
 
 .launcher__name {
-    font-family: var(--narrow);
+    font-family: var(--font-ui);
     font-size: var(--step-1);
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -586,18 +586,18 @@ th.numeric {
     display: flex;
     align-items: baseline;
     gap: var(--space-2);
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-2);
     padding-left: var(--space-2);
     border-left: 2px solid transparent;
 }
 
 .launcher__agent:has(input:checked) {
-    border-left-color: var(--ditto);
+    border-left-color: var(--accent);
 }
 
 .launcher__agent input {
-    accent-color: var(--ditto);
+    accent-color: var(--accent);
 }
 
 /* Shown, named and unavailable. An agent a machine does not have implies
@@ -613,10 +613,10 @@ th.numeric {
 /* A count is on a person's decision and never on the state of the
  * mathematics, so it is ink among grey rather than a colour of its own. */
 .count {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: var(--step-2);
     font-variant-numeric: tabular-nums;
-    color: var(--ink);
+    color: var(--ink-1);
 }
 
 @media (max-width: 56rem) {
@@ -637,9 +637,9 @@ th.numeric {
  */
 
 .diff {
-    font: var(--step-2) / 1.6 var(--mono);
-    background: var(--paper-sunk);
-    border: 1px solid var(--rule);
+    font: var(--step-2) / 1.6 var(--font-mono);
+    background: var(--fill-muted);
+    border: 1px solid var(--border);
     padding: var(--space-3) 0;
     overflow-x: auto;
     white-space: pre;
@@ -654,16 +654,16 @@ th.numeric {
 }
 
 .source .identifier {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     letter-spacing: 0;
     text-transform: none;
 }
 
 .source__text {
     margin: 0;
-    font: var(--step-2) / 1.6 var(--mono);
-    background: var(--paper-sunk);
-    border: 1px solid var(--rule);
+    font: var(--step-2) / 1.6 var(--font-mono);
+    background: var(--fill-muted);
+    border: 1px solid var(--border);
     padding: var(--space-3);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -678,12 +678,12 @@ th.numeric {
 }
 
 .diff__row--added {
-    border-left-color: var(--ink);
-    background: var(--paper-raise);
+    border-left-color: var(--ink-1);
+    background: var(--surface-card);
 }
 
 .diff__row--removed {
-    border-left-color: var(--rule);
+    border-left-color: var(--border);
     color: var(--ink-3);
     text-decoration: line-through;
     text-decoration-thickness: 1px;
@@ -738,8 +738,8 @@ th.numeric {
 
 body {
     min-height: 100vh;
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--surface-page);
+    color: var(--ink-1);
 }
 
 h1 {
@@ -755,7 +755,7 @@ h3 {
 
 .topbar__eyebrow,
 .sidebar__label {
-    font-family: var(--grotesk);
+    font-family: var(--font-ui);
     font-weight: 600;
     letter-spacing: 0.12em;
 }
@@ -774,7 +774,7 @@ h3 {
      * foot. A gap is a floor the margins cannot spend. */
     display: grid;
     grid-template-rows: auto 1fr auto;
-    row-gap: var(--space-5);
+    row-gap: var(--space-6);
     background:
         radial-gradient(circle at 4% 100%, rgb(105 167 255 / 20%), transparent 28rem),
         linear-gradient(145deg, #f9fbfd, #edf3f9);
@@ -796,7 +796,7 @@ h3 {
 }
 
 .auth-page .brand-mark {
-    color: var(--ditto);
+    color: var(--accent);
 }
 
 .auth-page .sheet {
@@ -806,7 +806,7 @@ h3 {
     background: rgb(255 255 255 / 88%);
     border: 1px solid rgb(204 218 232 / 80%);
     border-radius: 20px;
-    box-shadow: var(--panel-shadow);
+    box-shadow: var(--shadow-float);
     backdrop-filter: blur(18px);
 }
 
@@ -830,7 +830,7 @@ h3 {
     background:
         radial-gradient(ellipse 42% 18% at 18% 4%, #7ab3fb 0, #225fae 45%, transparent 76%),
         radial-gradient(ellipse 38% 19% at 78% 3%, #b1d4ff 0, #3675c4 42%, transparent 74%),
-        linear-gradient(180deg, #0b4789 0, #052c61 26%, var(--night-deep) 100%);
+        linear-gradient(180deg, #0b4789 0, #052c61 26%, var(--navy-950) 100%);
     border-radius: 42% 55% 0 0 / 7% 9% 0 0;
     box-shadow: 0 -24px 90px rgb(92 159 245 / 28%);
     transform: translate3d(0, 112%, 0);
@@ -879,7 +879,7 @@ html.surface-pending .auth-page .surface-transition,
     min-height: 100svh;
     overflow: hidden;
     color: #f4f8ff;
-    background: var(--night-deep);
+    background: var(--navy-950);
 }
 
 .landing-page::before,
@@ -896,7 +896,7 @@ html.surface-pending .auth-page .surface-transition,
         radial-gradient(ellipse 62% 43% at -2% 108%, #f7fbff 0, #c7e0ff 12%, #75a9e7 30%, rgb(27 83 157 / 58%) 53%, transparent 76%),
         radial-gradient(ellipse 58% 45% at 102% 109%, #fff 0, #d7e9ff 11%, #81afe7 29%, rgb(26 80 151 / 52%) 52%, transparent 76%),
         radial-gradient(ellipse 46% 21% at 51% 105%, #8ab8ef 0, rgb(35 96 172 / 50%) 38%, transparent 76%),
-        radial-gradient(circle at 50% 40%, #07346e 0, #03224d 42%, var(--night-deep) 73%, #000b1d 100%);
+        radial-gradient(circle at 50% 40%, #07346e 0, #03224d 42%, var(--navy-950) 73%, #000b1d 100%);
     background-position: 0 0, 0 0, 0 0, center;
     animation: blue-tide 10s ease-in-out infinite alternate;
     will-change: transform, filter;
@@ -1061,7 +1061,7 @@ html.surface-pending .auth-page .surface-transition,
 }
 
 .button--hero {
-    color: var(--night-deep) !important;
+    color: var(--navy-950) !important;
     background: #f5f9ff !important;
     border-color: #fff !important;
     box-shadow: 0 10px 32px rgb(1 12 32 / 35%);
@@ -1101,7 +1101,7 @@ html.surface-pending .auth-page .surface-transition,
     justify-content: center;
     gap: 10px 22px;
     margin-top: 16px;
-    font: 11px/1.4 var(--mono);
+    font: 11px/1.4 var(--font-mono);
     color: rgb(185 209 245 / 54%);
 }
 
@@ -1152,7 +1152,7 @@ html.surface-pending .auth-page .surface-transition,
     color: #dce9ff;
     background:
         radial-gradient(circle at 0 100%, rgb(74 144 236 / 44%), transparent 48%),
-        linear-gradient(180deg, var(--navy), var(--night-deep));
+        linear-gradient(180deg, var(--navy-800), var(--navy-950));
     user-select: none;
 }
 
@@ -1239,8 +1239,8 @@ html.surface-pending .auth-page .surface-transition,
     height: 6px;
     margin: 0 10px 1px 0;
     border-radius: 50%;
-    background: var(--blue);
-    box-shadow: 0 0 8px var(--blue);
+    background: var(--sky-300);
+    box-shadow: 0 0 8px var(--sky-300);
 }
 
 /* The two trees.
@@ -1376,7 +1376,7 @@ html.surface-pending .auth-page .surface-transition,
     justify-content: space-between;
     gap: 24px;
     padding: 12px clamp(20px, 3vw, 40px);
-    border-bottom: 1px solid var(--rule-soft);
+    border-bottom: 1px solid var(--divider);
     background: rgb(255 255 255 / 88%);
     backdrop-filter: blur(16px);
     user-select: none;
@@ -1405,7 +1405,7 @@ html.surface-pending .auth-page .surface-transition,
 }
 
 .topbar__actions > a[aria-current="page"] {
-    color: var(--ditto);
+    color: var(--accent);
 }
 
 .topbar__actions form { display: block; }
@@ -1444,8 +1444,8 @@ html.surface-pending .auth-page .surface-transition,
 .product-page .sheet > .sheet--narrow,
 .product-page .sheet > form,
 .product-page .sheet > .apparatus {
-    background: var(--paper-raise);
-    border: 1px solid var(--rule-soft);
+    background: var(--surface-card);
+    border: 1px solid var(--divider);
     border-radius: 15px;
     padding: clamp(20px, 3vw, 30px);
     box-shadow: 0 7px 24px rgb(25 53 84 / 5%);
@@ -1465,7 +1465,7 @@ html.surface-pending .auth-page .surface-transition,
     border: 0;
     background:
         radial-gradient(circle at 96% 120%, rgb(114 175 255 / 48%), transparent 42%),
-        linear-gradient(125deg, var(--navy), #0b3b76);
+        linear-gradient(125deg, var(--navy-800), #0b3b76);
 }
 
 .product-page .sheet > .stack:first-child:not(.sheet--narrow) .quiet { color: rgb(218 233 255 / 65%); }
@@ -1497,9 +1497,9 @@ html.surface-pending .auth-page .surface-transition,
     gap: 8px;
     min-height: 13rem;
     padding: 18px;
-    border: 1px solid var(--rule-soft);
+    border: 1px solid var(--divider);
     border-radius: 13px;
-    background: var(--paper);
+    background: var(--surface-page);
     color: inherit;
     text-decoration: none;
     transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease;
@@ -1519,7 +1519,7 @@ html.surface-pending .auth-page .surface-transition,
 }
 
 .card__name {
-    font-family: var(--grotesk);
+    font-family: var(--font-ui);
     font-size: var(--step-3);
     font-weight: 500;
     letter-spacing: -.01em;
@@ -1538,7 +1538,7 @@ html.surface-pending .auth-page .surface-transition,
 .card__lines {
     margin-top: auto;
     padding-top: 12px;
-    border-top: 1px solid var(--rule-soft);
+    border-top: 1px solid var(--divider);
 }
 
 .card__register {
@@ -1572,7 +1572,7 @@ html.surface-pending .auth-page .surface-transition,
 
 .card__enter {
     margin-top: 12px;
-    color: var(--ditto);
+    color: var(--accent);
     font-size: var(--step-2);
 }
 
@@ -1595,11 +1595,11 @@ html.surface-pending .auth-page .surface-transition,
     place-items: center;
     width: 38px;
     height: 38px;
-    border: 1px dashed var(--rule);
+    border: 1px dashed var(--border);
     border-radius: 11px;
     font-size: 20px;
     line-height: 1;
-    color: var(--ditto);
+    color: var(--accent);
 }
 
 .register li {
@@ -1611,7 +1611,7 @@ html.surface-pending .auth-page .surface-transition,
 }
 
 .foot {
-    border-color: var(--rule-soft);
+    border-color: var(--divider);
     background: rgb(255 255 255 / 55%);
 }
 
@@ -1646,14 +1646,14 @@ html.surface-pending .auth-page .surface-transition,
 
 .proposal pre {
   white-space: pre-wrap;
-  font: 0.875rem/1.55 var(--mono);
-  border: 1px solid var(--rule);
+  font: 0.875rem/1.55 var(--font-mono);
+  border: 1px solid var(--border);
   padding: 1.5rem;
-  background: var(--paper-raise);
+  background: var(--surface-card);
 }
 
 .findings {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   color: var(--ink-3);
   list-style: none;
   padding: 0;

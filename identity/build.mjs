@@ -11,13 +11,14 @@ const HEADER = "Generated from tokens.json by build.mjs. Do not edit.";
 // The first level of a path is the token's category, not part of its name.
 const nameOf = (path) => path.slice(1).join("-");
 
-// A value that is one reference, as `{size.step-3}`, becomes the custom
-// property it refers to so the output keeps the relation.
-const reference = /^\{([^}]+)\}$/;
+// A reference, as `{size.step-3}`, becomes the custom property it refers
+// to, alone or inside a longer value, so the output keeps the relation.
+const reference = /\{([^}]+)\}/g;
 const cssValue = (token) => {
     const original = token.original.$value;
-    const match = typeof original === "string" && original.match(reference);
-    return match ? `var(--${nameOf(match[1].split("."))})` : token.$value;
+    return typeof original === "string" && original.match(reference)
+        ? original.replace(reference, (_, path) => `var(--${nameOf(path.split("."))})`)
+        : token.$value;
 };
 
 const declarations = (tokens, name) =>
@@ -50,13 +51,13 @@ const css = ({ dictionary }) => {
     ].join("\n");
 };
 
-// Typst has no pixels and no generic families, so only colours and the named
-// faces cross over.
-const generic = new Set(["serif", "sans-serif", "monospace", "ui-monospace"]);
+// Typst has no pixels and no generic families, so only opaque colours and
+// the named faces cross over.
+const generic = new Set(["serif", "sans-serif", "monospace", "ui-monospace", "system-ui"]);
 const typst = ({ dictionary }) => {
     const lines = [`// ${HEADER}`, ""];
     for (const token of dictionary.allTokens) {
-        if (token.path[0] === "color") {
+        if (token.path[0] === "color" && token.$value.startsWith("#")) {
             lines.push(`#let ${token.name} = rgb("${token.$value}")`);
         } else if (token.path[0] === "font") {
             const faces = token.original.$value.filter((face) => !generic.has(face));

@@ -43,12 +43,13 @@ pub const FONTS: &[(&str, &[u8])] = &[
     face!("libertinus-serif-400.woff2"),
     face!("libertinus-serif-400-italic.woff2"),
     face!("libertinus-serif-700.woff2"),
-    face!("archivo-400.woff2"),
-    face!("archivo-400-italic.woff2"),
-    face!("archivo-500.woff2"),
-    face!("archivo-600.woff2"),
-    face!("archivo-narrow-400.woff2"),
-    face!("iosevka-400.woff2"),
+    face!("instrument-sans-400.woff2"),
+    face!("instrument-sans-400-italic.woff2"),
+    face!("instrument-sans-500.woff2"),
+    face!("instrument-sans-600.woff2"),
+    face!("inter-variable.woff2"),
+    face!("jetbrains-mono-400.woff2"),
+    face!("jetbrains-mono-500.woff2"),
 ];
 
 #[cfg(test)]

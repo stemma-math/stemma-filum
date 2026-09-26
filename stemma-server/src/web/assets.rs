@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn the_stylesheet_carries_the_identity() {
-        assert!(stylesheet().contains("--ditto"));
+        assert!(stylesheet().contains("--accent"));
         assert!(stylesheet().contains("@font-face"));
     }
 

@@ -1,7 +1,8 @@
 /* The four faces, subset to Latin. Each licence sits in `fonts/`.
  *
  * `swap`, because mathematics is worth reading in a fallback face for the
- * moment the real one takes to arrive.
+ * moment the real one takes to arrive. Inter is variable: the wordmark sets
+ * weights between the named ones.
  */
 
 @font-face {
@@ -29,49 +30,57 @@
 }
 
 @font-face {
-    font-family: "Archivo";
+    font-family: "Instrument Sans";
     font-style: normal;
     font-weight: 400;
     font-display: swap;
-    src: url("fonts/archivo-400.woff2") format("woff2");
+    src: url("fonts/instrument-sans-400.woff2") format("woff2");
 }
 
 @font-face {
-    font-family: "Archivo";
+    font-family: "Instrument Sans";
     font-style: italic;
     font-weight: 400;
     font-display: swap;
-    src: url("fonts/archivo-400-italic.woff2") format("woff2");
+    src: url("fonts/instrument-sans-400-italic.woff2") format("woff2");
 }
 
 @font-face {
-    font-family: "Archivo";
+    font-family: "Instrument Sans";
     font-style: normal;
     font-weight: 500;
     font-display: swap;
-    src: url("fonts/archivo-500.woff2") format("woff2");
+    src: url("fonts/instrument-sans-500.woff2") format("woff2");
 }
 
 @font-face {
-    font-family: "Archivo";
+    font-family: "Instrument Sans";
     font-style: normal;
     font-weight: 600;
     font-display: swap;
-    src: url("fonts/archivo-600.woff2") format("woff2");
+    src: url("fonts/instrument-sans-600.woff2") format("woff2");
 }
 
 @font-face {
-    font-family: "Archivo Narrow";
+    font-family: "Inter";
     font-style: normal;
-    font-weight: 400;
+    font-weight: 100 900;
     font-display: swap;
-    src: url("fonts/archivo-narrow-400.woff2") format("woff2");
+    src: url("fonts/inter-variable.woff2") format("woff2");
 }
 
 @font-face {
-    font-family: "Iosevka";
+    font-family: "JetBrains Mono";
     font-style: normal;
     font-weight: 400;
     font-display: swap;
-    src: url("fonts/iosevka-400.woff2") format("woff2");
+    src: url("fonts/jetbrains-mono-400.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("fonts/jetbrains-mono-500.woff2") format("woff2");
 }
