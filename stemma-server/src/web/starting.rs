@@ -503,7 +503,7 @@ fn asked(
             p class="label" {
                 a href={ "/g/" (group.slug()) } { (group.name) }
             }
-            h1 { "New line" }
+            h1 { "New line of work" }
 
             @if let Some(problem) = problem {
                 p class="problem" { (problem) }

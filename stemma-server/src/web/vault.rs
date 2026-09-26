@@ -654,14 +654,23 @@ fn body(
     bridges: &[vault::StoredBridge],
 ) -> Markup {
     html! {
-        div class="stack" { p class="label" { a href={ "/g/" (slug) } { (group) } } h1 { "Vault" }
-            p class="quiet" { "Definitions are immutable. Every line between them is a proved object with its own audit state." } }
-        div class="block" { p class="label" { "Definitions · " (entries.len()) }
+        header class="page-head" {
+            nav class="crumbs" aria-label="Breadcrumb" {
+                a href="/#groups" { "Groups" }
+                span aria-hidden="true" { "/" }
+                a href={ "/g/" (slug) } { (group) }
+                span aria-hidden="true" { "/" }
+                span aria-current="page" { "Group vault" }
+            }
+            h1 class="page-title" { "Group vault" }
+            p class="page-subtitle" { "Definitions are immutable. Every line between them is a proved object with its own audit state." }
+        }
+        div class="block" { h2 class="block__title" { "Definitions" span class="count" { (entries.len()) } }
             ul class="register" { @for stored in entries { li { span class="register__name" { (stored.entry.name) }
                 span class="quiet identifier" { (stored.entry.id) " · " (stored.entry.siglum) }
                 span class="register__aside" { (format!("{:?}", stored.entry.correspondence)) } } } }
         }
-        div class="block" { p class="label" { "Bridges · " (bridges.len()) }
+        div class="block" { h2 class="block__title" { "Bridges" span class="count" { (bridges.len()) } }
             ul class="register" { @for stored in bridges { li { span class="register__name" { (stored.bridge.left) " ↔ " (stored.bridge.right) }
                 span class="quiet identifier" { (stored.bridge.id) " · " (format!("{:?}", stored.bridge.kind)) }
                 span class="register__aside" { (format!("{:?}", stored.bridge.correspondence)) } } } }

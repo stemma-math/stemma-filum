@@ -22,6 +22,12 @@ pub const FONT_PATH: &str = "/assets/fonts/{file}";
 /// Where the front-door transition script is served.
 pub const SURFACE_PATH: &str = "/assets/surface.js";
 
+/// Where the signed-in shell's script is served.
+pub const SHELL_PATH: &str = "/assets/shell.js";
+
+/// Where the line glyphs are served.
+pub const GLYPHS_PATH: &str = "/assets/glyphs.svg";
+
 /// Where the surface texture is served.
 pub const NOISE_PATH: &str = "/assets/noise.svg";
 
@@ -77,6 +83,12 @@ static STYLESHEET: LazyLock<Asset> = LazyLock::new(|| {
 
 static SURFACE: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(include_bytes!("../../assets/surface.js"), JAVASCRIPT));
+
+static SHELL: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(include_bytes!("../../assets/shell.js"), JAVASCRIPT));
+
+static GLYPHS: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(stemma_identity::GLYPHS_SVG.as_bytes(), SVG));
 
 static NOISE: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(stemma_identity::NOISE_SVG.as_bytes(), SVG));
@@ -143,6 +155,16 @@ pub async fn stylesheet(headers: HeaderMap) -> Response {
 /// Serves the front-door transition.
 pub async fn surface(headers: HeaderMap) -> Response {
     serve(&headers, &SURFACE)
+}
+
+/// Serves the signed-in shell's script.
+pub async fn shell(headers: HeaderMap) -> Response {
+    serve(&headers, &SHELL)
+}
+
+/// Serves the line glyphs.
+pub async fn glyphs(headers: HeaderMap) -> Response {
+    serve(&headers, &GLYPHS)
 }
 
 /// Serves the surface texture.

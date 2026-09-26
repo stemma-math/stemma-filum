@@ -76,7 +76,7 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
     own_a_group(&mut harness, "ana").await;
 
     let space = harness.get("/g/algebra").await;
-    assert!(space.says("Members · 1"));
+    assert!(space.says(r#"Members<span class="count">1</span>"#));
     assert!(space.says("There are no active invitations."));
 
     let made = harness
@@ -116,7 +116,7 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
     assert_eq!(joined.location.as_deref(), Some("/g/algebra"));
 
     let space = harness.get("/g/algebra").await;
-    assert!(space.says("Members · 2"));
+    assert!(space.says(r#"Members<span class="count">2</span>"#));
     assert!(space.says("usr:enric"));
 
     // The account it created is the one the invitation named.
@@ -352,7 +352,7 @@ async fn a_member_sees_the_group_without_the_invitations() {
 
     let space = harness.get("/g/algebra").await;
 
-    assert!(space.says("Members · 2"));
+    assert!(space.says(r#"Members<span class="count">2</span>"#));
     assert!(!space.says("Make an invitation"));
 }
 

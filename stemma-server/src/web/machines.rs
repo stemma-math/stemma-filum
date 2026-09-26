@@ -353,13 +353,20 @@ fn body(
         .count();
 
     html! {
-        div class="stack" {
-            h1 { (machine.label) }
-            p class="quiet identifier" { (machine.id.to_string()) }
-            p class="quiet" {
-                (machine.presence)
-                @if let Some(seen) = &machine.last_seen_at {
-                    " · last heard from " (seen)
+        header class="page-head" {
+            div class="page-head__text" {
+                h1 class="page-title" { (machine.label) }
+                div class="page-meta" {
+                    span class="identifier" { (machine.id.to_string()) }
+                    @match machine.presence {
+                        stemma_core::machine::Presence::Awake => {
+                            span class="chip chip--success" { span class="dot" {} "Online" }
+                        }
+                        stemma_core::machine::Presence::Asleep => span class="chip" { "Offline" },
+                    }
+                    @if let Some(seen) = &machine.last_seen_at {
+                        span { "Last heard from " (seen) }
+                    }
                 }
             }
         }

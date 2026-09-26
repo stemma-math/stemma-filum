@@ -25,6 +25,9 @@ pub const MARK_ON_DARK_SVG: &str = include_str!("../mark-on-dark.svg");
 /// The mark for light surfaces: sign-in headers, mail, documentation.
 pub const MARK_ON_LIGHT_SVG: &str = include_str!("../mark-on-light.svg");
 
+/// The line glyphs, as a sprite of symbols named by id.
+pub const GLYPHS_SVG: &str = include_str!("../glyphs.svg");
+
 /// The surface texture laid over blue product surfaces.
 pub const NOISE_SVG: &str = include_str!("../noise.svg");
 

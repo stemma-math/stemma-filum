@@ -287,6 +287,8 @@ fn assets() -> Router<Instance> {
     let router = Router::new()
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
         .route(assets::SURFACE_PATH, get(assets::surface))
+        .route(assets::SHELL_PATH, get(assets::shell))
+        .route(assets::GLYPHS_PATH, get(assets::glyphs))
         .route(assets::NOISE_PATH, get(assets::noise))
         .route(assets::MARK_ON_DARK_PATH, get(assets::mark_on_dark))
         .route(assets::MARK_ON_LIGHT_PATH, get(assets::mark_on_light))

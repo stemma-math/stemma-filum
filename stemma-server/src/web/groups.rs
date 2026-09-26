@@ -14,10 +14,10 @@ use stemma_core::artefact::{Nodes, Scope};
 use stemma_core::id::{InvitationId, Slug};
 use stemma_core::repository::Side;
 
-use super::layout::{Chrome, page, signature};
+use super::layout::{Chrome, glyph, initials, page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
-use crate::store::groups::{self, Group, Member, Request};
+use crate::store::groups::{self, Group, Member};
 use crate::store::invitations::{self, Invitation};
 
 /// What the request form sends.
@@ -173,26 +173,6 @@ fn closed() -> Markup {
                 "Contact a platform maintainer to create a research group."
             }
             p { a href="/" { "Back to your home" } }
-        }
-    }
-}
-
-/// How one of somebody's own requests reads on their home page.
-pub fn own_request(request: &Request) -> Markup {
-    html! {
-        li {
-            span class="register__name" { (request.name) }
-            span class="quiet identifier" { "grp:" (request.slug) }
-            span class="register__aside" {
-                @match request.outcome {
-                    None => "waiting for a maintainer",
-                    Some(groups::Outcome::Approved) => "approved",
-                    Some(groups::Outcome::Declined) => "declined",
-                }
-            }
-            @if let Some(note) = &request.note {
-                p class="quiet" { (note) }
-            }
         }
     }
 }
@@ -496,6 +476,15 @@ async fn read_machines(
     Ok((offers, queue))
 }
 
+/// How a role reads beside a name.
+pub fn role_words(role: GroupRole) -> &'static str {
+    match role {
+        GroupRole::Owner => "Owner",
+        GroupRole::Admin => "Admin",
+        GroupRole::Member => "Member",
+    }
+}
+
 /// The group space.
 #[allow(clippy::too_many_arguments)]
 fn space_body(
@@ -510,82 +499,138 @@ fn space_body(
     fresh_link: Option<&str>,
     delivered: Option<&str>,
 ) -> Markup {
+    let new_line = format!("/g/{}/lines/new", group.slug());
+
     html! {
-        div class="stack" {
-            h1 { (group.name) }
-            p class="quiet identifier" { (group.id.to_string()) }
-        }
-
-        (lines_block(group, work))
-
-        div class="block" {
-            p class="label" { "Mathematical base" }
-            p { a href={ "/g/" (group.slug()) "/vault" } { "Open the group vault" } }
-        }
-
-        div class="block" {
-            p class="label" { "Members · " (members.len()) }
-            ul class="register" {
-                @for member in members {
-                    li {
-                        span class="register__name" { (member.user.display_name) }
-                        span class="quiet identifier" { (member.user.id.to_string()) }
-                        span class="register__aside" { (member.role) }
+        header class="page-head" {
+            nav class="crumbs" aria-label="Breadcrumb" {
+                a href="/#groups" { "Groups" }
+                span aria-hidden="true" { "/" }
+                span aria-current="page" { (group.name) }
+            }
+            div class="page-head__row" {
+                span class="badge badge--large" aria-hidden="true" { (initials(&group.name)) }
+                div class="page-head__text" {
+                    h1 class="page-title" { (group.name) }
+                    div class="page-meta" {
+                        span class="identifier" { (group.id.to_string()) }
+                        span class="chip chip--accent" { (role_words(role)) }
+                        span {
+                            @match members.len() {
+                                1 => "1 member",
+                                count => { (count) " members" },
+                            }
+                        }
                     }
+                    @if let Some(description) = &group.description {
+                        p class="page-subtitle" { (description) }
+                    }
+                }
+                a class="button button--primary button--large" href=(new_line) {
+                    (glyph("add")) "New line of work"
                 }
             }
         }
 
-        (super::jobs::machine_list(offers))
-        (super::jobs::queue(queue))
+        div class="group-layout" {
+            div class="group-layout__main" {
+                (lines_block(group, work))
+                (super::jobs::machine_list(offers))
+                (super::jobs::queue(queue))
+                @if role.can_invite() {
+                    (invitations_block(signed, group, role, invitations, fresh_link, delivered))
+                }
+            }
 
-        @if role.can_invite() {
-            (invitations_block(signed, group, role, invitations, fresh_link, delivered))
+            aside class="group-layout__rail" aria-label="About the group" {
+                section class="card card--vault vault-card" {
+                    div class="vault-card__head" {
+                        span class="vault-card__icon" { (glyph("book")) }
+                        h2 { "Mathematical base" }
+                    }
+                    p { "The group vault, shared by every line of work in " (group.name) "." }
+                    a class="vault-card__open" href={ "/g/" (group.slug()) "/vault" } {
+                        "Open the group vault"
+                    }
+                }
+
+                section class="card members-card" aria-labelledby="members-title" {
+                    div class="card__head" {
+                        h2 class="card__title" id="members-title" {
+                            "Members" span class="count" { (members.len()) }
+                        }
+                        @if role.can_invite() {
+                            a class="button button--small add-member" href="#invitations" {
+                                (glyph("add-person")) "Add"
+                            }
+                        }
+                    }
+                    ul class="people" {
+                        @for member in members {
+                            li class="person" {
+                                span class="avatar" aria-hidden="true" { (initials(&member.user.display_name)) }
+                                span class="person__who" {
+                                    span class="person__name" { (member.user.display_name) }
+                                    span class="identifier quiet" { (member.user.id.to_string()) }
+                                }
+                                span class=@if member.role == GroupRole::Owner { "person__role person__role--owner" } @else { "person__role" } {
+                                    (role_words(member.role))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 /// The lines of work, as the last machine to build them left them.
 fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
-    let nothing = work.iter().all(|(_, nodes)| nodes.lines.is_empty());
+    let count: usize = work.iter().map(|(_, nodes)| nodes.lines.len()).sum();
 
     html! {
-        div class="block" {
-            p class="label" { "Lines of work" }
-            p { a href={ "/g/" (group.slug()) "/lines/new" } { "New line" } }
-
-            @if nothing {
-                p class="empty" {
-                    "No lines have been published for this group yet. Create one from a connected machine."
+        section class="card lines-card" aria-labelledby="lines-title" {
+            div class="card__head" {
+                h2 class="card__title" id="lines-title" {
+                    "Lines of work" span class="count" { (count) }
                 }
             }
 
-            @for (side, nodes) in work {
-                @if !nodes.lines.is_empty() {
-                    ul class="register" {
+            @if count == 0 {
+                div class="card__empty" {
+                    p class="empty" {
+                        "No lines of work yet. Start one here, or create one from a connected machine."
+                    }
+                    a class="button" href={ "/g/" (group.slug()) "/lines/new" } {
+                        (glyph("add")) "New line of work"
+                    }
+                }
+            } @else {
+                div class="table lines-table" {
+                    div class="table__head" aria-hidden="true" {
+                        span { "Title" }
+                        span { "Summary" }
+                        span { "Visibility" }
+                        span { "Contents" }
+                        span {}
+                    }
+                    @for (side, nodes) in work {
                         @for line in &nodes.lines {
-                            li {
-                                span class="register__name" {
-                                    a href={ "/g/" (group.slug()) "/" (side) "/" (line.name) } {
-                                        (line.shown_as())
-                                    }
+                            a class="table__row" href={ "/g/" (group.slug()) "/" (side) "/" (line.name) } {
+                                span class="lines-table__title" { (line.shown_as()) }
+                                span class="lines-table__summary" {
+                                    @if let Some(description) = &line.description { (description) }
                                 }
-                                @if let Some(description) = &line.description {
-                                    span class="register__aside" { (description) }
+                                @match side {
+                                    Side::Shared => span class="chip" { (glyph("group")) "Shared" },
+                                    Side::Private => span class="chip" { (glyph("lock")) "Private" },
                                 }
-                                span class="quiet" {
-                                    @match side {
-                                        Side::Shared => "shared",
-                                        // A ruled margin means "not
-                                        // shared"; in a list the word
-                                        // does the same work.
-                                        Side::Private => "private",
-                                    }
-                                }
-                                span class="register__aside numeric" {
+                                span class="lines-table__contents numeric" {
                                     (line.line.central().len()) " central · "
                                     (line.line.nodes.len()) " in all"
                                 }
+                                span class="chevron" { (glyph("chevron-right")) }
                             }
                         }
                     }
@@ -605,8 +650,8 @@ fn invitations_block(
     delivered: Option<&str>,
 ) -> Markup {
     html! {
-        div class="block" {
-            p class="label" { "Invitations" }
+        section class="block" id="invitations" {
+            h2 class="block__title" { "Invitations" }
 
             @if let Some(link) = fresh_link {
                 div class="stack stack--tight" {

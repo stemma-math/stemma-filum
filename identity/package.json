@@ -11,6 +11,7 @@
     "./tokens.typ": "./tokens.typ",
     "./components.css": "./components.css",
     "./fonts.css": "./fonts.css",
+    "./glyphs.svg": "./glyphs.svg",
     "./mark-on-dark.svg": "./mark-on-dark.svg",
     "./mark-on-light.svg": "./mark-on-light.svg",
     "./noise.svg": "./noise.svg",

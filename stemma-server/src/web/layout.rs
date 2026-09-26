@@ -3,7 +3,8 @@
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use super::assets::{
-    MANIFEST_PATH, MARK_ON_DARK_PATH, MARK_ON_LIGHT_PATH, STYLESHEET_PATH, SURFACE_PATH,
+    GLYPHS_PATH, MANIFEST_PATH, MARK_ON_DARK_PATH, MARK_ON_LIGHT_PATH, SHELL_PATH, STYLESHEET_PATH,
+    SURFACE_PATH,
 };
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
@@ -25,6 +26,9 @@ pub struct Workspace {
     pub machines: Vec<(Machine, usize)>,
     /// Whether they may ask for a group at all.
     pub may_ask: bool,
+    /// How many group requests wait for a maintainer, when the reader is
+    /// one.
+    pub pending_requests: usize,
 }
 
 /// The shell for a page somebody is signed in to, with its tree read.
@@ -43,12 +47,21 @@ pub async fn around(
 
     let machines = super::machines::owned_by(instance, &signed.user.id).await?;
 
+    let pending_requests = match signed.maintainer {
+        true => instance
+            .read(crate::store::groups::open_requests)
+            .await?
+            .len(),
+        false => 0,
+    };
+
     Ok(Chrome::anonymous(title, name)
         .signed_in(signed.user.clone(), signed.maintainer)
         .holding(Workspace {
             groups,
             machines,
             may_ask: policy.group_requests_open,
+            pending_requests,
         }))
 }
 
@@ -160,16 +173,19 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 }
                 link rel="stylesheet" href=(STYLESHEET_PATH);
                 script src=(SURFACE_PATH) type="module" {}
+                @if chrome.visitor.is_some() {
+                    script src=(SHELL_PATH) type="module" {}
+                }
             }
             body class=(body_class) {
                 div class="surface-transition" aria-hidden="true" {}
                 @if chrome.visitor.is_some() {
-                    div class="product-shell" {
+                    div class="shell" {
                         (sidebar(chrome))
-                        div class="product-workspace" {
-                            (topbar(chrome))
-                            main class="sheet" { (content) }
-                            (foot(chrome))
+                        div class="shell__scrim" data-drawer-close {}
+                        div class="shell__work" {
+                            (mobile_bar(chrome))
+                            main class="page" id="content" { (content) }
                         }
                     }
                 } @else {
@@ -182,35 +198,20 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
     }
 }
 
-/// The bar across the top.
+/// The bar across the top of a page nobody is signed in to.
 fn masthead(chrome: &Chrome) -> Markup {
     html! {
         header class="masthead" {
-            div class="masthead__inner" {
-                a class="wordmark" href="/" {
-                    (mark_on_light())
-                    span { "Stemma" }
-                }
+            a class="brand" href="/" {
+                (mark_on_light())
+                span class="wordmark" { "Stemma" }
+            }
 
-                nav class="nav" hidden[chrome.landing] {
-                    @match &chrome.visitor {
-                        Some(user) => {
-                            (destination("/", "Home", &chrome.current))
-                            @if chrome.maintainer {
-                                (destination("/admin", "Admin", &chrome.current))
-                            }
-                            span class="quiet identifier" { (user.id.to_string()) }
-                            form method="post" action="/logout" {
-                                button class="button" type="submit" { "Log out" }
-                            }
-                        }
-                        None if chrome.offer_ways_in => {
-                            (destination("/login", "Log in", &chrome.current))
-                            @if chrome.registration_open {
-                                (destination("/register", "Create an account", &chrome.current))
-                            }
-                        }
-                        None => {}
+            nav class="nav" hidden[chrome.landing] aria-label="Account" {
+                @if chrome.offer_ways_in {
+                    (destination("/login", "Log in", &chrome.current))
+                    @if chrome.registration_open {
+                        (destination("/register", "Create an account", &chrome.current))
                     }
                 }
             }
@@ -221,147 +222,172 @@ fn masthead(chrome: &Chrome) -> Markup {
 /// The product's persistent navigation.
 ///
 /// Every destination in it is a page of its own. Groups and machines are
-/// the two trees somebody actually works in, so they hang open under their
-/// heading rather than sending the reader to a list to pick from.
+/// the two lists somebody actually works in, so they are always open
+/// under their label rather than sending the reader to a list to pick
+/// from. The brand stays at the top and the reader at the foot; the lists
+/// between them scroll.
 fn sidebar(chrome: &Chrome) -> Markup {
     let workspace = &chrome.workspace;
 
     html! {
-        aside class="sidebar" {
-            a class="wordmark" href="/" {
-                (mark_on_dark())
-                span { "Stemma" }
+        aside class="sidebar" id="sidebar" {
+            div class="sidebar__head" {
+                a class="brand" href="/" {
+                    (mark_on_dark())
+                    span class="brand__words" {
+                        span class="wordmark" { "Stemma" }
+                        span class="brand__instance" { (chrome.instance) }
+                    }
+                }
+                span class="sidebar__version" { "v" (env!("CARGO_PKG_VERSION")) }
             }
-            p class="sidebar__instance" { (chrome.instance) }
+
             nav class="sidebar__nav" aria-label="Workspace" {
-                p class="sidebar__label" { "Workspace" }
-                (destination("/", "Overview", &chrome.current))
+                (item("/", glyph("home"), "Overview", 0, &chrome.current))
 
-                details class="tree" data-empty[workspace.groups.is_empty()]
-                        open[!workspace.groups.is_empty() || in_a_group(&chrome.current)] {
-                    summary class="tree__head" { "Groups" }
-                    div class="tree__body" {
-                        @for membership in &workspace.groups {
-                            (destination(
-                                &format!("/g/{}", membership.group.slug()),
-                                &membership.group.name,
-                                &chrome.current,
-                            ))
-                        }
-                        @if workspace.groups.is_empty() {
-                            @if workspace.may_ask {
-                                a class="tree__add" href="/groups/new" {
-                                    span class="tree__plus" aria-hidden="true" { "+" }
-                                    span { "Request a group" }
-                                }
-                            } @else {
-                                p class="tree__empty" { "No groups yet." }
-                            }
+                div class="sidebar__section" {
+                    span { "Groups" }
+                    @if workspace.may_ask {
+                        a class="sidebar__add" href="/groups/new" aria-label="Request a research group"
+                          title="Request a research group"
+                          aria-current=[("/groups/new" == chrome.current).then_some("page")] {
+                            (glyph("add"))
                         }
                     }
                 }
-
-                details class="tree" data-empty[workspace.machines.is_empty()]
-                        open[!workspace.machines.is_empty()] {
-                    summary class="tree__head" { "Machines" }
-                    div class="tree__body" {
-                        @for (machine, owed) in &workspace.machines {
-                            (waypoint(
-                                &format!("/machines/{}", machine.id),
-                                &machine.label,
-                                *owed,
-                                &chrome.current,
-                            ))
-                        }
-                        @if workspace.machines.is_empty() {
-                            p class="tree__empty" {
-                                "No machines connected."
-                            }
-                        }
-                    }
+                @for membership in &workspace.groups {
+                    (item(
+                        &format!("/g/{}", membership.group.slug()),
+                        html! { span class="sidebar__badge" aria-hidden="true" { (initials(&membership.group.name)) } },
+                        &membership.group.name,
+                        0,
+                        &chrome.current,
+                    ))
                 }
-            }
-            div class="sidebar__aside" {
-                p { (chrome.instance) }
-            }
-        }
-    }
-}
+                @if workspace.groups.is_empty() {
+                    p class="sidebar__empty" { "No groups yet." }
+                }
 
-/// Whether the reader is somewhere inside a group.
-///
-/// A line, a vault and the form that asks for a group are all group work,
-/// so the groups tree arrives open even when there is nothing in it yet
-/// and the only thing under it is the way to make one.
-fn in_a_group(current: &str) -> bool {
-    current.starts_with("/g/") || current == "/groups/new"
-}
+                div class="sidebar__section" { span { "Machines" } }
+                @for (machine, owed) in &workspace.machines {
+                    (item(
+                        &format!("/machines/{}", machine.id),
+                        glyph("machine"),
+                        &machine.label,
+                        *owed,
+                        &chrome.current,
+                    ))
+                }
+                @if workspace.machines.is_empty() {
+                    p class="sidebar__empty" { "No machines connected." }
+                }
 
-/// Account and instance controls stay above the current workspace.
-fn topbar(chrome: &Chrome) -> Markup {
-    html! {
-        header class="topbar" {
-            div {
-                p class="topbar__eyebrow" { "Workspace" }
-                p class="topbar__title" { (chrome.title) }
-            }
-            nav class="topbar__actions" aria-label="Account" {
                 @if chrome.maintainer {
-                    (destination("/admin", "Admin", &chrome.current))
+                    div class="sidebar__section" { span { "Instance" } }
+                    (item("/admin", glyph("shield"), "Administration", workspace.pending_requests, &chrome.current))
                 }
-                @if let Some(user) = &chrome.visitor {
-                    span class="avatar" aria-hidden="true" {
-                        (user.display_name.chars().next().unwrap_or('S'))
-                    }
-                    span class="topbar__identity" {
-                        strong { (user.display_name) }
+            }
+
+            @if let Some(user) = &chrome.visitor {
+                div class="user-card" {
+                    span class="avatar" aria-hidden="true" { (initials(&user.display_name)) }
+                    span class="user-card__who" {
+                        span class="user-card__name" {
+                            span { (user.display_name) }
+                            @if chrome.maintainer {
+                                span class="user-card__role" { "Admin" }
+                            }
+                        }
                         span class="identifier" { (user.id.to_string()) }
                     }
-                }
-                form method="post" action="/logout" {
-                    button class="button" type="submit" { "Log out" }
+                    form method="post" action="/logout" {
+                        button class="user-card__out" type="submit" aria-label="Log out" title="Log out" {
+                            (glyph("log-out"))
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/// One place to go, with what is waiting there.
+/// The bar a narrow window shows in place of the sidebar, with the button
+/// that brings it out as a drawer.
+fn mobile_bar(chrome: &Chrome) -> Markup {
+    html! {
+        header class="mobile-bar" {
+            button class="mobile-bar__menu" type="button" aria-controls="sidebar"
+                   aria-expanded="false" aria-label="Menu" data-drawer-toggle {
+                (glyph("menu"))
+            }
+            a class="brand" href="/" {
+                (mark_on_dark())
+                span class="wordmark" { "Stemma" }
+            }
+            span class="brand__instance" { (chrome.instance) }
+        }
+    }
+}
+
+/// One place to go in the sidebar, with what is waiting there.
 ///
 /// A count is only ever on a decision somebody owes, never on the state of
 /// the mathematics, so a machine with nothing to answer carries nothing.
-fn waypoint(href: &str, words: &str, owed: usize, current: &str) -> Markup {
+fn item(href: &str, icon: Markup, words: &str, owed: usize, current: &str) -> Markup {
+    let here = href == current || (href != "/" && current.starts_with(&format!("{href}/")));
+
     html! {
-        a href=(href) aria-current=[(href == current).then_some("page")] {
-            span { (words) }
+        a class="sidebar__item" href=(href) aria-current=[here.then_some("page")] {
+            (icon)
+            span class="sidebar__words" { (words) }
             @if owed > 0 {
-                span class="count" aria-label={ (owed) " to deal with" } { (owed) }
+                span class="sidebar__count" aria-label={ (owed) " to deal with" } { (owed) }
             }
         }
     }
 }
 
-/// One place to go.
+/// One place to go in the bar of a public page.
 fn destination(href: &str, words: &str, current: &str) -> Markup {
     html! {
-        @if href == current {
-            a href=(href) aria-current="page" { (words) }
-        } @else {
-            a href=(href) { (words) }
-        }
+        a href=(href) aria-current=[(href == current).then_some("page")] { (words) }
     }
 }
 
-/// The line at the foot of every page.
+/// The line at the foot of a public page.
 fn foot(chrome: &Chrome) -> Markup {
     html! {
         footer class="foot" {
-            div class="foot__inner" {
-                span { (chrome.instance) }
-                span { "stemma " (env!("CARGO_PKG_VERSION")) }
-            }
+            span { (chrome.instance) }
+            span { "stemma " (env!("CARGO_PKG_VERSION")) }
         }
     }
+}
+
+/// A line glyph from the identity's sprite.
+pub fn glyph(name: &str) -> Markup {
+    html! {
+        svg class="glyph" aria-hidden="true" {
+            use href={ (GLYPHS_PATH) "#" (name) } {}
+        }
+    }
+}
+
+/// Up to two initials for a person or a group: the first letters of its
+/// first two words, or the first two of a single word.
+pub fn initials(name: &str) -> String {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let letters: String = match words.as_slice() {
+        [] => "S".to_owned(),
+        [one] => one.chars().take(1).collect(),
+        [first, second, ..] => first
+            .chars()
+            .take(1)
+            .chain(second.chars().take(1))
+            .collect(),
+    };
+
+    letters.to_uppercase()
 }
 
 /// The hidden CSRF field every form posted by a signed-in visitor carries.

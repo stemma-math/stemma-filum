@@ -72,8 +72,8 @@ async fn somebody_asks_for_a_group_and_a_maintainer_makes_it() {
     assert_eq!(asked.status, StatusCode::SEE_OTHER);
 
     let home = harness.get("/").await;
-    assert!(home.says("Your group requests"));
-    assert!(home.says("waiting for a maintainer"));
+    assert!(home.says("Pending"));
+    assert!(home.says("Waiting for a maintainer."));
 
     // A second person, who operates the instance, answers it.
     harness.post("/logout", &[]).await;
@@ -81,7 +81,7 @@ async fn somebody_asks_for_a_group_and_a_maintainer_makes_it() {
     become_maintainer(&mut harness, "enric").await;
 
     let admin = harness.get("/admin").await;
-    assert!(admin.says("Group requests · 1"));
+    assert!(admin.says(r#"Group requests<span class="count">1</span>"#));
     assert!(admin.says("Six of us work on it."));
 
     let id = harness
@@ -162,7 +162,7 @@ async fn a_declined_request_says_why_and_creates_nothing() {
         .await;
 
     let home = harness.get("/").await;
-    assert!(home.says("declined"));
+    assert!(home.says("Declined"));
     assert!(home.says("There is already a group for this."));
 
     let made = harness.instance.read(groups::all).await.unwrap();

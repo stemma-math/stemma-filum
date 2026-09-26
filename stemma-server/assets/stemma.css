@@ -2,184 +2,114 @@
  *
  * Served after the identity's `fonts.css`, `tokens.css` and
  * `components.css`, which define every custom property used here and the
- * shared components: buttons, fields, choices, menus and problems.
+ * shared components: buttons, fields, chips, cards, tables, menus,
+ * dialogs and notices. What is here is layout: the public pages, the
+ * front page, the signed-in shell and each page's own arrangement.
  */
 
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
+/* Element defaults sit in the identity's base layer, beneath its
+ * components, so a link styled as a button is a button. */
+@layer stemma.base {
+    *,
+    *::before,
+    *::after {
+        box-sizing: border-box;
+    }
+
+    [hidden] {
+        display: none !important;
+    }
+
+    html {
+        background: var(--surface-page);
+    }
+
+    body {
+        margin: 0;
+        font: var(--text-body);
+        color: var(--ink-1);
+        background: var(--surface-page);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    h1,
+    h2,
+    h3 {
+        margin: 0;
+        font-family: var(--font-ui);
+        font-weight: 600;
+        text-wrap: balance;
+    }
+
+    h1 {
+        font-size: var(--step-7);
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+    }
+
+    h2 {
+        font-size: 18px;
+        line-height: 1.3;
+    }
+
+    h3 {
+        font-size: var(--step-4);
+        line-height: 1.3;
+    }
+
+    p {
+        margin: 0;
+        max-width: 68ch;
+    }
+
+    a {
+        color: var(--accent);
+        text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+        text-underline-offset: 3px;
+    }
+
+    a:hover {
+        color: var(--accent-hover);
+        text-decoration-color: currentColor;
+    }
+
+    code,
+    .mono {
+        font-family: var(--font-mono);
+        font-size: 0.87em;
+    }
+
+    .serif {
+        font-family: var(--font-math);
+        font-size: 19px;
+        line-height: 1.55;
+    }
 }
 
-[hidden] {
-    display: none !important;
-}
-
-body {
-    margin: 0;
-    font-family: var(--font-ui);
-    font-size: var(--step-3);
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-}
-
-h1,
-h2,
-h3 {
-    font-family: var(--font-ui);
-    font-weight: 600;
-    text-wrap: balance;
-    margin: 0;
-}
-
-h1 {
-    line-height: 1.2;
-}
-
-h2 {
-    font-size: var(--step-5);
-    line-height: 1.25;
-}
-
-h3 {
-    font-size: var(--step-4);
-    line-height: 1.3;
-}
-
-p {
-    margin: 0;
-    max-width: 62ch;
-}
-
-a {
-    color: var(--accent);
-    text-decoration-thickness: 1px;
-    text-underline-offset: 2px;
-}
-
-a:hover {
-    text-decoration-thickness: 2px;
-}
-
-code,
-.mono,
-.identifier {
-    font-family: var(--font-mono);
-    font-size: var(--step-2);
-}
-
-.serif {
-    font-family: var(--font-math);
-    font-size: var(--step-4);
-    line-height: 1.62;
-}
-
-/* ── The page ──────────────────────────────────────────────────────────── */
-
-.masthead {
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-card);
-}
-
-.masthead__inner,
-.sheet,
-.foot__inner {
-    max-width: 68rem;
-    margin: 0 auto;
-    padding: 0 var(--space-6);
-}
-
-.masthead__inner {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--space-6);
-    padding-top: var(--space-3);
-    padding-bottom: var(--space-3);
-}
-
-.wordmark {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-family: var(--font-ui);
-    font-size: var(--step-4);
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    color: var(--ink-1);
-    text-decoration: none;
-}
-
-.wordmark .mark {
-    display: block;
-    width: 28px;
-    height: auto;
-}
-
-/* Navigation is words. The active destination takes a rule on the edge it
- * belongs to, never a filled shape. */
-.nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-4);
-    margin-left: auto;
-    font-size: var(--step-2);
-}
-
-.nav a {
-    color: var(--ink-2);
-    text-decoration: none;
-    padding-bottom: var(--space-1);
-    border-bottom: 2px solid transparent;
-}
-
-.nav a:hover {
-    color: var(--ink-1);
-}
-
-.nav a[aria-current="page"] {
-    color: var(--ink-1);
-    border-bottom-color: var(--accent);
-}
-
-.sheet {
-    padding-top: var(--space-12);
-    padding-bottom: var(--space-16);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-8);
-}
-
-.sheet--narrow {
-    max-width: 34rem;
-}
-
-.foot {
-    border-top: 1px solid var(--border);
-    color: var(--ink-3);
-}
-
-.foot__inner {
-    padding-top: var(--space-4);
-    padding-bottom: var(--space-4);
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-4);
-    font-family: var(--font-mono);
-    font-size: var(--step-1);
-}
-
-/* ── Blocks ────────────────────────────────────────────────────────────── */
+/* ── Generic content ───────────────────────────────────────────────────
+ *
+ * Most pages are a column of blocks: each is a card whose first label or
+ * heading is its title, holding a register of rows, a form or a sentence. */
 
 .block {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--space-4);
+    padding: 20px 24px 24px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
 }
 
-.block + .block {
-    border-top: 1px solid var(--border);
-    padding-top: var(--space-6);
+.block > .label:first-child,
+.block__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font: var(--text-section);
+    color: var(--ink-1);
 }
 
 .stack {
@@ -203,10 +133,10 @@ code,
     justify-content: space-between;
 }
 
-/* A list of things, hairline-separated. Not cards. */
+/* A list of things in a card, divided by hairlines. */
 .register {
     list-style: none;
-    margin: 0;
+    margin: 0 -24px;
     padding: 0;
 }
 
@@ -214,25 +144,38 @@ code,
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--space-3);
+    gap: 6px var(--space-3);
+    padding: 14px 24px;
     border-top: 1px solid var(--divider);
 }
 
 .register li:last-child {
-    border-bottom: 1px solid var(--divider);
+    padding-bottom: 2px;
 }
 
 .register__name {
     font-weight: 500;
 }
 
+.register__name a {
+    color: var(--ink-1);
+    text-decoration: none;
+}
+
+.register__name a:hover {
+    color: var(--accent);
+}
+
 .register__aside {
     margin-left: auto;
     color: var(--ink-3);
-    font-size: var(--step-2);
+    font-size: 14px;
 }
 
-/* ── Forms ─────────────────────────────────────────────────────────────── */
+.register form {
+    display: inline-flex;
+    flex-direction: row;
+}
 
 form {
     display: flex;
@@ -249,56 +192,54 @@ form > .button {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-4);
+    gap: var(--space-3);
 }
 
 .actions form {
-    display: inline;
+    display: inline-flex;
 }
 
 .done {
-    background: var(--fill-muted);
-    border-left: 2px solid var(--border);
-    padding: var(--space-3) var(--space-4);
+    padding: 10px 14px;
+    font: var(--text-meta);
+    color: var(--success-fg);
+    background: var(--success-bg);
+    border-radius: var(--radius-md);
 }
 
 /* Something given out once, which has to be copied before it is gone. */
 .secret {
-    font-family: var(--font-mono);
-    font-size: var(--step-2);
-    background: var(--fill-muted);
-    border: 1px solid var(--border);
     padding: var(--space-3);
+    font-family: var(--font-mono);
+    font-size: 13px;
     overflow-wrap: anywhere;
-}
-
-.empty {
-    color: var(--ink-3);
-    max-width: 62ch;
+    background: var(--surface-subtle);
+    border: 1px dashed var(--border-dashed);
+    border-radius: var(--radius-md);
 }
 
 table {
-    border-collapse: collapse;
     width: 100%;
-    font-size: var(--step-2);
+    font-size: 14px;
+    border-collapse: collapse;
 }
 
 th {
-    font-family: var(--font-ui);
-    font-size: var(--step-1);
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    padding: 10px var(--space-4) 10px 0;
+    font: var(--text-label);
     color: var(--ink-3);
     text-align: left;
-    font-weight: 400;
-    padding: 0 var(--space-4) var(--space-2) 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
 }
 
 td {
-    padding: var(--space-2) var(--space-4) var(--space-2) 0;
-    border-bottom: 1px solid var(--divider);
+    padding: 12px var(--space-4) 12px 0;
     vertical-align: baseline;
+    border-bottom: 1px solid var(--divider);
+}
+
+tr:last-child td {
+    border-bottom: 0;
 }
 
 td.numeric,
@@ -310,49 +251,1038 @@ th.numeric {
     overflow-x: auto;
 }
 
-/* ── The front door ────────────────────────────────────────────────────── */
+.dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: var(--success-dot);
+    border-radius: 50%;
+}
 
-.doorway {
+/* ── Public pages ──────────────────────────────────────────────────────
+ *
+ * Signing in, creating an account, resetting a password, answering an
+ * invitation or a device: a bar with the mark, one white card, and the
+ * instance and version at the foot. */
+
+.auth-page {
     display: flex;
     flex-direction: column;
+    min-height: 100vh;
+    background: linear-gradient(180deg, #f4f6fb 0%, #eef3fb 55%, #e4ecf8 100%);
+}
+
+.masthead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: 20px clamp(20px, 5vw, 76px);
+}
+
+.brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: inherit;
+    text-decoration: none;
+}
+
+.brand .mark {
+    display: block;
+    width: 34px;
+    height: auto;
+}
+
+.masthead .brand {
+    color: var(--ink-1);
+}
+
+.masthead .wordmark {
+    font-size: 23px;
+}
+
+.nav {
+    display: flex;
+    flex-wrap: wrap;
     gap: var(--space-6);
-    padding-top: var(--space-16);
+    font-size: 16px;
 }
 
-/* The instance's name is the largest type on the page because it is a fact,
- * not a slogan. Nothing in the product is larger than 34px. */
-
-.doorway__operator {
-    color: var(--ink-2);
+.nav a {
+    padding: 10px 0;
+    color: var(--ink-3);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
 }
 
-@media (max-width: 40rem) {
-    .masthead__inner {
-        gap: var(--space-3);
-    }
-
-    .nav {
-        margin-left: 0;
-        width: 100%;
-    }
-
-    .doorway__name {
-        font-size: var(--step-6);
-    }
+.nav a:hover {
+    color: var(--ink-1);
 }
 
-/* ── The apparatus ─────────────────────────────────────────────────────
+.nav a[aria-current="page"] {
+    color: var(--ink-1);
+    border-bottom-color: var(--accent);
+}
+
+.auth-page .sheet {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px 48px;
+}
+
+.sheet--narrow {
+    width: 100%;
+    max-width: 520px;
+    padding: clamp(28px, 6vw, 52px);
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-auth);
+}
+
+.auth-page .sheet--narrow h1 {
+    font-size: clamp(36px, 6vw, 48px);
+    font-weight: 500;
+    line-height: 1.05;
+}
+
+.auth-page .sheet--narrow.stack {
+    gap: 20px;
+}
+
+.auth-page .sheet--narrow .button--primary {
+    min-height: 46px;
+    font-size: 16px;
+}
+
+.auth-page .input {
+    min-height: 48px;
+    font-size: 16px;
+}
+
+.auth-page .field__label {
+    font-weight: 400;
+    font-size: 16px;
+}
+
+.foot {
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    padding: 22px;
+    font: var(--text-mono-sm);
+    color: var(--ink-3);
+    background: rgb(250 251 253 / 70%);
+}
+
+/* The failure page and a few others are wider than a form. */
+.auth-page .sheet > .stack:not(.sheet--narrow) {
+    max-width: 640px;
+    padding: clamp(28px, 6vw, 52px);
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-auth);
+}
+
+/* ── The front page ────────────────────────────────────────────────────
  *
- * A measured column with functional margins: the document holds the
- * centre, the gutter on the left carries what the system knows about
- * each node, and the register on the right carries the blocks. Neither
- * margin disappears on a narrow screen — both carry information, so they
- * degrade in position, not in existence.
- */
+ * The one navy page: the mark over a dome of light, the tagline and the
+ * ways in. The drawing behind it is the brand light; without WebGL it is
+ * this gradient. */
+
+.landing-page {
+    min-height: 100vh;
+    color: #f2f6fd;
+    background: var(--navy-950);
+}
+
+.landing-page .masthead,
+.landing-page .foot {
+    display: none;
+}
+
+.landing-page .sheet {
+    min-height: 100vh;
+}
+
+.doorway {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(120% 90% at 50% 30%, #051740 55%, #1a4f9e 74%, #8fb6e8 90%, #eef4fc 100%);
+}
+
+.doorway__constellation {
+    width: clamp(160px, 20vw, 290px);
+    margin-bottom: 18px;
+}
+
+.doorway__constellation .mark {
+    display: block;
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 0 22px rgb(120 170 255 / 45%));
+}
+
+.doorway__copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5vh;
+}
+
+.doorway__name {
+    font-family: var(--font-brand);
+    font-size: clamp(56px, 9vw, 92px);
+    font-weight: 420;
+    letter-spacing: -0.049em;
+    line-height: 1;
+    color: #f2f6fd;
+}
+
+/* The one line set in capitals with tracking, because it is a motto and
+ * not a label. */
+.doorway__lead {
+    max-width: 46ch;
+    font-size: clamp(11px, 2.9vw, 14px);
+    line-height: 1.9;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: #b9cdea;
+}
+
+.doorway__actions .block {
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+    align-items: center;
+}
+
+.doorway__actions .actions {
+    justify-content: center;
+    gap: 14px;
+}
+
+.doorway__actions .quiet {
+    color: #b9cdea;
+}
+
+.button--hero,
+.button--glass {
+    min-height: 48px;
+    padding: 0 26px;
+    font-size: 16px;
+    border-radius: var(--radius-pill);
+}
+
+.button--hero {
+    color: #061a44;
+    background: #f4f8ff;
+    border-color: #f4f8ff;
+}
+
+.button--hero:hover {
+    color: #061a44;
+    background: #fff;
+    border-color: #fff;
+}
+
+.button--glass {
+    color: #f2f6fd;
+    background: rgb(10 35 85 / 35%);
+    border-color: rgb(190 215 250 / 35%);
+    backdrop-filter: blur(6px);
+}
+
+.button--glass:hover {
+    color: #fff;
+    background: rgb(10 35 85 / 55%);
+    border-color: rgb(190 215 250 / 55%);
+}
+
+.doorway__meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 28px;
+    max-width: none;
+    font: var(--text-mono-sm);
+    color: #7f9ac4;
+}
+
+/* Leaving the front page for the sign-in: the page fades as the light
+ * withdraws, and the card arrives on the other side. */
+.surface-transition {
+    display: none;
+}
+
+.surface-leaving .doorway {
+    opacity: 0;
+    transition: opacity 360ms var(--ease-out);
+}
+
+.surface-pending body {
+    opacity: 0;
+}
+
+.surface-arriving .sheet--narrow {
+    animation: arrive 480ms var(--ease-out) both;
+}
+
+@keyframes arrive {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+}
+
+/* ── The signed-in shell ───────────────────────────────────────────────
+ *
+ * One navy sidebar, the only dark surface; the work is on the light page
+ * beside it. Below 1024px the sidebar is a drawer behind a small bar. */
+
+.shell {
+    display: flex;
+    min-height: 100vh;
+}
+
+.sidebar {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    flex-shrink: 0;
+    width: var(--sidebar-web);
+    height: 100vh;
+    padding: 26px 14px 16px;
+    color: var(--on-dark-2);
+    background: var(--glow-sidebar);
+}
+
+.sidebar__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 10px;
+}
+
+.sidebar__head .brand {
+    flex: 1;
+    min-width: 0;
+}
+
+.brand__words {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.sidebar .wordmark,
+.mobile-bar .wordmark {
+    font-size: 22px;
+    color: #f2f6fd;
+}
+
+.brand__instance {
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--on-dark-4);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar__version {
+    padding: 2px 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--on-dark-4);
+    border: 1px solid rgb(170 200 240 / 20%);
+    border-radius: var(--radius-xs);
+}
+
+.sidebar__nav {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    margin: 0 -6px;
+    padding: 0 6px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgb(170 200 240 / 25%) transparent;
+}
+
+.sidebar__section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 32px;
+    padding: 14px 12px 4px;
+    font: var(--text-label);
+    color: var(--on-dark-4);
+}
+
+.sidebar__add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    margin-right: -6px;
+    color: var(--on-dark-4);
+    border-radius: 7px;
+}
+
+.sidebar__add:hover,
+.sidebar__add[aria-current="page"] {
+    color: var(--on-dark-1);
+    background: var(--on-dark-fill);
+}
+
+.sidebar__add .glyph {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
+}
+
+.sidebar__item {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 12px;
+    min-height: 40px;
+    padding: 0 12px;
+    font: var(--text-nav);
+    color: var(--on-dark-2);
+    text-decoration: none;
+    border-radius: var(--radius-md);
+    transition: background var(--dur-ui) var(--ease-out), color var(--dur-ui) var(--ease-out);
+}
+
+.sidebar__item:hover {
+    color: var(--on-dark-1);
+    background: var(--on-dark-fill);
+}
+
+.sidebar__item[aria-current="page"] {
+    font-weight: 500;
+    color: #fff;
+    background: var(--on-dark-active);
+}
+
+.sidebar__words {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar__badge {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--navy-800);
+    background: var(--sky-200);
+    border-radius: var(--radius-xs);
+}
+
+.sidebar__count {
+    padding: 1px 7px;
+    font: var(--text-label);
+    color: var(--navy-800);
+    background: var(--sky-200);
+    border-radius: var(--radius-pill);
+}
+
+.sidebar__empty {
+    padding: 6px 12px;
+    font-size: 14px;
+    color: var(--on-dark-3);
+}
+
+.sidebar a:focus-visible,
+.sidebar button:focus-visible,
+.mobile-bar a:focus-visible,
+.mobile-bar button:focus-visible {
+    outline-color: var(--sky-200);
+}
+
+.user-card {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--on-dark-card);
+    border: 1px solid rgb(190 215 250 / 18%);
+    border-radius: var(--radius-lg);
+}
+
+.user-card .avatar {
+    width: 36px;
+    height: 36px;
+}
+
+.user-card__who {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.user-card__name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--on-dark-1);
+}
+
+.user-card__name > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-card__role {
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #cfe0fb;
+    background: rgb(168 201 240 / 20%);
+    border-radius: var(--radius-pill);
+}
+
+.user-card .identifier {
+    font-size: 11px;
+    color: var(--on-dark-3);
+}
+
+.user-card form {
+    display: flex;
+}
+
+.user-card__out {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    color: var(--on-dark-2);
+    background: transparent;
+    border: 0;
+    border-radius: 9px;
+    cursor: pointer;
+}
+
+.user-card__out:hover {
+    color: #fff;
+    background: var(--on-dark-fill);
+}
+
+.shell__work {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.mobile-bar {
+    display: none;
+}
+
+.shell__scrim {
+    display: none;
+}
+
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    width: 100%;
+    max-width: calc(var(--content-max) + 128px);
+    padding: 40px 64px 64px;
+}
+
+/* ── Page structure ────────────────────────────────────────────────────
+ *
+ * Breadcrumbs when there is a hierarchy, then the head — title, what it
+ * is, the one primary action — then the content in cards. */
+
+.page-head,
+.page > .stack:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.page-head {
+    gap: 22px;
+}
+
+.page-head__row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.page-head__text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.page-title {
+    font: var(--text-display);
+    letter-spacing: -0.02em;
+}
+
+.page-subtitle {
+    font-size: 16px;
+    color: var(--ink-3);
+}
+
+.page-head .page-title + .page-subtitle {
+    margin-top: -12px;
+}
+
+.page-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    font-size: 14px;
+    color: var(--ink-3);
+}
+
+.crumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--ink-3);
+}
+
+.crumbs a {
+    color: var(--ink-3);
+    text-decoration: none;
+}
+
+.crumbs a:hover {
+    color: var(--ink-1);
+}
+
+.crumbs > span[aria-hidden] {
+    color: var(--ink-disabled);
+}
+
+.crumbs [aria-current] {
+    color: var(--ink-1);
+}
+
+/* The label on older pages that names where a page belongs. */
+.page > .stack:first-child > .label {
+    font-size: 14px;
+}
+
+.page > .stack:first-child > h1 {
+    font: var(--text-display);
+    letter-spacing: -0.02em;
+}
+
+.badge--large {
+    width: 64px;
+    height: 64px;
+    font-size: 22px;
+    border-radius: var(--radius-xl);
+    box-shadow: 0 8px 24px -10px rgb(26 79 158 / 55%);
+}
+
+.badge--muted {
+    color: var(--ink-3);
+    background: var(--fill-muted);
+}
+
+.button--large {
+    min-height: 44px;
+    padding: 0 20px;
+    font-size: 15px;
+    border-radius: 11px;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font: var(--text-section);
+}
+
+.card__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 24px;
+}
+
+.card__title {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    font: var(--text-section);
+}
+
+.card__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: 4px 24px 24px;
+}
+
+.empty-card {
+    padding: 22px 24px;
+}
+
+/* ── Overview ──────────────────────────────────────────────────────── */
+
+.group-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+}
+
+.group-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 232px;
+    padding: 24px;
+    text-decoration: none;
+    transition: border-color var(--dur-ui) var(--ease-out), box-shadow var(--dur-ui) var(--ease-out);
+}
+
+a.group-card:hover {
+    color: var(--ink-1);
+    border-color: var(--border-strong);
+    box-shadow: 0 6px 20px -12px rgb(20 40 90 / 25%);
+}
+
+.group-card__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.group-card__name {
+    font: var(--text-card);
+    letter-spacing: -0.01em;
+}
+
+.group-card .identifier {
+    font-size: 13px;
+}
+
+.group-card__about {
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--ink-3);
+}
+
+.group-card__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 16px;
+    font-size: 14px;
+    color: var(--ink-2);
+    border-top: 1px solid var(--divider);
+}
+
+.group-card--request {
+    background: var(--surface-subtle);
+}
+
+.request-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 10px;
+    min-height: 232px;
+    padding: 24px;
+}
+
+.request-card__title {
+    font-size: 17px;
+    font-weight: 600;
+}
+
+.request-card .quiet {
+    font-size: 14px;
+}
+
+.request-card .button {
+    margin-top: 10px;
+    color: var(--accent);
+}
+
+.request-card--alone {
+    grid-column: 1 / -1;
+    min-height: 0;
+}
+
+.machine-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.machine-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 24px;
+    text-decoration: none;
+}
+
+a.machine-row:hover {
+    color: var(--ink-1);
+    border-color: var(--border-strong);
+}
+
+.machine-row__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    color: var(--ink-2);
+    background: var(--fill-muted);
+    border-radius: var(--radius-md);
+}
+
+.machine-row__who {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.machine-row__name {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+/* ── A group's page ────────────────────────────────────────────────── */
+
+.group-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--rail-group);
+    gap: 24px;
+    align-items: start;
+}
+
+.group-layout__main,
+.group-layout__rail {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.lines-card {
+    overflow: hidden;
+}
+
+.lines-table {
+    --columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 120px 170px 20px;
+}
+
+.lines-table__title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.lines-table__summary {
+    font-size: 15px;
+    color: var(--ink-3);
+}
+
+.lines-table .chip {
+    justify-self: start;
+    padding: 4px 10px;
+    font-size: 13px;
+    background: #f1f3f8;
+}
+
+.lines-table__contents {
+    font-size: 14px;
+    color: var(--ink-3);
+}
+
+.vault-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 22px;
+}
+
+.vault-card__head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.vault-card__head h2 {
+    font-size: 17px;
+    color: var(--on-dark-1);
+}
+
+.vault-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    color: #cfe0fb;
+    background: rgb(168 201 240 / 16%);
+    border-radius: var(--radius-md);
+}
+
+.vault-card p {
+    font-size: 14px;
+    color: #b9cdea;
+}
+
+.vault-card__open {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #061a44;
+    text-decoration: none;
+    background: #f4f8ff;
+    border-radius: var(--radius-md);
+    transition: background var(--dur-ui) var(--ease-out), transform var(--dur-press) var(--ease-out);
+}
+
+.vault-card__open:hover {
+    color: #061a44;
+    background: #fff;
+}
+
+.vault-card__open:active {
+    transform: scale(0.96);
+}
+
+.members-card {
+    overflow: hidden;
+}
+
+.members-card .card__head {
+    padding: 18px 20px 12px;
+}
+
+.members-card .card__title {
+    font-size: 17px;
+}
+
+.add-member {
+    color: var(--accent);
+}
+
+.people {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.person {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--divider);
+}
+
+.person:last-child {
+    padding-bottom: 16px;
+}
+
+.person__who {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.person__name {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.person .identifier {
+    font-size: 12px;
+}
+
+.person__role {
+    font-size: 13px;
+    color: var(--ink-3);
+}
+
+.person__role--owner {
+    font-weight: 500;
+    color: var(--accent-soft-fg);
+}
+
+/* ── A line on the web ─────────────────────────────────────────────────
+ *
+ * The document holds the middle; the gutter on the left carries what the
+ * system knows about each statement, and the register on the right the
+ * line's facts. Both margins carry information, so on a narrow screen
+ * they move rather than disappear. */
 
 .apparatus {
     display: grid;
-    grid-template-columns: 11rem minmax(0, 1fr) 21rem;
+    grid-template-columns: 10rem minmax(0, 1fr) 20rem;
     gap: var(--space-6);
     align-items: start;
 }
@@ -361,20 +1291,10 @@ th.numeric {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
-    font-family: var(--font-ui);
-    font-size: var(--step-1);
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    padding-top: 2px;
+    font: var(--text-label);
     color: var(--ink-3);
     text-align: right;
-    padding-top: 2px;
-}
-
-.apparatus__gutter .identifier {
-    font-family: var(--font-mono);
-    font-size: var(--step-2);
-    letter-spacing: 0;
-    text-transform: none;
 }
 
 .apparatus__document {
@@ -382,158 +1302,108 @@ th.numeric {
     flex-direction: column;
     gap: var(--space-6);
     min-width: 0;
+    padding: 28px 32px;
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
 }
 
 .apparatus__register {
     display: flex;
     flex-direction: column;
-    gap: var(--space-6);
-    border-left: 1px solid var(--border);
-    padding-left: var(--space-4);
+    gap: var(--space-4);
 }
 
-/* One node in the document. Weight on the left edge says who committed
- * to it: the heavier rule is a human declaration that the line rests on
- * this. */
-.node {
+.node,
+.box {
     display: grid;
-    grid-template-columns: 11rem minmax(0, 1fr);
-    gap: var(--space-6);
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: var(--space-5);
     align-items: start;
 }
 
 .node__mark {
-    font-family: var(--font-ui);
-    font-size: var(--step-1);
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-    text-align: right;
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    align-items: flex-end;
+    gap: 6px;
+    font: var(--text-label);
+    color: var(--ink-3);
+    text-align: right;
 }
 
 .node__mark .identifier {
-    font-family: var(--font-mono);
-    font-size: var(--step-2);
-    letter-spacing: 0;
-    text-transform: none;
     color: var(--ink-2);
 }
 
 .node__body {
-    border-left: 1px solid var(--border);
-    padding-left: var(--space-4);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
     min-width: 0;
+    padding-left: var(--space-4);
+    border-left: 1px solid var(--border);
 }
 
 .node--central > .node__body {
-    border-left-width: 1.6px;
-    border-left-color: var(--accent);
+    border-left: 2px solid var(--accent);
 }
 
 .node__name {
     font-family: var(--font-math);
-    font-size: var(--step-4);
-    line-height: 1.3;
+    font-size: 19px;
+    line-height: 1.35;
 }
 
 .node__uses {
-    font-family: var(--font-mono);
-    font-size: var(--step-2);
+    font: var(--text-mono-sm);
     color: var(--ink-3);
 }
 
-/* A black box: a declared absence. Hatched, never coloured — a gap is
- * not a failure and not an alarm. */
-.box {
-    display: grid;
-    grid-template-columns: 11rem minmax(0, 1fr);
-    gap: var(--space-6);
-    align-items: start;
-}
-
+/* A black box: a declared absence. Hatched rather than coloured — a gap
+ * is not a failure. */
 .box__band {
-    min-height: 3rem;
-    border: 1px solid var(--border);
-    padding: var(--space-3) var(--space-4);
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    min-height: 3rem;
+    padding: var(--space-3) var(--space-4);
+    font-size: 14px;
     color: var(--ink-3);
-    font-size: var(--step-2);
-    background-image: repeating-linear-gradient(
-        45deg,
-        transparent,
-        transparent 7px,
-        var(--divider) 7px,
-        var(--divider) 8px
-    );
+    background-image: repeating-linear-gradient(45deg, transparent, transparent 7px, var(--divider) 7px, var(--divider) 8px);
+    border: 1px dashed var(--border-dashed);
+    border-radius: var(--radius-md);
 }
 
-/* Filled by hand is ordinary content, so it carries no texture. */
 .box--filled .box__band {
     background-image: none;
+    border-style: solid;
 }
 
 .box__count {
     font-variant-numeric: tabular-nums;
 }
 
-@media (max-width: 75rem) {
-    .apparatus {
-        grid-template-columns: 9rem minmax(0, 1fr);
-    }
-
-    .apparatus__register {
-        grid-column: 1 / -1;
-        border-left: 0;
-        border-top: 1px solid var(--border);
-        padding-left: 0;
-        padding-top: var(--space-6);
-    }
+.box__ask {
+    grid-column: 2;
 }
 
-@media (max-width: 56rem) {
-    .apparatus,
-    .node,
-    .box {
-        grid-template-columns: minmax(0, 1fr);
-        gap: var(--space-3);
-    }
-
-    .apparatus__gutter,
-    .node__mark {
-        text-align: left;
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: var(--space-3);
-    }
-}
-
-/* ── The anchored launcher ─────────────────────────────────────────────
+/* ── The launcher ──────────────────────────────────────────────────────
  *
- * An agent action is offered where its effect will land, so this is a
- * popover beside the mathematics and not a screen of its own. At rest it
- * is one line of grey grotesk: something that starts work must never be
- * the loudest thing on a page of mathematics. It earns its rule on hover,
- * on focus and when it is open, and the only colour in it is that rule on
- * what is currently chosen.
- */
+ * An agent action is offered where its effect will land: a quiet line
+ * that opens into the machines and the agents on each. */
 
 .launcher > summary {
-    display: inline-block;
-    font-family: var(--font-ui);
-    font-size: var(--step-2);
-    color: var(--ink-3);
-    cursor: pointer;
-    padding-left: var(--space-2);
-    border-left: 2px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 14px;
+    color: var(--accent);
     list-style: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
 }
 
 .launcher > summary::-webkit-details-marker {
@@ -541,33 +1411,21 @@ th.numeric {
 }
 
 .launcher > summary:hover,
-.launcher > summary:focus-visible,
 .launcher[open] > summary {
-    color: var(--ink-1);
-    border-left-color: var(--accent);
+    background: var(--accent-soft-bg);
 }
 
 .launcher__panel {
-    position: relative;
-    margin-top: var(--space-3);
-    margin-left: var(--space-4);
-    max-width: 32rem;
-    border: 1px solid var(--border);
-    background: var(--surface-card);
-    padding: var(--space-4);
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
-}
-
-/* The leader back to the line that opened it. */
-.launcher__panel::before {
-    content: "";
-    position: absolute;
-    top: var(--space-4);
-    left: calc(-1 * var(--space-4));
-    width: var(--space-4);
-    border-top: 1px solid var(--border);
+    max-width: 32rem;
+    margin-top: var(--space-2);
+    padding: var(--space-4);
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-float);
 }
 
 .launcher__machine {
@@ -577,10 +1435,7 @@ th.numeric {
 }
 
 .launcher__name {
-    font-family: var(--font-ui);
-    font-size: var(--step-1);
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
+    font: var(--text-small);
     color: var(--ink-2);
 }
 
@@ -588,87 +1443,56 @@ th.numeric {
     display: flex;
     align-items: baseline;
     gap: var(--space-2);
+    padding: 4px 8px;
     font-family: var(--font-mono);
-    font-size: var(--step-2);
-    padding-left: var(--space-2);
-    border-left: 2px solid transparent;
+    font-size: 13px;
+    border-radius: var(--radius-sm);
 }
 
 .launcher__agent:has(input:checked) {
-    border-left-color: var(--accent);
+    background: var(--accent-soft-bg);
 }
 
 .launcher__agent input {
     accent-color: var(--accent);
 }
 
-/* Shown, named and unavailable. An agent a machine does not have implies
- * nothing false, and its absence teaches the owner about their machine. */
+/* Shown, named and unavailable, with the reason. */
 .launcher__agent--out {
     color: var(--ink-3);
 }
 
-.box__ask {
-    grid-column: 2;
-}
-
-/* A count is on a person's decision and never on the state of the
- * mathematics, so it is ink among grey rather than a colour of its own. */
-.count {
-    font-family: var(--font-mono);
-    font-size: var(--step-2);
-    font-variant-numeric: tabular-nums;
-    color: var(--ink-1);
-}
-
-@media (max-width: 56rem) {
-    .box__ask {
-        grid-column: auto;
-    }
-}
-
 /* ── What changed ──────────────────────────────────────────────────────
  *
- * A proposal arrives whole and is read by what moved. Added and taken
- * out are told apart by the mark in the margin and by a hairline on the
- * edge, never by colour: green and red mean a machine proof and a
- * refutation, and nothing else in the product may borrow them.
- *
- * A statement the line rests on carries corner marks, because the guard
- * forbids touching it and the screen should say so where it is.
- */
+ * A proposal is read by what moved. Added and taken out are told apart by
+ * the mark in the margin and the edge, and a statement the guard forbids
+ * touching carries a frame. */
 
 .diff {
-    font: var(--step-2) / 1.6 var(--font-mono);
-    background: var(--fill-muted);
-    border: 1px solid var(--border);
     padding: var(--space-3) 0;
     overflow-x: auto;
+    font: 13px / 1.6 var(--font-mono);
     white-space: pre;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
 }
 
-/* A line's source, as it was written. It wraps rather than scrolls,
- * because most of it is prose. */
 .source {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
 }
 
-.source .identifier {
-    font-family: var(--font-mono);
-    letter-spacing: 0;
-    text-transform: none;
-}
-
 .source__text {
     margin: 0;
-    font: var(--step-2) / 1.6 var(--font-mono);
-    background: var(--fill-muted);
-    border: 1px solid var(--border);
     padding: var(--space-3);
+    font: 13px / 1.6 var(--font-mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
 }
 
 .diff__row {
@@ -680,42 +1504,34 @@ th.numeric {
 }
 
 .diff__row--added {
-    border-left-color: var(--ink-1);
-    background: var(--surface-card);
+    background: var(--success-bg);
+    border-left-color: var(--success-icon);
 }
 
 .diff__row--removed {
-    border-left-color: var(--border);
     color: var(--ink-3);
     text-decoration: line-through;
     text-decoration-thickness: 1px;
+    background: var(--danger-bg);
+    border-left-color: var(--danger-border);
 }
 
-/* A registration frame around what the guard forbids touching: the
- * corners of the whole run, and the sides between them. */
-
 .diff__row--held {
-    box-shadow:
-        inset 1px 0 0 -0.5px var(--ink-3),
-        inset -1px 0 0 -0.5px var(--ink-3);
+    box-shadow: inset 1px 0 0 -0.5px var(--ink-3), inset -1px 0 0 -0.5px var(--ink-3);
 }
 
 .diff__row--held-first {
-    background-image:
-        linear-gradient(var(--ink-3), var(--ink-3)),
-        linear-gradient(var(--ink-3), var(--ink-3));
-    background-size: 7px 1px, 7px 1px;
+    background-image: linear-gradient(var(--ink-3), var(--ink-3)), linear-gradient(var(--ink-3), var(--ink-3));
     background-position: 0 0, 100% 0;
     background-repeat: no-repeat;
+    background-size: 7px 1px, 7px 1px;
 }
 
 .diff__row--held-last {
-    background-image:
-        linear-gradient(var(--ink-3), var(--ink-3)),
-        linear-gradient(var(--ink-3), var(--ink-3));
-    background-size: 7px 1px, 7px 1px;
+    background-image: linear-gradient(var(--ink-3), var(--ink-3)), linear-gradient(var(--ink-3), var(--ink-3));
     background-position: 0 100%, 100% 100%;
     background-repeat: no-repeat;
+    background-size: 7px 1px, 7px 1px;
 }
 
 .diff__at {
@@ -732,876 +1548,214 @@ th.numeric {
     white-space: pre-wrap;
     word-break: break-word;
 }
-/* ── Product surfaces ──────────────────────────────────────────────────
- * The front door carries the deep blue identity; product pages keep it in
- * a persistent rail and hold work in cool panels. These rules must follow
- * the document grammar above, which they restyle for the shared shell.
- */
-
-body {
-    min-height: 100vh;
-    background: var(--surface-page);
-    color: var(--ink-1);
-}
-
-h1 {
-    font-size: clamp(1.8rem, 2.5vw, 2.4rem);
-    font-weight: 500;
-    letter-spacing: -0.035em;
-}
-
-h2,
-h3 {
-    letter-spacing: -0.025em;
-}
-
-.topbar__eyebrow,
-.sidebar__label {
-    font-family: var(--font-ui);
-    font-weight: 600;
-    letter-spacing: 0.12em;
-}
-
-/* Public pages */
-
-.auth-page {
-    min-height: 100svh;
-    /* Bar, card, foot. The middle row takes the height that is left over
-     * and never shrinks below the card, so the foot sits on the bottom edge
-     * of a short page and below the content of a long one.
-     *
-     * The gap is what keeps the card off the bar and the foot. Centring it
-     * is the row's auto margins, and those are whatever is left over — on a
-     * short window that is nothing, and the card landed flat against the
-     * foot. A gap is a floor the margins cannot spend. */
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    row-gap: var(--space-6);
-    background:
-        radial-gradient(circle at 4% 100%, rgb(105 167 255 / 20%), transparent 28rem),
-        linear-gradient(145deg, #f9fbfd, #edf3f9);
-}
-
-.auth-page .masthead {
-    border: 0;
-    background: transparent;
-}
-
-.auth-page .masthead__inner {
-    max-width: none;
-    padding: 22px clamp(22px, 4vw, 56px);
-}
-
-.auth-page .wordmark {
-    font-size: 18px;
-    letter-spacing: -0.02em;
-}
-
-.auth-page .sheet {
-    width: min(100% - 32px, 560px);
-    margin: auto;
-    padding: clamp(28px, 5vw, 52px);
-    background: rgb(255 255 255 / 88%);
-    border: 1px solid rgb(204 218 232 / 80%);
-    border-radius: 20px;
-    box-shadow: var(--shadow-float);
-    backdrop-filter: blur(18px);
-}
-
-.auth-page .foot {
-    width: 100%;
-    border: 0;
-}
-
-.auth-page .foot__inner {
-    justify-content: center;
-}
-
-.surface-transition {
-    position: fixed;
-    z-index: 1000;
-    top: -14vh;
-    left: -12vw;
-    width: 124vw;
-    height: 128vh;
-    pointer-events: none;
-    background:
-        radial-gradient(ellipse 42% 18% at 18% 4%, #7ab3fb 0, #225fae 45%, transparent 76%),
-        radial-gradient(ellipse 38% 19% at 78% 3%, #b1d4ff 0, #3675c4 42%, transparent 74%),
-        linear-gradient(180deg, #0b4789 0, #052c61 26%, var(--navy-950) 100%);
-    border-radius: 42% 55% 0 0 / 7% 9% 0 0;
-    box-shadow: 0 -24px 90px rgb(92 159 245 / 28%);
-    transform: translate3d(0, 112%, 0);
-    will-change: transform, opacity;
-}
-
-.surface-transition::before,
-.surface-transition::after {
-    content: "";
-    position: absolute;
-    top: -6%;
-    width: 54%;
-    height: 18%;
-    border-radius: 50%;
-    background: #0a4382;
-}
-
-.surface-transition::before {
-    left: -2%;
-    transform: rotate(3deg);
-}
-
-.surface-transition::after {
-    right: -4%;
-    transform: rotate(-4deg);
-}
-
-html.surface-pending .auth-page .surface-transition,
-.auth-page.surface-arriving .surface-transition {
-    transform: translate3d(0, 0, 0);
-}
-
-.auth-page.surface-arriving .surface-transition {
-    animation: surface-reveal 430ms cubic-bezier(.4, 0, .2, 1) both;
-}
-
-@keyframes surface-reveal {
-    0% { transform: translate3d(0, 0, 0); opacity: 1; }
-    78% { opacity: 1; }
-    100% { transform: translate3d(0, -115%, 0); opacity: 0; }
-}
-
-/* Front door */
-
-.landing-page {
-    min-height: 100svh;
-    overflow: hidden;
-    color: #f4f8ff;
-    background: var(--navy-950);
-}
-
-.landing-page::before,
-.landing-page::after {
-    content: "";
-    position: fixed;
-    pointer-events: none;
-}
-
-.landing-page::before {
-    z-index: 0;
-    inset: -4%;
-    background:
-        radial-gradient(ellipse 62% 43% at -2% 108%, #f7fbff 0, #c7e0ff 12%, #75a9e7 30%, rgb(27 83 157 / 58%) 53%, transparent 76%),
-        radial-gradient(ellipse 58% 45% at 102% 109%, #fff 0, #d7e9ff 11%, #81afe7 29%, rgb(26 80 151 / 52%) 52%, transparent 76%),
-        radial-gradient(ellipse 46% 21% at 51% 105%, #8ab8ef 0, rgb(35 96 172 / 50%) 38%, transparent 76%),
-        radial-gradient(circle at 50% 40%, #07346e 0, #03224d 42%, var(--navy-950) 73%, #000b1d 100%);
-    background-position: 0 0, 0 0, 0 0, center;
-    animation: blue-tide 10s ease-in-out infinite alternate;
-    will-change: transform, filter;
-}
-
-.landing-page::after {
-    z-index: 1;
-    inset: 0;
-    opacity: .08;
-    background-image: url("/assets/noise.svg");
-    background-size: 220px 220px;
-    mix-blend-mode: soft-light;
-}
-
-@keyframes blue-tide {
-    0% { transform: scale(1.02) translate3d(-.8%, .7%, 0); filter: saturate(.94) brightness(.98); }
-    50% { transform: scale(1.045) translate3d(.7%, -.35%, 0); filter: saturate(1.04) brightness(1.02); }
-    100% { transform: scale(1.025) translate3d(-.25%, -.9%, 0); filter: saturate(.98) brightness(1.01); }
-}
-
-.landing-page .masthead {
-    position: fixed;
-    z-index: 5;
-    inset: 0 0 auto;
-    border: 0;
-    background: transparent;
-}
-
-.landing-page .masthead__inner {
-    max-width: none;
-    padding: 26px clamp(24px, 4vw, 64px);
-}
-
-.landing-page .wordmark {
-    color: #fff;
-    font-size: 18px;
-    letter-spacing: -0.025em;
-}
-
-.landing-page .nav a {
-    color: rgb(225 237 255 / 76%);
-}
-
-.landing-page .nav a:hover {
-    color: #fff;
-}
-
-.landing-page .sheet {
-    position: relative;
-    z-index: 3;
-    width: 100%;
-    max-width: none;
-    min-height: 100svh;
-    margin: 0;
-    padding: 90px 24px 40px;
-}
-
-.doorway {
-    min-height: calc(100svh - 130px);
-    padding: 0;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-}
-
-.doorway__constellation {
-    width: clamp(140px, 18vw, 230px);
-    margin-bottom: 14px;
-}
-
-.doorway__constellation .mark {
-    display: block;
-    width: 100%;
-    height: auto;
-}
-
-.doorway__copy {
-    display: flex;
-    align-items: center;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.doorway__name {
-    order: 1;
-    font-size: clamp(4rem, 9vw, 7.5rem);
-    line-height: .9;
-    font-weight: 400;
-    letter-spacing: -.065em;
-    text-shadow: 0 0 35px rgb(114 172 255 / 28%);
-}
-
-.doorway__lead {
-    order: 2;
-    max-width: 680px;
-    font-size: clamp(14px, 1.55vw, 18px);
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    color: rgb(207 225 252 / 76%);
-}
-
-.doorway__actions {
-    order: 3;
-    margin-top: 18px;
-}
-
-.doorway__actions .block {
-    align-items: center;
-}
-
-.doorway__actions .actions {
-    justify-content: center;
-}
-
-.button--hero,
-.button--glass {
-    min-height: 52px;
-    padding: 0 28px;
-    border-radius: 999px;
-    font-size: 14px;
-    transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, border-color 150ms ease;
-}
-
-.button--hero {
-    color: var(--navy-950) !important;
-    background: #f5f9ff !important;
-    border-color: #fff !important;
-    box-shadow: 0 10px 32px rgb(1 12 32 / 35%);
-}
-
-.button--glass {
-    color: #eaf2ff !important;
-    background: rgb(116 170 246 / 12%) !important;
-    border-color: rgb(190 216 255 / 34%) !important;
-}
-
-.button--hero:hover,
-.button--glass:hover {
-    transform: translateY(-2px);
-}
-
-.button--hero:hover {
-    background: #fff !important;
-    box-shadow: 0 14px 38px rgb(1 12 32 / 45%), 0 0 0 4px rgb(255 255 255 / 9%);
-}
-
-.button--glass:hover {
-    background: rgb(132 184 255 / 20%) !important;
-    border-color: rgb(219 233 255 / 62%) !important;
-    box-shadow: 0 12px 30px rgb(1 12 32 / 24%);
-}
-
-.button--hero:active,
-.button--glass:active {
-    transform: translateY(0) scale(.97);
-}
-
-.doorway__meta {
-    order: 4;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 10px 22px;
-    margin-top: 16px;
-    font: 11px/1.4 var(--font-mono);
-    color: rgb(185 209 245 / 54%);
-}
-
-.landing-page .foot {
-    display: none;
-}
-
-.landing-page.surface-leaving .surface-transition {
-    animation: surface-close 360ms cubic-bezier(.32, 0, .2, 1) both;
-}
-
-.landing-page.surface-leaving .masthead,
-.landing-page.surface-leaving .sheet {
-    animation: content-fade 260ms ease both;
-}
-
-@keyframes surface-close {
-    0% { transform: translate3d(0, 112%, 0); }
-    100% { transform: translate3d(0, 0, 0); }
-}
-
-@keyframes content-fade {
-    to { opacity: 0; transform: translateY(-18px); }
-}
-
-/* Signed-in product shell */
-
-.product-page {
-    /* `dvh`, not `vh`: on a phone `vh` is the height the window has when the
-     * browser's own bars are hidden, so a shell sized in it is taller than
-     * the screen until you scroll. */
-    height: 100dvh;
-    overflow: hidden;
-}
-
-.product-shell {
-    height: 100%;
-    display: grid;
-    grid-template-columns: 228px minmax(0, 1fr);
-}
-
-.sidebar {
-    position: relative;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    padding: 28px 18px 22px;
-    color: #dce9ff;
-    background:
-        radial-gradient(circle at 0 100%, rgb(74 144 236 / 44%), transparent 48%),
-        linear-gradient(180deg, var(--navy-800), var(--navy-950));
-    user-select: none;
-}
-
-/* One grain, on every blue surface.
- *
- * Turbulence, not a lattice of dots: a pattern that repeats every four
- * pixels reads as a screen door laid over the panel, and the eye finds the
- * repeat straight away. This is the same file the front door is grained
- * with, so every blue surface in the product has the same tooth. */
-.sidebar::after,
-.product-page .sheet > .stack:first-child:not(.sheet--narrow)::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    opacity: .15;
-    pointer-events: none;
-    border-radius: inherit;
-    background-image: url("/assets/noise.svg");
-    background-size: 200px 200px;
-    mix-blend-mode: soft-light;
-}
-
-.sidebar > * { position: relative; z-index: 1; }
-
-.sidebar .wordmark {
-    color: #fff;
-    font-size: 20px;
-    letter-spacing: -.035em;
-}
-
-.sidebar .wordmark .mark {
-    width: 34px;
-}
-
-
-.sidebar__instance {
-    margin: 14px 8px 34px;
-    font-size: 12px;
-    color: rgb(207 225 252 / 54%);
-    overflow-wrap: anywhere;
-}
-
-.sidebar__nav {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-}
-
-.sidebar__label {
-    margin: 0 10px 5px;
-    font-size: 10px;
-    text-transform: uppercase;
-    color: rgb(190 216 255 / 45%);
-}
-
-.sidebar__nav a {
-    padding: 10px 12px;
-    border-radius: 9px;
-    color: rgb(228 238 255 / 72%);
-    text-decoration: none;
-}
-
-.sidebar__nav a:hover,
-.sidebar__nav a[aria-current="page"] {
-    color: #fff;
-    background: rgb(132 180 247 / 14%);
-}
-
-.sidebar__nav a[aria-current="page"]::before {
-    content: "";
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    margin: 0 10px 1px 0;
-    border-radius: 50%;
-    background: var(--sky-300);
-    box-shadow: 0 0 8px var(--sky-300);
-}
-
-/* The two trees.
- *
- * Groups and machines are where the work actually is, so they hang open in
- * the bar rather than behind a list to pick from. A `details` is the whole
- * mechanism: it opens with no JavaScript, and the page that is inside one
- * is served with it already open. */
-.tree summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    border-radius: 9px;
-    color: rgb(228 238 255 / 72%);
-    cursor: pointer;
-    list-style: none;
-}
-
-.tree summary::-webkit-details-marker { display: none; }
-
-.tree summary:hover { color: #fff; background: rgb(132 180 247 / 14%); }
-
-/* The disclosure arrow, drawn rather than typed: a glyph from the font
- * would sit on the font's baseline and turn about the wrong point. */
-.tree summary::before {
-    content: "";
-    width: 0;
-    height: 0;
-    border-left: 4px solid currentColor;
-    border-top: 3.5px solid transparent;
-    border-bottom: 3.5px solid transparent;
-    transition: transform .16s ease;
-}
-
-.tree[open] > summary::before { transform: rotate(90deg); }
-
-/* A heading with nothing under it is still a destination somebody can
- * fill, so it is dimmed rather than taken away. */
-.tree[data-empty] > summary { color: rgb(228 238 255 / 38%); }
-
-.tree__body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin: 2px 0 6px 18px;
-    padding-left: 10px;
-    border-left: 1px solid rgb(197 220 255 / 14%);
-}
-
-.tree__body a {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    font-size: 13px;
-    color: rgb(228 238 255 / 66%);
-    text-decoration: none;
-}
-
-/* The mark for the page you are on is a flex item here, so it needs saying
- * that it is neither the thing that takes the leftover room nor the thing
- * that gives room up: spread apart, it pushed the name to the far edge, and
- * squeezed, it went oval the moment a long name wrapped. */
-.tree__body a[aria-current="page"]::before {
-    flex: none;
-    margin: 0;
-}
-
-.tree__body a:hover,
-.tree__body a[aria-current="page"] {
-    color: #fff;
-    background: rgb(132 180 247 / 14%);
-}
-
-.tree__body .count {
-    margin-left: auto;
-    color: #cfe2ff;
-    font-size: 11px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: rgb(132 180 247 / 22%);
-}
-
-.tree__empty {
-    padding: 7px 10px;
-    font-size: 12px;
-    color: rgb(196 218 251 / 40%);
-}
-
-.tree__add { color: rgb(169 206 255 / 82%) !important; }
-
-.tree__plus {
-    display: grid;
-    place-items: center;
-    width: 16px;
-    height: 16px;
-    margin-right: 6px;
-    border: 1px dashed rgb(169 206 255 / 45%);
-    border-radius: 5px;
-    font-size: 11px;
-    line-height: 1;
-}
-
-.tree__add span:last-child { margin-right: auto; }
-
-.sidebar__aside {
-    margin-top: auto;
-    padding: 16px 10px 0;
-    border-top: 1px solid rgb(197 220 255 / 12%);
-    color: rgb(196 218 251 / 48%);
-    font-size: 11px;
-    line-height: 1.6;
-}
-
-/* Bar, work, foot — the same three rows the public pages are built from.
- * The middle row is `minmax(0, 1fr)`, so it takes the height that is left
- * over and the work scrolls inside it; the foot is a row of the workspace
- * and lands on the bottom edge whether there is one card or fifty. */
-.product-workspace {
-    min-width: 0;
-    min-height: 0;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    overflow: hidden;
-}
-
-.topbar {
-    min-height: 72px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-    padding: 12px clamp(20px, 3vw, 40px);
-    border-bottom: 1px solid var(--divider);
-    background: rgb(255 255 255 / 88%);
-    backdrop-filter: blur(16px);
-    user-select: none;
-}
-
-.topbar__eyebrow {
-    font-size: 9px;
-    text-transform: uppercase;
-    color: var(--ink-3);
-}
-
-.topbar__title {
-    font-size: 17px;
-    font-weight: 500;
-}
-
-.topbar__actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.topbar__actions > a {
-    color: var(--ink-2);
-    text-decoration: none;
-}
-
-.topbar__actions > a[aria-current="page"] {
-    color: var(--accent);
-}
-
-.topbar__actions form { display: block; }
-
-.topbar__identity {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.25;
-}
-
-.topbar__identity strong { font-size: 12px; font-weight: 500; }
-.topbar__identity .identifier { color: var(--ink-3); font-size: 10px; }
-
-.avatar {
-    width: 34px;
-    height: 34px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    color: #fff;
-    background: linear-gradient(145deg, #74aeff, #285fc5);
-    font-size: 13px;
-    box-shadow: 0 4px 12px rgb(45 109 231 / 22%);
-}
-
-.product-page .sheet {
-    width: 100%;
-    max-width: 78rem;
-    overflow: auto;
-    padding: clamp(24px, 4vw, 48px);
-    gap: 22px;
-}
-
-.product-page .sheet > .block,
-.product-page .sheet > .stack,
-.product-page .sheet > .sheet--narrow,
-.product-page .sheet > form,
-.product-page .sheet > .apparatus {
-    background: var(--surface-card);
-    border: 1px solid var(--divider);
-    border-radius: 15px;
-    padding: clamp(20px, 3vw, 30px);
-    box-shadow: 0 7px 24px rgb(25 53 84 / 5%);
-}
-
-/* No border, rather than one nobody can see.
- *
- * A gradient is laid out on the padding box and repeats outwards, so the
- * area under a border shows the gradient wrapping round to its far edge —
- * which on this card put a hairline of the light end hard against the dark
- * end, down both sides. The border was transparent and doing nothing, so
- * it goes and the padding box becomes the whole card. */
-.product-page .sheet > .stack:first-child:not(.sheet--narrow) {
-    position: relative;
-    overflow: hidden;
-    color: #eaf2ff;
-    border: 0;
-    background:
-        radial-gradient(circle at 96% 120%, rgb(114 175 255 / 48%), transparent 42%),
-        linear-gradient(125deg, var(--navy-800), #0b3b76);
-}
-
-.product-page .sheet > .stack:first-child:not(.sheet--narrow) .quiet { color: rgb(218 233 255 / 65%); }
-
-/* Nothing in the sheet is elastic.
- *
- * The sheet is a column in a box of a fixed height, so its cards are flex
- * items free to shrink. A card whose `overflow` is `visible` refuses, by
- * the automatic minimum height every flex item has; the hero hides its
- * grain with `overflow: hidden`, which throws that minimum away. So the
- * hero was the one card that could give, and every card added below it
- * took another slice off its words. The sheet scrolls instead. */
-.product-page .sheet > * { flex-shrink: 0; }
-
-/* Group cards.
- *
- * A card is the unit somebody is choosing between, so it carries what the
- * group is for and what it has shared. The whole card is the link: a card
- * with a button in its corner asks the reader to find the button. */
-.cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-    gap: 14px;
-}
-
-.card {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-height: 13rem;
-    padding: 18px;
-    border: 1px solid var(--divider);
-    border-radius: 13px;
-    background: var(--surface-page);
-    color: inherit;
-    text-decoration: none;
-    transition: border-color .14s ease, box-shadow .14s ease, transform .14s ease;
-}
-
-.card:hover {
-    border-color: rgb(96 152 236 / 48%);
-    box-shadow: 0 8px 22px rgb(25 53 84 / 9%);
-    transform: translateY(-1px);
-}
-
-.card__head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
-}
-
-.card__name {
-    font-family: var(--font-ui);
-    font-size: var(--step-3);
-    font-weight: 500;
-    letter-spacing: -.01em;
-}
-
-.card__role {
-    font-size: var(--step-1);
-    color: var(--ink-3);
-}
-
-.card__about {
-    color: var(--ink-2);
-    font-size: var(--step-2);
-}
-
-.card__lines {
-    margin-top: auto;
-    padding-top: 12px;
-    border-top: 1px solid var(--divider);
-}
-
-.card__register {
-    list-style: none;
-    margin: 6px 0 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-.card__register li {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    font-size: var(--step-2);
-}
-
-.card__line {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.card__register .quiet {
-    font-size: var(--step-1);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.card__enter {
-    margin-top: 12px;
-    color: var(--accent);
-    font-size: var(--step-2);
-}
-
-.card__enter::after { content: " \2192"; }
-
-/* The card that makes a group: dashed, because it is an outline of one
- * rather than one. */
-.card--new {
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    text-align: center;
-    border-style: dashed;
-    background: none;
-    color: var(--ink-2);
-}
-
-.card__plus {
-    display: grid;
-    place-items: center;
-    width: 38px;
-    height: 38px;
-    border: 1px dashed var(--border);
-    border-radius: 11px;
-    font-size: 20px;
-    line-height: 1;
-    color: var(--accent);
-}
-
-.register li {
-    padding: 14px 8px;
-}
-
-.register li:hover {
-    background: #f7faff;
-}
-
-.foot {
-    border-color: var(--divider);
-    background: rgb(255 255 255 / 55%);
-}
-
-.product-page .foot__inner {
-    max-width: none;
-    padding: 10px 40px;
-    justify-content: flex-end;
-}
-
-@media (max-width: 720px) {
-    .product-shell { grid-template-columns: 72px minmax(0, 1fr); }
-    .sidebar { padding: 22px 10px; align-items: center; }
-    .sidebar .wordmark span,
-    .sidebar__instance,
-    .sidebar__label,
-    .sidebar__aside { display: none; }
-    .sidebar__nav a { font-size: 0; padding: 12px; }
-    .sidebar__nav a::after { content: "S"; font-size: 12px; }
-    .topbar__identity { display: none; }
-    .topbar { padding: 10px 16px; }
-    .topbar__actions { gap: 8px; }
-    .product-page .sheet { padding: 20px 16px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .landing-page::before { animation: none; }
-    .landing-page.surface-leaving .surface-transition,
-    .landing-page.surface-leaving .masthead,
-    .landing-page.surface-leaving .sheet,
-    .auth-page.surface-arriving::before { animation-duration: 1ms; }
-}
-
-.proposal pre {
-  white-space: pre-wrap;
-  font: 0.875rem/1.55 var(--font-mono);
-  border: 1px solid var(--border);
-  padding: 1.5rem;
-  background: var(--surface-card);
-}
 
 .findings {
-  font-family: var(--font-mono);
-  color: var(--ink-3);
-  list-style: none;
-  padding: 0;
+    margin: 0;
+    padding-left: 1.2em;
+}
+
+/* ── Narrower windows ──────────────────────────────────────────────── */
+
+@media (max-width: 1280px) {
+    .group-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1200px) {
+    .group-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .apparatus {
+        grid-template-columns: 8rem minmax(0, 1fr);
+    }
+
+    .apparatus__register {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 1023px) {
+    .shell {
+        display: block;
+    }
+
+    .sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 20;
+        width: min(var(--sidebar-web), 86vw);
+        transform: translateX(-100%);
+        visibility: hidden;
+        transition: transform 240ms var(--ease-out), visibility 0s linear 240ms;
+    }
+
+    .drawer-open .sidebar {
+        transform: none;
+        visibility: visible;
+        transition: transform 240ms var(--ease-out);
+    }
+
+    .drawer-open .shell__scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 19;
+        display: block;
+        background: rgb(3 14 41 / 45%);
+    }
+
+    .mobile-bar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 16px;
+        color: var(--on-dark-2);
+        background: var(--navy-900);
+    }
+
+    .mobile-bar .brand .mark {
+        width: 28px;
+    }
+
+    .mobile-bar .brand__instance {
+        margin-left: auto;
+    }
+
+    .mobile-bar__menu {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        margin-left: -8px;
+        color: var(--on-dark-1);
+        background: transparent;
+        border: 0;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+    }
+
+    .page {
+        padding: 28px 24px 48px;
+    }
+}
+
+@media (max-width: 760px) {
+    .group-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .group-card,
+    .request-card {
+        min-height: 0;
+    }
+
+    .page {
+        gap: var(--space-6);
+        padding: 24px 16px 40px;
+    }
+
+    .page-head__row {
+        flex-wrap: wrap;
+    }
+
+    .page-head__row .button--primary {
+        width: 100%;
+    }
+
+    .page-title {
+        font-size: 28px;
+    }
+
+    .block {
+        padding: 18px 16px 20px;
+    }
+
+    .register {
+        margin: 0 -16px;
+    }
+
+    .register li {
+        padding: 12px 16px;
+    }
+
+    .card__head {
+        padding: 18px 16px;
+    }
+
+    /* A table becomes stacked rows. */
+    .table {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .table__head {
+        display: none;
+    }
+
+    .table__row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px 12px;
+        padding: 14px 16px;
+    }
+
+    .table__row > .chevron {
+        grid-column: 2;
+        grid-row: 1 / span 4;
+        align-self: center;
+    }
+
+    .table__row > :not(.chevron) {
+        grid-column: 1;
+    }
+
+    .machine-row {
+        flex-wrap: wrap;
+        padding: 16px;
+    }
+
+    .apparatus,
+    .node,
+    .box {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+    }
+
+    .apparatus__document {
+        padding: 20px 16px;
+    }
+
+    .apparatus__gutter,
+    .node__mark {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: var(--space-3);
+        text-align: left;
+    }
+
+    .box__ask {
+        grid-column: auto;
+    }
+
+    .masthead {
+        flex-wrap: wrap;
+    }
+
+    .sidebar__item,
+    .user-card__out {
+        min-height: 44px;
+    }
+}
+
+/* A form inside the product is a card on the page, not a sign-in card. */
+.page .sheet--narrow {
+    max-width: 640px;
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-card);
 }

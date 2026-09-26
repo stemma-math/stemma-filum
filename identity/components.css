@@ -505,18 +505,17 @@
      *
      * Rows in a card. A row that goes somewhere is an `a` with the class
      * `.table__row`, whole, ending in a chevron. The columns are the
-     * consumer's: set `--columns` on the table. */
+     * consumer's: set `--columns` on the table, as a track list. */
 
     .table {
-        display: grid;
-        grid-template-columns: var(--columns, 1fr);
+        display: flex;
+        flex-direction: column;
     }
 
     .table__head,
     .table__row {
         display: grid;
-        grid-column: 1 / -1;
-        grid-template-columns: subgrid;
+        grid-template-columns: var(--columns, 1fr);
         gap: var(--space-4);
         align-items: center;
         padding: var(--space-3) var(--space-6);

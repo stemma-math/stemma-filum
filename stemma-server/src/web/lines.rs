@@ -363,18 +363,27 @@ fn body(viewing: &Viewing<'_>) -> Markup {
     let central = digest.line.central();
 
     html! {
-        div class="stack" {
-            p class="label" {
+        header class="page-head" {
+            nav class="crumbs" aria-label="Breadcrumb" {
+                a href="/#groups" { "Groups" }
+                span aria-hidden="true" { "/" }
                 a href={ "/g/" (group.slug()) } { (group.name) }
-                " · " (side)
+                span aria-hidden="true" { "/" }
+                span aria-current="page" { (digest.shown_as()) }
             }
-            h1 { (digest.shown_as()) }
-
-            @if let Some(description) = &digest.description {
-                p class="serif" { (description) }
+            div class="page-head__text" {
+                h1 class="page-title" { (digest.shown_as()) }
+                div class="page-meta" {
+                    span class="identifier" { "lines/" (digest.name) }
+                    @match side {
+                        Side::Shared => span class="chip" { (super::layout::glyph("group")) "Shared" },
+                        Side::Private => span class="chip" { (super::layout::glyph("lock")) "Private" },
+                    }
+                }
+                @if let Some(description) = &digest.description {
+                    p class="page-subtitle" { (description) }
+                }
             }
-
-            p class="quiet identifier" { "lines/" (digest.name) }
         }
 
         div class="apparatus" {

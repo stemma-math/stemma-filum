@@ -115,8 +115,8 @@ async fn a_group_with_nothing_built_says_where_a_line_would_come_from() {
 
     let page = harness.get("/g/algebra").await;
 
-    assert!(page.says("No lines have been published for this group yet"));
-    assert!(page.says("Create one from a connected machine"));
+    assert!(page.says("No lines of work yet."));
+    assert!(page.says("create one from a connected machine"));
 }
 
 #[tokio::test]

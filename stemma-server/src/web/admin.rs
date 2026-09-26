@@ -151,9 +151,9 @@ pub async fn area(
         .await?;
 
     let body = html! {
-        div class="stack" {
-            h1 { "Admin" }
-            p class="quiet" {
+        header class="page-head" {
+            h1 class="page-title" { "Administration" }
+            p class="page-subtitle" {
                 "Manage accounts, group requests and platform settings."
             }
         }
@@ -340,7 +340,7 @@ fn authenticate_body(signed: &SignedIn, next: Option<&str>, problem: Option<&str
 fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Markup {
     html! {
         div class="block" {
-            p class="label" { "Group requests · " (requests.len()) }
+            h2 class="block__title" { "Group requests" span class="count" { (requests.len()) } }
 
             @if requests.is_empty() {
                 p class="empty" { "There are no pending group requests." }
@@ -393,7 +393,7 @@ fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Ma
 fn accounts_block(accounts: &[User], maintainers: &[users::HeldGrant]) -> Markup {
     html! {
         div class="block" {
-            p class="label" { "Accounts · " (accounts.len()) }
+            h2 class="block__title" { "Accounts" span class="count" { (accounts.len()) } }
 
             div class="scroll" {
                 table {
