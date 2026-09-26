@@ -2,10 +2,13 @@
   import { onMount } from "svelte";
   import Brand from "./components/Brand.svelte";
   import Entrance from "./components/Entrance.svelte";
+  import Glyphs from "./components/Glyphs.svelte";
   import Shell from "./components/Shell.svelte";
-  import { said } from "./lib/api";
+  import Toasts from "./components/Toasts.svelte";
+  import Tooltips from "./components/Tooltips.svelte";
+  import { onViewChosen, said } from "./lib/api";
   import { app } from "./lib/app.svelte";
-  import { status, tell } from "./lib/status.svelte";
+  import { fail } from "./lib/status.svelte";
   import SignIn from "./views/SignIn.svelte";
 
   onMount(() => {
@@ -26,22 +29,32 @@
           await app.beforeClose();
         } catch (error) {
           event.preventDefault();
-          tell(`The window remains open because your changes could not be saved: ${said(error)}`);
+          fail(`The window remains open because your changes could not be saved: ${said(error)}`);
         } finally {
           closing = false;
         }
       })
       .then((unlisten) => (stop = unlisten));
 
+    let unhear: (() => void) | undefined;
+    void onViewChosen((view) => {
+      if (view === "blocks" || view === "pdf") app.view = view;
+    }).then((stop) => (unhear = stop));
+
     void app.boot();
-    return () => stop?.();
+    return () => {
+      stop?.();
+      unhear?.();
+    };
   });
 </script>
+
+<Glyphs />
 
 {#if !app.ready}
   <Entrance>
     <Brand />
-    <p class="quiet">Loading...</p>
+    <p class="entrance__quiet">Loading…</p>
   </Entrance>
 {:else if !app.signed}
   <SignIn />
@@ -49,4 +62,5 @@
   <Shell />
 {/if}
 
-<div id="said" hidden={!status.message}>{status.message}</div>
+<Toasts />
+<Tooltips />

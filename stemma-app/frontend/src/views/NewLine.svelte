@@ -15,24 +15,33 @@
 </script>
 
 {#if app.group}
-  <div class="pane pane--narrow">
-    <h1>New line</h1>
-    <form class="stack" onsubmit={create}>
-      <!-- svelte-ignore a11y_autofocus -->
-      <label class="field"><span class="field__label">Title</span><input class="input" type="text" bind:value={title} required autofocus /></label>
-      <label class="field"><span class="field__label">Description</span><textarea class="input input--mono" bind:value={description} rows="3"></textarea>
-        <span class="quiet">Optional. What this line is about, in a sentence or two.</span></label>
+  <div class="pane" data-tauri-drag-region>
+    <header class="pane__head">
+      <span class="identifier pane__path">{app.group}</span>
+      <h1 class="pane__title">New line</h1>
+    </header>
+    <form class="card pane__card stack" onsubmit={create}>
+      <label class="field">
+        <span class="field__label">Title</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="input" type="text" bind:value={title} required autofocus />
+      </label>
+      <label class="field">
+        <span class="field__label">Description</span>
+        <textarea class="input" bind:value={description} rows="3"></textarea>
+        <span class="field__hint">Optional. What this line is about, in a sentence or two.</span>
+      </label>
       <fieldset class="fieldset">
         <legend>Visibility</legend>
         <label class="choice"><input type="radio" bind:group={seen} value="me" /><span>Only me</span></label>
         <label class="choice"><input type="radio" bind:group={seen} value="group" /><span>Everybody in {app.group}</span></label>
       </fieldset>
       <div class="row__actions">
-        <button type="submit" class="button button--primary">Create</button>
-        <button type="button" class="button button--quiet" onclick={() => app.goTo("welcome")}>Cancel</button>
+        <button type="button" class="button" onclick={() => app.goTo("welcome")}>Cancel</button>
+        <button type="submit" class="button button--primary">Create line</button>
       </div>
     </form>
   </div>
 {:else}
-  <div class="pane"><p class="quiet">No groups are available on this machine.</p></div>
+  <div class="pane"><p class="empty-box">No groups are available on this machine.</p></div>
 {/if}

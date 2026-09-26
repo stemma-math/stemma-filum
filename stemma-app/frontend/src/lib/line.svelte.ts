@@ -5,7 +5,7 @@ import { SvelteSet } from "svelte/reactivity";
 import { api, said } from "./api";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
-import { tell } from "./status.svelte";
+import { fail, tell } from "./status.svelte";
 import type { Claim, Diagnostic, LineDocument, Node, Offer, OpenLine, Preview } from "./types";
 
 const SAVE_AFTER = 450;
@@ -87,7 +87,7 @@ export class LineSession {
         await api.launch(this.path, task, agent, machine);
         started += 1;
       } catch (error) {
-        tell(said(error));
+        fail(error);
         return started;
       }
     }
@@ -198,7 +198,7 @@ export class LineSession {
     window.clearTimeout(this.#saveTimer);
     window.clearTimeout(this.#previewTimer);
     this.#saveTimer = window.setTimeout(() => {
-      this.save().catch((error) => tell(said(error)));
+      this.save().catch((error) => fail(error));
     }, SAVE_AFTER);
     this.#previewTimer = window.setTimeout(() => void this.render(), PREVIEW_AFTER);
   }
@@ -248,7 +248,7 @@ export class LineSession {
     try {
       if (await api.recordLine(this.path)) this.saveState = "committed";
     } catch (error) {
-      tell(`This line is saved on this machine but not committed yet: ${said(error)}`);
+      fail(`This line is saved on this machine but not committed yet: ${said(error)}`);
     }
   }
 
@@ -258,7 +258,7 @@ export class LineSession {
     try {
       await this.flush();
     } catch (error) {
-      tell(said(error));
+      fail(error);
       return false;
     }
     this.detach();

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Count from "../components/Count.svelte";
+  import Dialog from "../components/Dialog.svelte";
   import { app, type Panel } from "../lib/app.svelte";
   import Account from "./Account.svelte";
   import Machine from "./Machine.svelte";
@@ -7,39 +7,31 @@
 
   const pages: [Panel, string][] = [["machine", "This machine"], ["reviews", "Reviews"], ["account", "Account"]];
 
-  const close = () => (app.panel = null);
-
-  $effect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  });
+  let open = $state(false);
+  $effect(() => { open = app.panel !== null; });
+  $effect(() => { if (!open) app.panel = null; });
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-<div class="scrim" onclick={(event) => { if (event.target === event.currentTarget) close(); }}>
-  <div class="panel" role="dialog" aria-modal="true" aria-label="Settings">
-    <header class="panel__head">
-      <strong>Settings</strong>
-      <button class="button button--quiet" aria-label="Close settings" onclick={close}>Done</button>
-    </header>
-    <div class="panel__body">
-      <nav class="panel__nav" aria-label="Settings">
-        {#each pages as [page, label] (page)}
-          <button class:here={app.panel === page} onclick={() => (app.panel = page)}>
-            {label}{#if page === "reviews"}<Count n={app.waiting.length} />{/if}
-          </button>
-        {/each}
-      </nav>
-      <div class="panel__pane">
-        {#if app.panel === "machine"}
-          <Machine />
-        {:else if app.panel === "reviews"}
-          <Reviews />
-        {:else}
-          <Account />
-        {/if}
-      </div>
+<Dialog bind:open title="Settings" wide>
+  <div class="settings">
+    <nav class="settings__nav" aria-label="Settings">
+      {#each pages as [page, label] (page)}
+        <button type="button" class="settings__page" aria-current={app.panel === page ? "page" : undefined} onclick={() => (app.panel = page)}>
+          {label}{#if page === "reviews" && app.waiting.length}<span class="count">{app.waiting.length}</span>{/if}
+        </button>
+      {/each}
+    </nav>
+    <div class="settings__pane">
+      {#if app.panel === "machine"}
+        <Machine />
+      {:else if app.panel === "reviews"}
+        <Reviews />
+      {:else if app.panel === "account"}
+        <Account />
+      {/if}
     </div>
   </div>
-</div>
+  {#snippet actions()}
+    <button type="button" class="button" onclick={() => (open = false)}>Done</button>
+  {/snippet}
+</Dialog>

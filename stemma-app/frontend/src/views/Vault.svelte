@@ -2,7 +2,7 @@
   import { api, said } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import { latestRequest } from "../lib/lifecycle";
-  import { tell } from "../lib/status.svelte";
+  import { fail, tell } from "../lib/status.svelte";
   import type { AuditAction, AuditTarget, Vault } from "../lib/types";
 
   const loadRequest = latestRequest();
@@ -38,7 +38,7 @@
       tell(await work(group));
       await load(group);
     } catch (error) {
-      tell(said(error));
+      fail(error);
     }
   }
 
@@ -62,50 +62,53 @@
 
 {#snippet actions(target: AuditTarget, id: string)}
   <div class="row__actions">
-    <button class="button" onclick={() => (auditing = { target, id, action: "attest", note: "" })}>Attest</button>
-    <button class="button" onclick={() => (auditing = { target, id, action: "withdraw", note: "" })}>Withdraw</button>
+    <button class="button button--small" onclick={() => (auditing = { target, id, action: "attest", note: "" })}>Attest</button>
+    <button class="button button--small" onclick={() => (auditing = { target, id, action: "withdraw", note: "" })}>Withdraw</button>
   </div>
   {#if auditing && isAuditing(target, id)}
     <form class="auditing stack" onsubmit={auditIt}>
       <label class="field"><span class="field__label">{auditing.action === "attest" ? "What did you check?" : "Why is the guarantee withdrawn?"}</span>
         <textarea class="input input--mono" rows="2" bind:value={auditing.note} required></textarea></label>
       <div class="row__actions">
-        <button class="button" type="submit">{auditing.action === "attest" ? "Attest" : "Withdraw"}</button>
-        <button type="button" class="button button--quiet" onclick={() => (auditing = null)}>Cancel</button>
+        <button type="button" class="button button--small" onclick={() => (auditing = null)}>Cancel</button>
+        <button class="button button--primary button--small" type="submit">{auditing.action === "attest" ? "Attest" : "Withdraw"}</button>
       </div>
     </form>
   {/if}
 {/snippet}
 
 {#if app.group}
-  <div class="pane">
-    <h1>Definitions</h1>
-    <p class="quiet">What {app.group} has admitted as settled, and the bridges between those statements.</p>
-    <section>
-      <p class="label">Admitted</p>
+  <div class="pane" data-tauri-drag-region>
+    <header class="pane__head">
+      <span class="identifier pane__path">{app.group}</span>
+      <h1 class="pane__title">Group vault</h1>
+      <p class="pane__lead">What {app.group} has admitted as settled, and the bridges between those statements.</p>
+    </header>
+    <section class="card pane__card">
+      <h2 class="card__title">Definitions {#if vault}<span class="count">{vault.entries.length}</span>{/if}</h2>
       {#if problem}
-        {problem}
+        <p class="setting__note setting__note--failed">{problem}</p>
       {:else if !vault}
-        Loading...
+        <div class="skeleton setting__skeleton"></div>
       {:else}
         {#each vault.entries as entry (entry.id)}
           <div class="row">
             <div>
               <p class="row__name">{entry.name}</p>
-              <p class="quiet identifier">{entry.siglum} · {entry.correspondence}</p>
+              <p class="row__meta identifier">{entry.siglum} · {entry.correspondence}</p>
             </div>
             {@render actions("entry", entry.id)}
           </div>
         {:else}
-          <p class="quiet">Nothing has been admitted yet.</p>
+          <p class="empty-box">Nothing has been admitted yet.</p>
         {/each}
         {#if vault.bridges.length}
-          <p class="label">Bridges</p>
+          <h2 class="card__title">Bridges <span class="count">{vault.bridges.length}</span></h2>
           {#each vault.bridges as one (one.id)}
             <div class="row">
               <div>
                 <p class="row__name">{names.get(one.left) ?? one.left} ↔ {names.get(one.right) ?? one.right}</p>
-                <p class="quiet identifier">{one.kind}{one.derived ? " · derived" : ""} · {one.correspondence}</p>
+                <p class="row__meta identifier">{one.kind}{one.derived ? " · derived" : ""} · {one.correspondence}</p>
               </div>
               {@render actions("bridge", one.id)}
             </div>
@@ -113,29 +116,29 @@
         {/if}
       {/if}
     </section>
-    <section>
-      <p class="label">Admit a definition</p>
+    <section class="card pane__card">
+      <h2 class="card__title">Admit a definition</h2>
       <form class="stack" onsubmit={admitIt}>
-        <label class="field"><span class="field__label">Siglum</span><input class="input" type="text" bind:value={admit.siglum} placeholder="def:group" required /></label>
+        <label class="field"><span class="field__label">Siglum</span><input class="input input--mono" type="text" bind:value={admit.siglum} placeholder="def:group" required /></label>
         <label class="field"><span class="field__label">Distinguishing name</span><input class="input" type="text" bind:value={admit.name} required /></label>
         <label class="field"><span class="field__label">The prose admitted</span><textarea class="input input--mono" bind:value={admit.prose} rows="3" required></textarea></label>
         <label class="field"><span class="field__label">The complete Lean module</span><textarea class="input input--mono" bind:value={admit.lean} rows="5" required></textarea></label>
-        <button class="button" type="submit">Admit</button>
-        <p class="quiet">The module is compiled locally against the group's pinned version before submission.</p>
+        <div class="row__actions"><button class="button button--primary" type="submit">Admit</button></div>
+        <p class="field__hint">The module is compiled locally against the group's pinned version before submission.</p>
       </form>
     </section>
-    <section>
-      <p class="label">Admit a bridge</p>
+    <section class="card pane__card">
+      <h2 class="card__title">Admit a bridge</h2>
       <form class="stack" onsubmit={bridgeIt}>
-        <label class="field"><span class="field__label">From</span><input class="input" type="text" bind:value={bridge.left} required /></label>
-        <label class="field"><span class="field__label">To</span><input class="input" type="text" bind:value={bridge.right} required /></label>
+        <label class="field"><span class="field__label">From</span><input class="input input--mono" type="text" bind:value={bridge.left} required /></label>
+        <label class="field"><span class="field__label">To</span><input class="input input--mono" type="text" bind:value={bridge.right} required /></label>
         <label class="field"><span class="field__label">Kind</span><select class="input" bind:value={bridge.kind}><option value="predicate">predicate</option><option value="structure">structure</option></select></label>
         <label class="field"><span class="field__label">The complete Lean module</span><textarea class="input input--mono" bind:value={bridge.lean} rows="5" required></textarea></label>
-        <button class="button" type="submit">Admit the bridge</button>
-        <p class="quiet">Bridges must be unconditional. Equivalences with hypotheses should be added as regular theorems.</p>
+        <div class="row__actions"><button class="button button--primary" type="submit">Admit the bridge</button></div>
+        <p class="field__hint">Bridges must be unconditional. Equivalences with hypotheses should be added as regular theorems.</p>
       </form>
     </section>
   </div>
 {:else}
-  <div class="pane"><p class="quiet">No groups are available on this machine.</p></div>
+  <div class="pane"><p class="empty-box">No groups are available on this machine.</p></div>
 {/if}

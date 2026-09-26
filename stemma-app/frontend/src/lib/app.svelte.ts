@@ -4,7 +4,7 @@
 import { api, said } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
-import { tell } from "./status.svelte";
+import { fail, tell } from "./status.svelte";
 import type { Known, Signed, Stepped, Waiting } from "./types";
 
 /** What fills the middle of the window. */
@@ -12,6 +12,19 @@ export type Stage = "welcome" | "editor" | "new-line" | "vault";
 
 /** Which page of the settings dialog is showing. */
 export type Panel = "machine" | "reviews" | "account";
+
+/** How an open line is shown: its blocks to edit, or the typeset page. */
+export type View = "blocks" | "pdf";
+
+/** What the last sync did, as the sidebar reports it. */
+export type Synced = {
+  /** Whether one is running now. */
+  running: boolean;
+  /** Each repository's outcome, from the last sync that answered. */
+  stepped: Stepped[] | null;
+  /** Why the last sync failed, when it did. */
+  failed: string | null;
+};
 
 /** How often a held claim is renewed. */
 const RENEW = 5 * 60 * 1000;
@@ -28,6 +41,8 @@ class App {
   lines = $state<Known[]>([]);
   waiting = $state<Waiting[]>([]);
   line = $state<LineSession | null>(null);
+  view = $state<View>("blocks");
+  synced = $state<Synced>({ running: false, stepped: null, failed: null });
 
   #openRequest = latestRequest();
   #renewal = 0;
@@ -70,7 +85,7 @@ class App {
     try {
       await api.signOut();
     } catch (error) {
-      tell(said(error));
+      fail(error);
       return;
     }
     window.clearInterval(this.#renewal);
@@ -89,7 +104,7 @@ class App {
     try {
       this.lines = await api.lines();
     } catch (error) {
-      tell(said(error));
+      fail(error);
       this.lines = [];
     }
   }
@@ -131,24 +146,31 @@ class App {
       this.line = new LineSession(opened, offers);
       this.stage = "editor";
     } catch (error) {
-      tell(said(error));
+      fail(error);
     }
   }
 
   /** Syncs every repository, then rereads groups and lines whatever the
-   * outcome: a partial sync may still have brought something. */
+   * outcome: a partial sync may still have brought something. The
+   * sidebar shows how it went; only a failure, or its end, is a toast. */
   async sync() {
-    tell("Syncing this machine...");
+    if (this.synced.running) return;
+    const wasFailing = this.synced.failed !== null;
+    this.synced.running = true;
     let stepped: Stepped[] = [];
     let failed: unknown = null;
     try { stepped = await api.sync(); } catch (error) { failed = error; }
     await this.#loadGroups();
     await this.#loadLines();
+    this.synced.running = false;
     if (failed) {
-      tell(said(failed));
+      this.synced.failed = said(failed);
+      fail(failed);
       return;
     }
-    tell(syncReport(stepped));
+    this.synced.failed = null;
+    this.synced.stepped = stepped;
+    if (wasFailing) tell("Synced");
   }
 
   /** Runs a command that changes which lines exist, then syncs. */
@@ -158,7 +180,7 @@ class App {
       await this.sync();
       await this.goTo("welcome");
     } catch (error) {
-      tell(said(error));
+      fail(error);
     }
   }
 
@@ -181,20 +203,36 @@ class App {
   }
 }
 
-/** The one sentence worth showing after a sync, most urgent first. */
-function syncReport(stepped: Stepped[]): string {
+/** How a sync went, most urgent first: a headline, the detail under it,
+ * and how much it asks of the reader. */
+export function syncReport(stepped: Stepped[]): { tone: "good" | "attention"; headline: string; detail: string } {
   const where = (one: Stepped) => `${one.group}/${one.side}`;
   const parted = stepped.filter((one) => one.parted);
   if (parted.length) {
-    return `${parted.map(where).join(", ")}: both versions changed. Open the line to resolve the conflict.`;
+    return {
+      tone: "attention",
+      headline: "Conflict",
+      detail: `${parted.map(where).join(", ")}: both versions changed. Open the line to resolve the conflict.`,
+    };
   }
   const dirty = stepped.filter((one) => one.dirty);
   if (dirty.length) {
-    return `${dirty.map(where).join(", ")}: uncommitted changes were not synced. A line is committed when you release it.`;
+    return {
+      tone: "attention",
+      headline: "Uncommitted changes",
+      detail: `${dirty.map(where).join(", ")}: uncommitted changes were not synced. A line is committed when you release it.`,
+    };
   }
   const recorded = stepped.flatMap((one) => one.recorded);
-  if (recorded.length) return `Committed before syncing: ${recorded.join(", ")}.`;
-  return stepped.map((one) => `${where(one)}: ${one.outcome}`).join(" · ") || "Everything is up to date.";
+  if (recorded.length) {
+    return { tone: "good", headline: "Synced", detail: `Committed before syncing: ${recorded.join(", ")}.` };
+  }
+  const moved = stepped.filter((one) => one.outcome !== "up to date");
+  return {
+    tone: "good",
+    headline: "Synced",
+    detail: moved.length ? moved.map((one) => `${one.outcome} · ${where(one)}`).join("; ") : "Everything is up to date.",
+  };
 }
 
 export const app = new App();
