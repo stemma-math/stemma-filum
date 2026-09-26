@@ -19,8 +19,14 @@ pub const STYLESHEET_PATH: &str = "/assets/stemma.css";
 /// here because both live under `/assets/`.
 pub const FONT_PATH: &str = "/assets/fonts/{file}";
 
-/// Where the front-door transition script is served.
-pub const SURFACE_PATH: &str = "/assets/surface.js";
+/// Where the front page's light and its passage to the sign-in are served.
+pub const LANDING_PATH: &str = "/assets/landing.js";
+
+/// Where the live mark is served.
+pub const MARK_ANIMATED_PATH: &str = "/assets/mark-animated.js";
+
+/// Where the still of the mark is served.
+pub const SYMBOL_PATH: &str = "/assets/symbol.webp";
 
 /// Where the signed-in shell's script is served.
 pub const SHELL_PATH: &str = "/assets/shell.js";
@@ -64,6 +70,7 @@ const JAVASCRIPT: &str = "text/javascript; charset=utf-8";
 const SVG: &str = "image/svg+xml; charset=utf-8";
 const WOFF2: &str = "font/woff2";
 const PNG: &str = "image/png";
+const WEBP: &str = "image/webp";
 const ICO: &str = "image/x-icon";
 const MANIFEST: &str = "application/manifest+json";
 
@@ -81,8 +88,13 @@ static STYLESHEET: LazyLock<Asset> = LazyLock::new(|| {
     Asset::new(joined.leak().as_bytes(), CSS)
 });
 
-static SURFACE: LazyLock<Asset> =
-    LazyLock::new(|| Asset::new(include_bytes!("../../assets/surface.js"), JAVASCRIPT));
+static LANDING: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(include_bytes!("../../assets/landing.js"), JAVASCRIPT));
+
+static MARK_ANIMATED: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(stemma_identity::MARK_ANIMATED_JS.as_bytes(), JAVASCRIPT));
+
+static SYMBOL: LazyLock<Asset> = LazyLock::new(|| Asset::new(stemma_identity::SYMBOL_WEBP, WEBP));
 
 static SHELL: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(include_bytes!("../../assets/shell.js"), JAVASCRIPT));
@@ -152,9 +164,19 @@ pub async fn stylesheet(headers: HeaderMap) -> Response {
     serve(&headers, &STYLESHEET)
 }
 
-/// Serves the front-door transition.
-pub async fn surface(headers: HeaderMap) -> Response {
-    serve(&headers, &SURFACE)
+/// Serves the front page's light.
+pub async fn landing(headers: HeaderMap) -> Response {
+    serve(&headers, &LANDING)
+}
+
+/// Serves the live mark.
+pub async fn mark_animated(headers: HeaderMap) -> Response {
+    serve(&headers, &MARK_ANIMATED)
+}
+
+/// Serves the still of the mark.
+pub async fn symbol(headers: HeaderMap) -> Response {
+    serve(&headers, &SYMBOL)
 }
 
 /// Serves the signed-in shell's script.

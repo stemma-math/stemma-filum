@@ -14,6 +14,8 @@
     "./glyphs.svg": "./glyphs.svg",
     "./mark-on-dark.svg": "./mark-on-dark.svg",
     "./mark-on-light.svg": "./mark-on-light.svg",
+    "./mark-animated.js": "./mark-animated.js",
+    "./symbol.webp": "./symbol.webp",
     "./noise.svg": "./noise.svg",
     "./descent.js": {
       "types": "./descent.d.ts",
@@ -30,7 +32,8 @@
     "tokens.typ",
     "fonts",
     "icons",
-    "web"
+    "web",
+    "*.webp"
   ],
   "scripts": {
     "build": "node build.mjs",

@@ -286,7 +286,9 @@ fn git() -> Router<Instance> {
 fn assets() -> Router<Instance> {
     let router = Router::new()
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
-        .route(assets::SURFACE_PATH, get(assets::surface))
+        .route(assets::LANDING_PATH, get(assets::landing))
+        .route(assets::MARK_ANIMATED_PATH, get(assets::mark_animated))
+        .route(assets::SYMBOL_PATH, get(assets::symbol))
         .route(assets::SHELL_PATH, get(assets::shell))
         .route(assets::GLYPHS_PATH, get(assets::glyphs))
         .route(assets::NOISE_PATH, get(assets::noise))

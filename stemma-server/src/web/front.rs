@@ -52,11 +52,13 @@ pub async fn door(
 fn body(name: &str, policy: &Policy) -> Markup {
     html! {
         div class="doorway" {
-            div class="doorway__constellation" aria-hidden="true" {
-                (super::layout::mark_on_dark())
-            }
-            div class="doorway__copy" {
-                h1 class="doorway__name" { "Stemma" }
+            canvas class="doorway__light" id="doorway-light" aria-hidden="true" {}
+            div class="doorway__hero" {
+                div class="doorway__stage" {
+                    canvas aria-hidden="true" {}
+                    img class="doorway__still" src=(super::assets::SYMBOL_PATH) alt="";
+                    h1 class="doorway__name" { "Stemma" }
+                }
                 p class="doorway__lead" {
                     "A collaborative platform for mathematical research in the AI era."
                 }

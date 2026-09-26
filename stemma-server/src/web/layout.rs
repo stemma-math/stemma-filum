@@ -3,8 +3,8 @@
 use maud::{DOCTYPE, Markup, PreEscaped, html};
 
 use super::assets::{
-    GLYPHS_PATH, MANIFEST_PATH, MARK_ON_DARK_PATH, MARK_ON_LIGHT_PATH, SHELL_PATH, STYLESHEET_PATH,
-    SURFACE_PATH,
+    GLYPHS_PATH, LANDING_PATH, MANIFEST_PATH, MARK_ANIMATED_PATH, MARK_ON_DARK_PATH,
+    MARK_ON_LIGHT_PATH, SHELL_PATH, STYLESHEET_PATH,
 };
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
@@ -166,19 +166,24 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 link rel="apple-touch-icon" href="/apple-touch-icon.png";
                 link rel="manifest" href=(MANIFEST_PATH);
                 meta name="theme-color" content=(stemma_identity::THEME_COLOUR);
-                script {
-                    (PreEscaped(
-                        "try{if(sessionStorage.getItem('stemma-surface-transition'))document.documentElement.classList.add('surface-pending')}catch(_){}"
-                    ))
-                }
                 link rel="stylesheet" href=(STYLESHEET_PATH);
-                script src=(SURFACE_PATH) type="module" {}
                 @if chrome.visitor.is_some() {
                     script src=(SHELL_PATH) type="module" {}
+                } @else {
+                    // A page arrived at through the front page's passage
+                    // stays hidden until the passage draws it.
+                    script {
+                        (PreEscaped(
+                            "try{if(sessionStorage.getItem('stemma-surface'))document.documentElement.classList.add('surface-pending')}catch(_){}"
+                        ))
+                    }
+                    @if chrome.landing {
+                        script src=(MARK_ANIMATED_PATH) {}
+                    }
+                    script src=(LANDING_PATH) type="module" {}
                 }
             }
             body class=(body_class) {
-                div class="surface-transition" aria-hidden="true" {}
                 @if chrome.visitor.is_some() {
                     div class="shell" {
                         (sidebar(chrome))
@@ -202,7 +207,7 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
 fn masthead(chrome: &Chrome) -> Markup {
     html! {
         header class="masthead" {
-            a class="brand" href="/" {
+            a class="brand" href="/" data-surface-back {
                 (mark_on_light())
                 span class="wordmark" { "Stemma" }
             }

@@ -112,7 +112,9 @@ STEMMA_HOME="$PWD/.test-state/client" just app-dev
   subset to Latin, each beside its SIL Open Font License. The server
   serves them from its own origin, so no page sends a reader to a font host.
 - `mark-on-dark.svg` and `mark-on-light.svg` are the mark for navy and for
-  light surfaces; `web/` holds the favicons and the home-screen icons,
+  light surfaces, `mark-animated.js` draws it live on the front page (with
+  `symbol.webp` as its still), and `glyphs.svg` holds the line glyphs as a
+  sprite; `web/` holds the favicons and the home-screen icons,
   `icons/` the application icons, and `noise.svg` the surface texture.
 - `descent.js` draws a line's descent graph from the placement
   `stemma_core::descent` computes. Neither surface shows the graph at present.

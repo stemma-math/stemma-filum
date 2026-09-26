@@ -28,6 +28,13 @@ pub const MARK_ON_LIGHT_SVG: &str = include_str!("../mark-on-light.svg");
 /// The line glyphs, as a sprite of symbols named by id.
 pub const GLYPHS_SVG: &str = include_str!("../glyphs.svg");
 
+/// The mark drawn live, for the front page alone: a classic script that
+/// defines `StemmaLogo`.
+pub const MARK_ANIMATED_JS: &str = include_str!("../mark-animated.js");
+
+/// A still of the mark, where it cannot be drawn live.
+pub const SYMBOL_WEBP: &[u8] = include_bytes!("../symbol.webp");
+
 /// The surface texture laid over blue product surfaces.
 pub const NOISE_SVG: &str = include_str!("../noise.svg");
 

@@ -269,7 +269,9 @@ th.numeric {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    background: linear-gradient(180deg, #f4f6fb 0%, #eef3fb 55%, #e4ecf8 100%);
+    background:
+        radial-gradient(110% 95% at -8% 112%, rgb(219 232 249) 0%, rgb(219 232 249 / 0%) 70%),
+        #f5f7fc;
 }
 
 .masthead {
@@ -391,9 +393,9 @@ th.numeric {
 
 /* ── The front page ────────────────────────────────────────────────────
  *
- * The one navy page: the mark over a dome of light, the tagline and the
- * ways in. The drawing behind it is the brand light; without WebGL it is
- * this gradient. */
+ * The one navy page: the mark over a dome of light, the motto and the
+ * ways in. The light is drawn on a canvas behind everything; without
+ * WebGL it is this gradient. */
 
 .landing-page {
     min-height: 100vh;
@@ -401,17 +403,11 @@ th.numeric {
     background: var(--navy-950);
 }
 
-.landing-page .masthead,
-.landing-page .foot {
-    display: none;
-}
-
 .landing-page .sheet {
     min-height: 100vh;
 }
 
 .doorway {
-    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -422,38 +418,89 @@ th.numeric {
     background: radial-gradient(120% 90% at 50% 30%, #051740 55%, #1a4f9e 74%, #8fb6e8 90%, #eef4fc 100%);
 }
 
-.doorway__constellation {
-    width: clamp(160px, 20vw, 290px);
-    margin-bottom: 18px;
+.lit .doorway {
+    background: none;
 }
 
-.doorway__constellation .mark {
+.doorway__light,
+.surface-light {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
     display: block;
     width: 100%;
-    height: auto;
-    filter: drop-shadow(0 0 22px rgb(120 170 255 / 45%));
+    height: 100%;
 }
 
-.doorway__copy {
+.doorway__hero {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 5vh;
+    will-change: opacity, transform;
+}
+
+/* The mark and the wordmark share one frame, the proportions of the full
+ * logo, so the wordmark sits where the drawing leaves room for it. */
+.doorway__stage {
+    --glow: 0;
+    position: relative;
+    width: min(88vw, 560px, calc((100dvh - 340px) * 566 / 474));
+    min-width: 260px;
+    aspect-ratio: 566 / 474;
+    container-type: size;
+}
+
+.doorway__stage canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.doorway__still {
+    position: absolute;
+    top: 12.6%;
+    left: 24.7%;
+    display: none;
+    width: 51.2%;
+    height: auto;
+}
+
+.doorway__stage.still .doorway__still {
+    display: block;
+}
+
+.doorway__stage.still canvas {
+    display: none;
 }
 
 .doorway__name {
+    position: absolute;
+    top: 73.2cqh;
+    right: 0;
+    left: 0;
+    margin: 0;
+    padding-left: 0.3cqw;
     font-family: var(--font-brand);
-    font-size: clamp(56px, 9vw, 92px);
+    font-size: 13.7cqw;
     font-weight: 420;
-    letter-spacing: -0.049em;
     line-height: 1;
+    letter-spacing: -0.049em;
     color: #f2f6fd;
+    text-align: center;
+    text-shadow:
+        0 0 calc(1.1cqw * var(--glow)) rgb(160 196 255 / calc(30% * var(--glow))),
+        0 0 calc(3.2cqw * var(--glow)) rgb(90 150 255 / calc(22% * var(--glow)));
 }
 
 /* The one line set in capitals with tracking, because it is a motto and
  * not a label. */
 .doorway__lead {
     max-width: 46ch;
+    margin: 0;
     font-size: clamp(11px, 2.9vw, 14px);
     line-height: 1.9;
     letter-spacing: 0.32em;
@@ -461,12 +508,16 @@ th.numeric {
     color: #b9cdea;
 }
 
+.doorway__actions {
+    margin-top: 5vh;
+}
+
 .doorway__actions .block {
+    align-items: center;
     padding: 0;
     background: none;
     border: 0;
     box-shadow: none;
-    align-items: center;
 }
 
 .doorway__actions .actions {
@@ -484,6 +535,7 @@ th.numeric {
     padding: 0 26px;
     font-size: 16px;
     border-radius: var(--radius-pill);
+    transition: transform var(--dur-press) ease, box-shadow 200ms ease;
 }
 
 .button--hero {
@@ -496,6 +548,11 @@ th.numeric {
     color: #061a44;
     background: #fff;
     border-color: #fff;
+}
+
+.button--hero.pressed {
+    transform: scale(0.96);
+    box-shadow: 0 0 0 6px rgb(200 225 255 / 25%), 0 0 40px rgb(160 200 255 / 45%);
 }
 
 .button--glass {
@@ -511,40 +568,42 @@ th.numeric {
     border-color: rgb(190 215 250 / 55%);
 }
 
+.button--hero:focus-visible,
+.button--glass:focus-visible {
+    outline-color: var(--focus-ring);
+    outline-offset: 3px;
+}
+
 .doorway__meta {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     gap: 8px 28px;
     max-width: none;
+    margin-top: 4vh;
     font: var(--text-mono-sm);
     color: #7f9ac4;
 }
 
-/* Leaving the front page for the sign-in: the page fades as the light
- * withdraws, and the card arrives on the other side. */
-.surface-transition {
-    display: none;
-}
-
-.surface-leaving .doorway {
-    opacity: 0;
-    transition: opacity 360ms var(--ease-out);
-}
-
+/* Arriving through the passage, the page is hidden until it is drawn,
+ * then its content comes in over the light as the light withdraws. */
 .surface-pending body {
     opacity: 0;
 }
 
-.surface-arriving .sheet--narrow {
-    animation: arrive 480ms var(--ease-out) both;
+.auth-page.surface-arriving {
+    background: transparent;
 }
 
-@keyframes arrive {
-    from {
-        opacity: 0;
-        transform: translateY(12px);
-    }
+.surface-arriving > :not(.surface-light) {
+    position: relative;
+    z-index: 1;
+    opacity: var(--arrival, 0);
+}
+
+.surface-light--done {
+    opacity: 0;
+    transition: opacity 360ms var(--ease-out);
 }
 
 /* ── The signed-in shell ───────────────────────────────────────────────
