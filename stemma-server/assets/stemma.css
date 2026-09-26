@@ -641,15 +641,21 @@ html:has(.landing-page) {
     min-height: 100vh;
 }
 
+/* Only the work scrolls. The page does not bounce past its ends either,
+ * so the sidebar never moves with it. */
+html:has(.shell) {
+    overscroll-behavior-y: none;
+}
+
 .sidebar {
-    position: sticky;
-    top: 0;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 5;
     display: flex;
     flex-direction: column;
     gap: 20px;
     flex-shrink: 0;
     width: var(--sidebar-web);
-    height: 100vh;
     padding: 26px 14px 16px;
     color: var(--on-dark-2);
     background: var(--glow-sidebar);
@@ -892,6 +898,7 @@ html:has(.landing-page) {
     flex: 1;
     flex-direction: column;
     min-width: 0;
+    margin-left: var(--sidebar-web);
 }
 
 .mobile-bar {
@@ -1525,7 +1532,7 @@ a.machine-row:hover {
 
 .launcher__agent {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--space-2);
     padding: 4px 8px;
     font-family: var(--font-mono);
@@ -1535,10 +1542,6 @@ a.machine-row:hover {
 
 .launcher__agent:has(input:checked) {
     background: var(--accent-soft-bg);
-}
-
-.launcher__agent input {
-    accent-color: var(--accent);
 }
 
 /* Shown, named and unavailable, with the reason. */
@@ -1673,6 +1676,10 @@ a.machine-row:hover {
         transform: translateX(-100%);
         visibility: hidden;
         transition: transform 240ms var(--ease-out), visibility 0s linear 240ms;
+    }
+
+    .shell__work {
+        margin-left: 0;
     }
 
     .drawer-open .sidebar {

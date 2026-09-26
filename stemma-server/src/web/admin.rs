@@ -462,15 +462,15 @@ fn settings_block(signed: &SignedIn, policy: &Policy) -> Markup {
                 }
 
                 div class="field" {
-                    label {
+                    label class="choice" {
                         input type="checkbox" name="registration_open" value="yes"
                               checked[policy.registration_open];
-                        " Anyone may create an account"
+                        span { "Anyone may create an account" }
                     }
-                    label {
+                    label class="choice" {
                         input type="checkbox" name="group_requests_open" value="yes"
                               checked[policy.group_requests_open];
-                        " Account holders may ask for a group"
+                        span { "Account holders may ask for a group" }
                     }
                 }
 

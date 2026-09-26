@@ -22,14 +22,20 @@ document.addEventListener("keydown", (event) => {
 });
 
 // `data-dialog="id"` on a button opens that `dialog`; without JavaScript
-// the button is a link to the section the dialog stands in for. Closing
-// returns focus to the button, which the browser does for a modal dialog.
+// the button is a link to the section the dialog stands in for. Opening
+// focuses the dialog rather than its first control, unless a field is
+// marked `autofocus`. Closing returns focus to the button, which the
+// browser does for a modal dialog.
 document.querySelectorAll("[data-dialog]").forEach((opener) => {
     const dialog = document.getElementById(opener.dataset.dialog);
     if (!(dialog instanceof HTMLDialogElement)) return;
     opener.addEventListener("click", (event) => {
         event.preventDefault();
         dialog.showModal();
+        if (!dialog.querySelector("[autofocus]")) {
+            dialog.tabIndex = -1;
+            dialog.focus();
+        }
     });
 });
 
