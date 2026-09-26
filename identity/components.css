@@ -868,19 +868,4 @@
         letter-spacing: -0.035em;
         line-height: 1;
     }
-
-    /* ── The mark (`mark.svg`) ─────────────────────────────────────────
-     *
-     * Size and placement belong to whoever uses it. */
-
-    .brand-mark__edge {
-        fill: none;
-        stroke: currentColor;
-        stroke-width: 3;
-        stroke-linecap: round;
-    }
-
-    .brand-mark__node {
-        fill: currentColor;
-    }
 }

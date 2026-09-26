@@ -33,7 +33,9 @@
       "../identity/icons/32x32.png",
       "../identity/icons/128x128.png",
       "../identity/icons/128x128@2x.png",
-      "../identity/icons/icon.icns"
+      "../identity/icons/icon.png",
+      "../identity/icons/icon.icns",
+      "../identity/icons/icon.ico"
     ],
     "category": "DeveloperTool",
     "shortDescription": "A daily working platform for mathematics research groups",

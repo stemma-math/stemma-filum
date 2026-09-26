@@ -111,8 +111,9 @@ STEMMA_HOME="$PWD/.test-state/client" just app-dev
   wordmark), JetBrains Mono (identifiers) and Libertinus Serif (mathematics),
   subset to Latin, each beside its SIL Open Font License. The server
   serves them from its own origin, so no page sends a reader to a font host.
-- `mark.svg`, `noise.svg` and `icons/` are the mark, the surface texture and
-  the application icons.
+- `mark-on-dark.svg` and `mark-on-light.svg` are the mark for navy and for
+  light surfaces; `web/` holds the favicons and the home-screen icons,
+  `icons/` the application icons, and `noise.svg` the surface texture.
 - `descent.js` draws a line's descent graph from the placement
   `stemma_core::descent` computes. Neither surface shows the graph at present.
 

@@ -444,7 +444,7 @@ code,
 }
 
 .topbar .brand { font-size: 15px; }
-.topbar .brand-mark { width: 24px; height: 24px; }
+.topbar .mark { width: 26px; }
 
 .topbar button.ghost,
 .topbar button.account {
@@ -491,20 +491,12 @@ code,
     letter-spacing: -.04em;
 }
 
-.brand-mark {
+.mark {
+    display: block;
     width: 34px;
-    height: 34px;
+    height: auto;
     flex: 0 0 auto;
-    color: #b6d5ff;
-    filter: drop-shadow(0 0 8px rgb(105 167 255 / 54%));
 }
-
-.brand-mark__edge--left,
-.brand-mark__node--top { color: var(--mark-top); }
-.brand-mark__edge--base,
-.brand-mark__node--left { color: var(--mark-left); }
-.brand-mark__edge--right,
-.brand-mark__node--right { color: var(--mark-right); }
 
 .status-dot {
     width: 6px;
@@ -795,7 +787,7 @@ code,
     opacity: .4;
 }
 
-.welcome__mark .brand-mark { width: 64px; height: 64px; color: var(--ink-3); filter: none; }
+.welcome__mark .mark { width: 64px; }
 
 .welcome__group {
     margin: 6px 0 0;
@@ -1420,9 +1412,8 @@ code,
     transform: translate(-50%, -50%);
 }
 
-.entrance-brand .brand-mark {
+.entrance-brand .mark {
     width: min(70vw, 640px);
-    height: min(70vw, 640px);
 }
 
 .entrance {

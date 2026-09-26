@@ -53,8 +53,7 @@ fn body(name: &str, policy: &Policy) -> Markup {
     html! {
         div class="doorway" {
             div class="doorway__constellation" aria-hidden="true" {
-                (super::layout::constellation())
-                (super::layout::mark())
+                (super::layout::mark_on_dark())
             }
             div class="doorway__copy" {
                 h1 class="doorway__name" { "Stemma" }

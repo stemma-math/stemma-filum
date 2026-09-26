@@ -2,7 +2,7 @@
 //!
 //! Everything is served from the instance's own origin, so reading a group's
 //! pages never tells a third party who is reading them. Tokens, faces, the
-//! mark and the texture come from `stemma-identity`.
+//! mark, the icons and the texture come from `stemma-identity`.
 
 use std::sync::LazyLock;
 
@@ -24,6 +24,16 @@ pub const SURFACE_PATH: &str = "/assets/surface.js";
 
 /// Where the surface texture is served.
 pub const NOISE_PATH: &str = "/assets/noise.svg";
+
+/// Where the mark for dark surfaces is served.
+pub const MARK_ON_DARK_PATH: &str = "/assets/mark-on-dark.svg";
+
+/// Where the mark for light surfaces is served.
+pub const MARK_ON_LIGHT_PATH: &str = "/assets/mark-on-light.svg";
+
+/// Where the web app manifest is served. Browsers look for it, and for the
+/// icons it names, at the root of the site.
+pub const MANIFEST_PATH: &str = "/site.webmanifest";
 
 /// A file this build serves, with the entity tag that lets a browser ask
 /// whether it changed.
@@ -47,6 +57,9 @@ const CSS: &str = "text/css; charset=utf-8";
 const JAVASCRIPT: &str = "text/javascript; charset=utf-8";
 const SVG: &str = "image/svg+xml; charset=utf-8";
 const WOFF2: &str = "font/woff2";
+const PNG: &str = "image/png";
+const ICO: &str = "image/x-icon";
+const MANIFEST: &str = "application/manifest+json";
 
 /// The identity's faces, tokens and components, then the web interface's own
 /// rules.
@@ -67,6 +80,41 @@ static SURFACE: LazyLock<Asset> =
 
 static NOISE: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(stemma_identity::NOISE_SVG.as_bytes(), SVG));
+
+static MARK_ON_DARK: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(stemma_identity::MARK_ON_DARK_SVG.as_bytes(), SVG));
+
+static MARK_ON_LIGHT: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(stemma_identity::MARK_ON_LIGHT_SVG.as_bytes(), SVG));
+
+static ICONS: LazyLock<Vec<(&str, Asset)>> = LazyLock::new(|| {
+    stemma_identity::WEB_ICONS
+        .iter()
+        .map(|(name, icon)| {
+            let kind = match name.rsplit('.').next() {
+                Some("svg") => SVG,
+                Some("ico") => ICO,
+                _ => PNG,
+            };
+            (*name, Asset::new(icon, kind))
+        })
+        .collect()
+});
+
+/// What a browser needs to install the site or pin it to a home screen.
+static WEB_MANIFEST: LazyLock<Asset> = LazyLock::new(|| {
+    let manifest = serde_json::json!({
+        "name": "Stemma",
+        "icons": [
+            { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+            { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+        ],
+        "theme_color": stemma_identity::THEME_COLOUR,
+        "background_color": stemma_identity::THEME_COLOUR,
+    });
+
+    Asset::new(manifest.to_string().leak().as_bytes(), MANIFEST)
+});
 
 static FONTS: LazyLock<Vec<(&str, Asset)>> = LazyLock::new(|| {
     stemma_identity::FONTS
@@ -100,6 +148,29 @@ pub async fn surface(headers: HeaderMap) -> Response {
 /// Serves the surface texture.
 pub async fn noise(headers: HeaderMap) -> Response {
     serve(&headers, &NOISE)
+}
+
+/// Serves the mark for dark surfaces.
+pub async fn mark_on_dark(headers: HeaderMap) -> Response {
+    serve(&headers, &MARK_ON_DARK)
+}
+
+/// Serves the mark for light surfaces.
+pub async fn mark_on_light(headers: HeaderMap) -> Response {
+    serve(&headers, &MARK_ON_LIGHT)
+}
+
+/// Serves the web app manifest.
+pub async fn manifest(headers: HeaderMap) -> Response {
+    serve(&headers, &WEB_MANIFEST)
+}
+
+/// Serves one of the site's icons, by the name it is served under.
+pub fn icon(name: &str, headers: &HeaderMap) -> Response {
+    match ICONS.iter().find(|(served, _)| *served == name) {
+        Some((_, icon)) => serve(headers, icon),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// Serves one face.

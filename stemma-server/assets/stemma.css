@@ -110,8 +110,10 @@ code,
     text-decoration: none;
 }
 
-.wordmark svg {
+.wordmark .mark {
     display: block;
+    width: 28px;
+    height: auto;
 }
 
 /* Navigation is words. The active destination takes a rule on the edge it
@@ -795,10 +797,6 @@ h3 {
     letter-spacing: -0.02em;
 }
 
-.auth-page .brand-mark {
-    color: var(--accent);
-}
-
 .auth-page .sheet {
     width: min(100% - 32px, 560px);
     margin: auto;
@@ -962,56 +960,16 @@ html.surface-pending .auth-page .surface-transition,
     text-align: center;
 }
 
-/* The mark and the construction behind it, laid in one grid cell.
- *
- * Both are SVGs on the same 64-unit box, so the ring the nodes sit on is
- * the node orbit itself — see `constellation()` in layout.rs. Nothing here
- * measures one drawing against another, which is why the box only has to
- * be square and the right size.
- */
 .doorway__constellation {
-    --mark: clamp(140px, 18vw, 230px);
-    display: grid;
-    place-items: center;
-    width: var(--mark);
-    height: var(--mark);
+    width: clamp(140px, 18vw, 230px);
     margin-bottom: 14px;
 }
 
-.doorway__constellation > * {
-    grid-area: 1 / 1;
+.doorway__constellation .mark {
+    display: block;
     width: 100%;
-    height: 100%;
+    height: auto;
 }
-
-/* Short dashes with small gaps, the way a construction line is drawn. */
-.doorway__constellation .construction {
-    color: rgb(137 183 247 / 42%);
-    stroke-dasharray: 1.75 1.39;
-    stroke-width: .4;
-}
-
-.doorway__constellation .construction__ring {
-    fill: none;
-    stroke: currentColor;
-    stroke-opacity: .5;
-}
-
-.doorway__constellation .construction__rule {
-    stroke-width: .34;
-}
-
-.doorway__constellation .brand-mark {
-    color: #eff7ff;
-    filter: drop-shadow(0 0 9px rgb(116 176 255 / 58%)) drop-shadow(0 0 25px rgb(45 112 214 / 48%));
-}
-
-.doorway__constellation .brand-mark__edge--left { stroke: #f6fbff; }
-.doorway__constellation .brand-mark__edge--base { stroke: #79b0f5; }
-.doorway__constellation .brand-mark__edge--right { stroke: #96c5ff; }
-.doorway__constellation .brand-mark__node--top { fill: #f9fcff; }
-.doorway__constellation .brand-mark__node--left { fill: #eaf5ff; }
-.doorway__constellation .brand-mark__node--right { fill: #74adf4; }
 
 .doorway__copy {
     display: flex;
@@ -1183,21 +1141,10 @@ html.surface-pending .auth-page .surface-transition,
     letter-spacing: -.035em;
 }
 
-.sidebar .brand-mark {
+.sidebar .wordmark .mark {
     width: 34px;
-    height: 34px;
-    color: #a9ceff;
-    filter: drop-shadow(0 0 9px rgb(105 167 255 / 55%));
 }
 
-.sidebar .brand-mark__edge--left,
-.sidebar .brand-mark__node--top { color: var(--mark-top); }
-
-.sidebar .brand-mark__edge--base,
-.sidebar .brand-mark__node--left { color: var(--mark-left); }
-
-.sidebar .brand-mark__edge--right,
-.sidebar .brand-mark__node--right { color: var(--mark-right); }
 
 .sidebar__instance {
     margin: 14px 8px 34px;

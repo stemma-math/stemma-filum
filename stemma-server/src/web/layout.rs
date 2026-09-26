@@ -1,14 +1,10 @@
 //! The shell every page is drawn in.
-//!
-//! Navigation is words, the active destination is marked by a rule on the
-//! edge it belongs to, and the mark is a stemma in three strokes: a heavy
-//! stem with two hairlines descending from it, which is both the grammar of
-//! the product — weight is commitment — and literally a descent tree.
 
 use maud::{DOCTYPE, Markup, PreEscaped, html};
-use stemma_identity::{MARK_CENTRE, MARK_ORBIT};
 
-use super::assets::{STYLESHEET_PATH, SURFACE_PATH};
+use super::assets::{
+    MANIFEST_PATH, MARK_ON_DARK_PATH, MARK_ON_LIGHT_PATH, STYLESHEET_PATH, SURFACE_PATH,
+};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::Membership;
@@ -152,6 +148,11 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (chrome.title) " | " (chrome.instance) }
+                link rel="icon" href="/favicon.ico" sizes="48x48";
+                link rel="icon" href="/favicon.svg" type="image/svg+xml";
+                link rel="apple-touch-icon" href="/apple-touch-icon.png";
+                link rel="manifest" href=(MANIFEST_PATH);
+                meta name="theme-color" content=(stemma_identity::THEME_COLOUR);
                 script {
                     (PreEscaped(
                         "try{if(sessionStorage.getItem('stemma-surface-transition'))document.documentElement.classList.add('surface-pending')}catch(_){}"
@@ -187,8 +188,8 @@ fn masthead(chrome: &Chrome) -> Markup {
         header class="masthead" {
             div class="masthead__inner" {
                 a class="wordmark" href="/" {
-                    (mark())
-                    span { "stemma" }
+                    (mark_on_light())
+                    span { "Stemma" }
                 }
 
                 nav class="nav" hidden[chrome.landing] {
@@ -228,7 +229,7 @@ fn sidebar(chrome: &Chrome) -> Markup {
     html! {
         aside class="sidebar" {
             a class="wordmark" href="/" {
-                (mark())
+                (mark_on_dark())
                 span { "Stemma" }
             }
             p class="sidebar__instance" { (chrome.instance) }
@@ -370,69 +371,17 @@ pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
     }
 }
 
-/// How far past the mark's orbit the construction rules reach.
-const RULE_REACH: f64 = 1.18;
-
-/// The mark, from the identity.
-pub fn mark() -> Markup {
-    PreEscaped(stemma_identity::MARK_SVG.to_owned())
+/// The mark, for the navy surfaces.
+///
+/// An image rather than inline SVG: the drawing's gradients carry ids, and
+/// two copies on one page would share them.
+pub fn mark_on_dark() -> Markup {
+    html! { img class="mark" src=(MARK_ON_DARK_PATH) alt=""; }
 }
 
-/// The construction the front door draws behind the mark.
-///
-/// The same box and the same units as [`mark`], so the ring *is* the node
-/// orbit and the rules *are* the axes the nodes were set out on. Drawn here
-/// rather than in the stylesheet because a ring built out of a border and a
-/// border-radius is a second coordinate system, and two coordinate systems
-/// for one drawing will come apart.
-///
-/// Each rule fades out at both ends rather than stopping, which is what a
-/// drawn construction line does and a border cannot.
-pub fn constellation() -> Markup {
-    let reach = MARK_ORBIT * RULE_REACH;
-    let (near, far) = (MARK_CENTRE - reach, MARK_CENTRE + reach);
-    let top = MARK_CENTRE - MARK_ORBIT;
-
-    // The rule at the top node's height is shorter: it is that node's own
-    // line, not one of the axes.
-    let (top_near, top_far) = (MARK_CENTRE - reach * 0.7, MARK_CENTRE + reach * 0.7);
-
-    let rules = [
-        ("across", (near, MARK_CENTRE), (far, MARK_CENTRE)),
-        ("down", (MARK_CENTRE, near), (MARK_CENTRE, far)),
-        ("top", (top_near, top), (top_far, top)),
-    ];
-
-    let fades: String = rules
-        .iter()
-        .map(|(name, (x1, y1), (x2, y2))| {
-            format!(
-                r#"<linearGradient id="stemma-rule-{name}" gradientUnits="userSpaceOnUse" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">
-                <stop offset="0" stop-color="currentColor" stop-opacity="0" />
-                <stop offset=".2" stop-color="currentColor" stop-opacity="1" />
-                <stop offset=".8" stop-color="currentColor" stop-opacity="1" />
-                <stop offset="1" stop-color="currentColor" stop-opacity="0" />
-            </linearGradient>"#
-            )
-        })
-        .collect();
-
-    let lines: String = rules
-        .iter()
-        .map(|(name, (x1, y1), (x2, y2))| {
-            format!(
-                r#"<line class="construction__rule" stroke="url(#stemma-rule-{name})" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" />"#
-            )
-        })
-        .collect();
-
-    PreEscaped(format!(
-        r#"<svg class="construction" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <defs>{fades}</defs>
-            <circle class="construction__ring" cx="{MARK_CENTRE}" cy="{MARK_CENTRE}" r="{MARK_ORBIT}" />
-            {lines}
-        </svg>"#
-    ))
+/// The mark, for light surfaces.
+pub fn mark_on_light() -> Markup {
+    html! { img class="mark" src=(MARK_ON_LIGHT_PATH) alt=""; }
 }
 
 /// The page shown when a request could not be answered.
@@ -452,84 +401,4 @@ pub fn failure(error: &WebError) -> Markup {
             }
         },
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every node of the mark, as an offset from the centre of its box.
-    fn nodes() -> Vec<(f64, f64)> {
-        mark()
-            .into_string()
-            .split("<circle")
-            .skip(1)
-            .map(|node| {
-                let value = |name: &str| -> f64 {
-                    node.split(&format!("{name}=\""))
-                        .nth(1)
-                        .and_then(|rest| rest.split('"').next())
-                        .and_then(|number| number.parse().ok())
-                        .unwrap_or_else(|| panic!("a node should carry {name}"))
-                };
-
-                (value("cx") - MARK_CENTRE, value("cy") - MARK_CENTRE)
-            })
-            .collect()
-    }
-
-    /// The ring is the orbit, not a circle that looks like it.
-    #[test]
-    fn the_construction_draws_its_ring_on_the_node_orbit() {
-        let drawn = constellation().into_string();
-        let radius = drawn
-            .split("class=\"construction__ring\"")
-            .nth(1)
-            .and_then(|rest| rest.split("r=\"").nth(1))
-            .and_then(|rest| rest.split('"').next())
-            .and_then(|number| number.parse::<f64>().ok())
-            .expect("the ring should carry a radius");
-
-        assert!(
-            (radius - MARK_ORBIT).abs() < f64::EPSILON,
-            "the ring is drawn at {radius}, and the nodes sit at {MARK_ORBIT}"
-        );
-
-        for (x, y) in nodes() {
-            assert!(
-                (x.hypot(y) - radius).abs() < 0.01,
-                "the node at ({x}, {y}) is not on the ring"
-            );
-        }
-    }
-
-    /// Every rule fades at both ends, and every one is the far side of the
-    /// orbit, so the construction reads as drawn rather than cropped.
-    #[test]
-    fn every_construction_rule_fades_out_past_the_ring() {
-        let drawn = constellation().into_string();
-        // The space matters: `<linearGradient` also begins with `<line`.
-        let rules: Vec<&str> = drawn.split("<line ").skip(1).collect();
-
-        assert_eq!(rules.len(), 3, "two axes and the top node's own line");
-
-        for rule in &rules {
-            let name = rule
-                .split("url(#")
-                .nth(1)
-                .and_then(|rest| rest.split(')').next())
-                .expect("a rule should be stroked with its fade");
-
-            assert!(
-                drawn.contains(&format!(r#"id="{name}""#)),
-                "{name} is referenced and never defined"
-            );
-        }
-
-        assert_eq!(
-            drawn.matches("stop-opacity=\"0\"").count(),
-            rules.len() * 2,
-            "each rule should fade at both of its ends"
-        );
-    }
 }

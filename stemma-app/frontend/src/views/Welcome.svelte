@@ -4,7 +4,7 @@
 </script>
 
 <div class="welcome">
-  <div class="welcome__mark"><Mark /></div>
+  <div class="welcome__mark"><Mark on="light" /></div>
   <p class="welcome__group">{app.group ?? "No group"}</p>
   {#if app.group}
     <p class="quiet">Choose a line on the left, or start one.</p>
