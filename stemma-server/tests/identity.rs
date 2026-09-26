@@ -302,7 +302,7 @@ async fn the_stylesheet_is_served_from_this_instance_and_can_be_cached() {
     let page = harness.get("/assets/stemma.css").await;
 
     assert_eq!(page.status, StatusCode::OK);
-    assert!(page.says("--ditto"));
+    assert!(page.says("--accent"));
 
     let front = harness.get("/").await;
     assert!(front.says("href=\"/assets/stemma.css\""));

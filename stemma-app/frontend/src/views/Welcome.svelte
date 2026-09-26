@@ -1,15 +1,22 @@
 <script lang="ts">
-  import Mark from "../components/Mark.svelte";
+  import Glyph from "../components/Glyph.svelte";
   import { app } from "../lib/app.svelte";
+  import { initials } from "../lib/names";
 </script>
 
-<div class="welcome">
-  <div class="welcome__mark"><Mark /></div>
-  <p class="welcome__group">{app.group ?? "No group"}</p>
+<div class="pane pane--center" data-tauri-drag-region>
   {#if app.group}
-    <p class="quiet">Choose a line on the left, or start one.</p>
-    <button class="primary" onclick={() => app.goTo("new-line")}>New line</button>
+    <div class="welcome">
+      <span class="badge badge--large" aria-hidden="true">{initials(app.group)}</span>
+      <h1 class="welcome__title identifier">{app.group}</h1>
+      <p class="welcome__text">Choose a line on the left, or start a new one.</p>
+      <button type="button" class="button button--primary" onclick={() => app.goTo("new-line")}><Glyph name="add" small />New line</button>
+    </div>
   {:else}
-    <p class="quiet">Sync this machine to bring your groups here.</p>
+    <div class="welcome welcome--empty">
+      <h1 class="welcome__title">No groups yet</h1>
+      <p class="welcome__text">Sync this machine to bring your groups here.</p>
+      <button type="button" class="button button--primary" disabled={app.synced.running} onclick={() => app.sync()}><Glyph name="sync" small />Sync now</button>
+    </div>
   {/if}
 </div>

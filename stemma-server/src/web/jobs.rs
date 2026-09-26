@@ -524,7 +524,12 @@ pub fn machine_list(offers: &[Offer]) -> Markup {
                     @for offer in offers {
                         li {
                             span class="register__name" { (offer.machine.label) }
-                            span class="quiet" { (offer.machine.presence) }
+                            @match offer.machine.presence {
+                                stemma_core::machine::Presence::Awake => {
+                                    span class="chip chip--success" { span class="dot" {} "Online" }
+                                }
+                                stemma_core::machine::Presence::Asleep => span class="chip" { "Offline" },
+                            }
                             span class="register__aside identifier" {
                                 @let ready: Vec<&str> = offer
                                     .agents
@@ -589,7 +594,7 @@ pub fn launcher(
 
                         (choices("anyone", "Whoever is free", None, &free(offers)))
 
-                        button class="button" type="submit" { "Ask" }
+                        button class="button button--primary" type="submit" { "Ask" }
                     }
                 }
             }

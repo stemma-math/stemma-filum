@@ -1,14 +1,11 @@
 //! The shell every page is drawn in.
-//!
-//! Navigation is words, the active destination is marked by a rule on the
-//! edge it belongs to, and the mark is a stemma in three strokes: a heavy
-//! stem with two hairlines descending from it, which is both the grammar of
-//! the product — weight is commitment — and literally a descent tree.
 
-use maud::{DOCTYPE, Markup, PreEscaped, html};
-use stemma_identity::{MARK_CENTRE, MARK_ORBIT};
+use maud::{DOCTYPE, Markup, html};
 
-use super::assets::{STYLESHEET_PATH, SURFACE_PATH};
+use super::assets::{
+    GLYPHS_PATH, LANDING_PATH, MANIFEST_PATH, MARK_ANIMATED_PATH, MARK_ON_DARK_PATH,
+    MARK_ON_LIGHT_PATH, SHELL_PATH, STYLESHEET_PATH,
+};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::Membership;
@@ -29,6 +26,9 @@ pub struct Workspace {
     pub machines: Vec<(Machine, usize)>,
     /// Whether they may ask for a group at all.
     pub may_ask: bool,
+    /// How many group requests wait for a maintainer, when the reader is
+    /// one.
+    pub pending_requests: usize,
 }
 
 /// The shell for a page somebody is signed in to, with its tree read.
@@ -47,12 +47,21 @@ pub async fn around(
 
     let machines = super::machines::owned_by(instance, &signed.user.id).await?;
 
+    let pending_requests = match signed.maintainer {
+        true => instance
+            .read(crate::store::groups::open_requests)
+            .await?
+            .len(),
+        false => 0,
+    };
+
     Ok(Chrome::anonymous(title, name)
         .signed_in(signed.user.clone(), signed.maintainer)
         .holding(Workspace {
             groups,
             machines,
             may_ask: policy.group_requests_open,
+            pending_requests,
         }))
 }
 
@@ -152,25 +161,31 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (chrome.title) " | " (chrome.instance) }
-                script {
-                    (PreEscaped(
-                        "try{if(sessionStorage.getItem('stemma-surface-transition'))document.documentElement.classList.add('surface-pending')}catch(_){}"
-                    ))
-                }
+                link rel="icon" href="/favicon.ico" sizes="48x48";
+                link rel="icon" href="/favicon.svg" type="image/svg+xml";
+                link rel="apple-touch-icon" href="/apple-touch-icon.png";
+                link rel="manifest" href=(MANIFEST_PATH);
+                meta name="theme-color" content=(stemma_identity::THEME_COLOUR);
                 link rel="stylesheet" href=(STYLESHEET_PATH);
-                script src=(SURFACE_PATH) type="module" {}
+                @if chrome.visitor.is_some() {
+                    script src=(SHELL_PATH) type="module" {}
+                } @else if chrome.landing {
+                    script src=(MARK_ANIMATED_PATH) {}
+                    script src=(LANDING_PATH) type="module" {}
+                }
             }
             body class=(body_class) {
-                div class="surface-transition" aria-hidden="true" {}
                 @if chrome.visitor.is_some() {
-                    div class="product-shell" {
+                    div class="shell" {
                         (sidebar(chrome))
-                        div class="product-workspace" {
-                            (topbar(chrome))
-                            main class="sheet" { (content) }
-                            (foot(chrome))
+                        div class="shell__scrim" data-drawer-close {}
+                        div class="shell__work" {
+                            (mobile_bar(chrome))
+                            main class="page" id="content" { (content) }
                         }
                     }
+                } @else if chrome.landing {
+                    main class="sheet" { (content) }
                 } @else {
                     (masthead(chrome))
                     main class="sheet" { (content) }
@@ -181,35 +196,20 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
     }
 }
 
-/// The bar across the top.
+/// The bar across the top of a page nobody is signed in to.
 fn masthead(chrome: &Chrome) -> Markup {
     html! {
         header class="masthead" {
-            div class="masthead__inner" {
-                a class="wordmark" href="/" {
-                    (mark())
-                    span { "stemma" }
-                }
+            a class="brand" href="/" {
+                (mark_on_light())
+                span class="wordmark" { "Stemma" }
+            }
 
-                nav class="nav" hidden[chrome.landing] {
-                    @match &chrome.visitor {
-                        Some(user) => {
-                            (destination("/", "Home", &chrome.current))
-                            @if chrome.maintainer {
-                                (destination("/admin", "Admin", &chrome.current))
-                            }
-                            span class="quiet identifier" { (user.id.to_string()) }
-                            form method="post" action="/logout" {
-                                button class="button button--quiet" type="submit" { "Log out" }
-                            }
-                        }
-                        None if chrome.offer_ways_in => {
-                            (destination("/login", "Log in", &chrome.current))
-                            @if chrome.registration_open {
-                                (destination("/register", "Create an account", &chrome.current))
-                            }
-                        }
-                        None => {}
+            nav class="nav" aria-label="Account" {
+                @if chrome.offer_ways_in {
+                    (destination("/login", "Log in", &chrome.current))
+                    @if chrome.registration_open {
+                        (destination("/register", "Create an account", &chrome.current))
                     }
                 }
             }
@@ -220,147 +220,172 @@ fn masthead(chrome: &Chrome) -> Markup {
 /// The product's persistent navigation.
 ///
 /// Every destination in it is a page of its own. Groups and machines are
-/// the two trees somebody actually works in, so they hang open under their
-/// heading rather than sending the reader to a list to pick from.
+/// the two lists somebody actually works in, so they are always open
+/// under their label rather than sending the reader to a list to pick
+/// from. The brand stays at the top and the reader at the foot; the lists
+/// between them scroll.
 fn sidebar(chrome: &Chrome) -> Markup {
     let workspace = &chrome.workspace;
 
     html! {
-        aside class="sidebar" {
-            a class="wordmark" href="/" {
-                (mark())
-                span { "Stemma" }
+        aside class="sidebar" id="sidebar" {
+            div class="sidebar__head" {
+                a class="brand" href="/" {
+                    (mark_on_dark())
+                    span class="brand__words" {
+                        span class="wordmark" { "Stemma" }
+                        span class="brand__instance" { (chrome.instance) }
+                    }
+                }
+                span class="sidebar__version" { "v" (env!("CARGO_PKG_VERSION")) }
             }
-            p class="sidebar__instance" { (chrome.instance) }
+
             nav class="sidebar__nav" aria-label="Workspace" {
-                p class="sidebar__label" { "Workspace" }
-                (destination("/", "Overview", &chrome.current))
+                (item("/", glyph("home"), "Overview", 0, &chrome.current))
 
-                details class="tree" data-empty[workspace.groups.is_empty()]
-                        open[!workspace.groups.is_empty() || in_a_group(&chrome.current)] {
-                    summary class="tree__head" { "Groups" }
-                    div class="tree__body" {
-                        @for membership in &workspace.groups {
-                            (destination(
-                                &format!("/g/{}", membership.group.slug()),
-                                &membership.group.name,
-                                &chrome.current,
-                            ))
-                        }
-                        @if workspace.groups.is_empty() {
-                            @if workspace.may_ask {
-                                a class="tree__add" href="/groups/new" {
-                                    span class="tree__plus" aria-hidden="true" { "+" }
-                                    span { "Request a group" }
-                                }
-                            } @else {
-                                p class="tree__empty" { "No groups yet." }
-                            }
+                div class="sidebar__section" {
+                    span { "Groups" }
+                    @if workspace.may_ask {
+                        a class="sidebar__add" href="/groups/new" aria-label="Request a research group"
+                          title="Request a research group"
+                          aria-current=[("/groups/new" == chrome.current).then_some("page")] {
+                            (glyph("add"))
                         }
                     }
                 }
-
-                details class="tree" data-empty[workspace.machines.is_empty()]
-                        open[!workspace.machines.is_empty()] {
-                    summary class="tree__head" { "Machines" }
-                    div class="tree__body" {
-                        @for (machine, owed) in &workspace.machines {
-                            (waypoint(
-                                &format!("/machines/{}", machine.id),
-                                &machine.label,
-                                *owed,
-                                &chrome.current,
-                            ))
-                        }
-                        @if workspace.machines.is_empty() {
-                            p class="tree__empty" {
-                                "No machines connected."
-                            }
-                        }
-                    }
+                @for membership in &workspace.groups {
+                    (item(
+                        &format!("/g/{}", membership.group.slug()),
+                        html! { span class="sidebar__badge" aria-hidden="true" { (initials(&membership.group.name)) } },
+                        &membership.group.name,
+                        0,
+                        &chrome.current,
+                    ))
                 }
-            }
-            div class="sidebar__aside" {
-                p { (chrome.instance) }
-            }
-        }
-    }
-}
+                @if workspace.groups.is_empty() {
+                    p class="sidebar__empty" { "No groups yet." }
+                }
 
-/// Whether the reader is somewhere inside a group.
-///
-/// A line, a vault and the form that asks for a group are all group work,
-/// so the groups tree arrives open even when there is nothing in it yet
-/// and the only thing under it is the way to make one.
-fn in_a_group(current: &str) -> bool {
-    current.starts_with("/g/") || current == "/groups/new"
-}
+                div class="sidebar__section" { span { "Machines" } }
+                @for (machine, owed) in &workspace.machines {
+                    (item(
+                        &format!("/machines/{}", machine.id),
+                        glyph("machine"),
+                        &machine.label,
+                        *owed,
+                        &chrome.current,
+                    ))
+                }
+                @if workspace.machines.is_empty() {
+                    p class="sidebar__empty" { "No machines connected." }
+                }
 
-/// Account and instance controls stay above the current workspace.
-fn topbar(chrome: &Chrome) -> Markup {
-    html! {
-        header class="topbar" {
-            div {
-                p class="topbar__eyebrow" { "Workspace" }
-                p class="topbar__title" { (chrome.title) }
-            }
-            nav class="topbar__actions" aria-label="Account" {
                 @if chrome.maintainer {
-                    (destination("/admin", "Admin", &chrome.current))
+                    div class="sidebar__section" { span { "Instance" } }
+                    (item("/admin", glyph("shield"), "Administration", workspace.pending_requests, &chrome.current))
                 }
-                @if let Some(user) = &chrome.visitor {
-                    span class="avatar" aria-hidden="true" {
-                        (user.display_name.chars().next().unwrap_or('S'))
-                    }
-                    span class="topbar__identity" {
-                        strong { (user.display_name) }
+            }
+
+            @if let Some(user) = &chrome.visitor {
+                div class="user-card" {
+                    span class="avatar" aria-hidden="true" { (initials(&user.display_name)) }
+                    span class="user-card__who" {
+                        span class="user-card__name" {
+                            span { (user.display_name) }
+                            @if chrome.maintainer {
+                                span class="user-card__role" { "Admin" }
+                            }
+                        }
                         span class="identifier" { (user.id.to_string()) }
                     }
-                }
-                form method="post" action="/logout" {
-                    button class="button button--quiet" type="submit" { "Log out" }
+                    form method="post" action="/logout" {
+                        button class="user-card__out" type="submit" aria-label="Log out" title="Log out" {
+                            (glyph("log-out"))
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/// One place to go, with what is waiting there.
+/// The bar a narrow window shows in place of the sidebar, with the button
+/// that brings it out as a drawer.
+fn mobile_bar(chrome: &Chrome) -> Markup {
+    html! {
+        header class="mobile-bar" {
+            button class="mobile-bar__menu" type="button" aria-controls="sidebar"
+                   aria-expanded="false" aria-label="Menu" data-drawer-toggle {
+                (glyph("menu"))
+            }
+            a class="brand" href="/" {
+                (mark_on_dark())
+                span class="wordmark" { "Stemma" }
+            }
+            span class="brand__instance" { (chrome.instance) }
+        }
+    }
+}
+
+/// One place to go in the sidebar, with what is waiting there.
 ///
 /// A count is only ever on a decision somebody owes, never on the state of
 /// the mathematics, so a machine with nothing to answer carries nothing.
-fn waypoint(href: &str, words: &str, owed: usize, current: &str) -> Markup {
+fn item(href: &str, icon: Markup, words: &str, owed: usize, current: &str) -> Markup {
+    let here = href == current || (href != "/" && current.starts_with(&format!("{href}/")));
+
     html! {
-        a href=(href) aria-current=[(href == current).then_some("page")] {
-            span { (words) }
+        a class="sidebar__item" href=(href) aria-current=[here.then_some("page")] {
+            (icon)
+            span class="sidebar__words" { (words) }
             @if owed > 0 {
-                span class="count" aria-label={ (owed) " to deal with" } { (owed) }
+                span class="sidebar__count" aria-label={ (owed) " to deal with" } { (owed) }
             }
         }
     }
 }
 
-/// One place to go.
+/// One place to go in the bar of a public page.
 fn destination(href: &str, words: &str, current: &str) -> Markup {
     html! {
-        @if href == current {
-            a href=(href) aria-current="page" { (words) }
-        } @else {
-            a href=(href) { (words) }
-        }
+        a href=(href) aria-current=[(href == current).then_some("page")] { (words) }
     }
 }
 
-/// The line at the foot of every page.
+/// The line at the foot of a public page.
 fn foot(chrome: &Chrome) -> Markup {
     html! {
         footer class="foot" {
-            div class="foot__inner" {
-                span { (chrome.instance) }
-                span { "stemma " (env!("CARGO_PKG_VERSION")) }
-            }
+            span { (chrome.instance) }
+            span { "stemma " (env!("CARGO_PKG_VERSION")) }
         }
     }
+}
+
+/// A line glyph from the identity's sprite.
+pub fn glyph(name: &str) -> Markup {
+    html! {
+        svg class="glyph" aria-hidden="true" {
+            use href={ (GLYPHS_PATH) "#" (name) } {}
+        }
+    }
+}
+
+/// Up to two initials for a person or a group: the first letters of its
+/// first two words, or the first two of a single word.
+pub fn initials(name: &str) -> String {
+    let words: Vec<&str> = name.split_whitespace().collect();
+    let letters: String = match words.as_slice() {
+        [] => "S".to_owned(),
+        [one] => one.chars().take(1).collect(),
+        [first, second, ..] => first
+            .chars()
+            .take(1)
+            .chain(second.chars().take(1))
+            .collect(),
+    };
+
+    letters.to_uppercase()
 }
 
 /// The hidden CSRF field every form posted by a signed-in visitor carries.
@@ -370,69 +395,17 @@ pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
     }
 }
 
-/// How far past the mark's orbit the construction rules reach.
-const RULE_REACH: f64 = 1.18;
-
-/// The mark, from the identity.
-pub fn mark() -> Markup {
-    PreEscaped(stemma_identity::MARK_SVG.to_owned())
+/// The mark, for the navy surfaces.
+///
+/// An image rather than inline SVG: the drawing's gradients carry ids, and
+/// two copies on one page would share them.
+pub fn mark_on_dark() -> Markup {
+    html! { img class="mark" src=(MARK_ON_DARK_PATH) alt=""; }
 }
 
-/// The construction the front door draws behind the mark.
-///
-/// The same box and the same units as [`mark`], so the ring *is* the node
-/// orbit and the rules *are* the axes the nodes were set out on. Drawn here
-/// rather than in the stylesheet because a ring built out of a border and a
-/// border-radius is a second coordinate system, and two coordinate systems
-/// for one drawing will come apart.
-///
-/// Each rule fades out at both ends rather than stopping, which is what a
-/// drawn construction line does and a border cannot.
-pub fn constellation() -> Markup {
-    let reach = MARK_ORBIT * RULE_REACH;
-    let (near, far) = (MARK_CENTRE - reach, MARK_CENTRE + reach);
-    let top = MARK_CENTRE - MARK_ORBIT;
-
-    // The rule at the top node's height is shorter: it is that node's own
-    // line, not one of the axes.
-    let (top_near, top_far) = (MARK_CENTRE - reach * 0.7, MARK_CENTRE + reach * 0.7);
-
-    let rules = [
-        ("across", (near, MARK_CENTRE), (far, MARK_CENTRE)),
-        ("down", (MARK_CENTRE, near), (MARK_CENTRE, far)),
-        ("top", (top_near, top), (top_far, top)),
-    ];
-
-    let fades: String = rules
-        .iter()
-        .map(|(name, (x1, y1), (x2, y2))| {
-            format!(
-                r#"<linearGradient id="stemma-rule-{name}" gradientUnits="userSpaceOnUse" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">
-                <stop offset="0" stop-color="currentColor" stop-opacity="0" />
-                <stop offset=".2" stop-color="currentColor" stop-opacity="1" />
-                <stop offset=".8" stop-color="currentColor" stop-opacity="1" />
-                <stop offset="1" stop-color="currentColor" stop-opacity="0" />
-            </linearGradient>"#
-            )
-        })
-        .collect();
-
-    let lines: String = rules
-        .iter()
-        .map(|(name, (x1, y1), (x2, y2))| {
-            format!(
-                r#"<line class="construction__rule" stroke="url(#stemma-rule-{name})" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" />"#
-            )
-        })
-        .collect();
-
-    PreEscaped(format!(
-        r#"<svg class="construction" viewBox="0 0 64 64" fill="none" aria-hidden="true">
-            <defs>{fades}</defs>
-            <circle class="construction__ring" cx="{MARK_CENTRE}" cy="{MARK_CENTRE}" r="{MARK_ORBIT}" />
-            {lines}
-        </svg>"#
-    ))
+/// The mark, for light surfaces.
+pub fn mark_on_light() -> Markup {
+    html! { img class="mark" src=(MARK_ON_LIGHT_PATH) alt=""; }
 }
 
 /// The page shown when a request could not be answered.
@@ -452,84 +425,4 @@ pub fn failure(error: &WebError) -> Markup {
             }
         },
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every node of the mark, as an offset from the centre of its box.
-    fn nodes() -> Vec<(f64, f64)> {
-        mark()
-            .into_string()
-            .split("<circle")
-            .skip(1)
-            .map(|node| {
-                let value = |name: &str| -> f64 {
-                    node.split(&format!("{name}=\""))
-                        .nth(1)
-                        .and_then(|rest| rest.split('"').next())
-                        .and_then(|number| number.parse().ok())
-                        .unwrap_or_else(|| panic!("a node should carry {name}"))
-                };
-
-                (value("cx") - MARK_CENTRE, value("cy") - MARK_CENTRE)
-            })
-            .collect()
-    }
-
-    /// The ring is the orbit, not a circle that looks like it.
-    #[test]
-    fn the_construction_draws_its_ring_on_the_node_orbit() {
-        let drawn = constellation().into_string();
-        let radius = drawn
-            .split("class=\"construction__ring\"")
-            .nth(1)
-            .and_then(|rest| rest.split("r=\"").nth(1))
-            .and_then(|rest| rest.split('"').next())
-            .and_then(|number| number.parse::<f64>().ok())
-            .expect("the ring should carry a radius");
-
-        assert!(
-            (radius - MARK_ORBIT).abs() < f64::EPSILON,
-            "the ring is drawn at {radius}, and the nodes sit at {MARK_ORBIT}"
-        );
-
-        for (x, y) in nodes() {
-            assert!(
-                (x.hypot(y) - radius).abs() < 0.01,
-                "the node at ({x}, {y}) is not on the ring"
-            );
-        }
-    }
-
-    /// Every rule fades at both ends, and every one is the far side of the
-    /// orbit, so the construction reads as drawn rather than cropped.
-    #[test]
-    fn every_construction_rule_fades_out_past_the_ring() {
-        let drawn = constellation().into_string();
-        // The space matters: `<linearGradient` also begins with `<line`.
-        let rules: Vec<&str> = drawn.split("<line ").skip(1).collect();
-
-        assert_eq!(rules.len(), 3, "two axes and the top node's own line");
-
-        for rule in &rules {
-            let name = rule
-                .split("url(#")
-                .nth(1)
-                .and_then(|rest| rest.split(')').next())
-                .expect("a rule should be stroked with its fade");
-
-            assert!(
-                drawn.contains(&format!(r#"id="{name}""#)),
-                "{name} is referenced and never defined"
-            );
-        }
-
-        assert_eq!(
-            drawn.matches("stop-opacity=\"0\"").count(),
-            rules.len() * 2,
-            "each rule should fade at both of its ends"
-        );
-    }
 }

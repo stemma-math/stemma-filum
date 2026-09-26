@@ -1,0 +1,933 @@
+/* Stemma's shared components: classes over native HTML, for any consumer.
+ *
+ * Needs `tokens.css`. Every rule sits in a cascade layer, so a consumer's
+ * own unlayered rules win whatever their specificity. Placement and layout
+ * belong to the consumer; a component only says how it looks.
+ *
+ * Size follows the density: comfortable by default, compact inside
+ * `[data-density="compact"]`.
+ */
+
+@layer stemma.base, stemma.components;
+
+@layer stemma.base {
+    :root {
+        color-scheme: light;
+    }
+
+    /* Focus is never removed. */
+    :focus-visible {
+        outline: 2px solid var(--focus-ring);
+        outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            transition-duration: 1ms !important;
+            animation-duration: 1ms !important;
+            animation-iteration-count: 1 !important;
+        }
+    }
+}
+
+@layer stemma.components {
+    /* A label names a group of things. Sentence case, never a heading. */
+    .label {
+        margin: 0;
+        font: var(--text-label);
+        color: var(--ink-3);
+    }
+
+    .quiet {
+        color: var(--ink-3);
+    }
+
+    .numeric {
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* Identifiers are verbatim: `usr:`, `grp:`, `thm:`, paths, versions. */
+    .identifier {
+        font-family: var(--font-mono);
+        font-size: 0.87em;
+        font-weight: 400;
+    }
+
+    .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    /* ── Icon ──────────────────────────────────────────────────────────
+     *
+     * An inline glyph from `glyphs/`, drawn in the colour of its text. */
+
+    .glyph {
+        flex-shrink: 0;
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+    }
+
+    .glyph--small {
+        width: 14px;
+        height: 14px;
+        stroke-width: 2;
+    }
+
+    /* ── Button ────────────────────────────────────────────────────────
+     *
+     * On a `button` or an `a`. Outlined by default, the secondary action.
+     * `--primary` is the one action a view is for, `--quiet` is a text
+     * button, `--link` reads as a link and `--danger` is destructive.
+     * `--icon` holds a glyph alone and needs an `aria-label`.
+     * `aria-pressed="true"` and `aria-current` mark the one chosen. */
+
+    .button {
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--space-2);
+        min-height: var(--control-height);
+        padding: 0 var(--button-inline);
+        font: 500 var(--control-font) / 1.2 var(--font-ui);
+        color: var(--ink-1);
+        text-decoration: none;
+        white-space: nowrap;
+        background: var(--surface-card);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        transition:
+            background var(--dur-ui) var(--ease-out),
+            border-color var(--dur-ui) var(--ease-out),
+            color var(--dur-ui) var(--ease-out),
+            transform var(--dur-press) var(--ease-out);
+    }
+
+    .button:hover {
+        background: var(--surface-subtle);
+        border-color: var(--ink-4);
+    }
+
+    .button:active:not(:disabled) {
+        transform: scale(0.96);
+    }
+
+    .button[aria-pressed="true"],
+    .button[aria-current]:not([aria-current="false"]) {
+        color: var(--accent-soft-fg);
+        background: var(--accent-soft-bg);
+        border-color: transparent;
+    }
+
+    .button--primary {
+        color: #fff;
+        background: var(--accent);
+        border-color: var(--accent);
+        box-shadow: 0 1px 2px rgb(20 40 90 / 12%);
+    }
+
+    .button--primary:hover {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+    }
+
+    .button--quiet {
+        color: var(--ink-2);
+        background: transparent;
+        border-color: transparent;
+    }
+
+    .button--quiet:hover {
+        color: var(--ink-1);
+        background: var(--fill-muted);
+        border-color: transparent;
+    }
+
+    .button--danger {
+        color: var(--danger-fg);
+        background: transparent;
+        border-color: transparent;
+    }
+
+    .button--danger:hover {
+        color: var(--danger-fg);
+        background: var(--danger-bg);
+        border-color: transparent;
+    }
+
+    /* A destructive action that is the one a dialog is for. */
+    .button--primary.button--danger {
+        color: #fff;
+        background: var(--danger-fg);
+        border-color: var(--danger-fg);
+    }
+
+    .button--primary.button--danger:hover {
+        background: #8f1c13;
+        border-color: #8f1c13;
+    }
+
+    .button--link {
+        min-height: 0;
+        padding: 0;
+        color: var(--accent);
+        background: transparent;
+        border: 0;
+        text-decoration: underline;
+        text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+        text-underline-offset: 3px;
+    }
+
+    .button--link:hover {
+        color: var(--accent-hover);
+        background: transparent;
+        text-decoration-color: currentColor;
+    }
+
+    .button--icon {
+        width: var(--control-height);
+        padding: 0;
+        color: var(--ink-3);
+        background: transparent;
+        border-color: transparent;
+        border-radius: var(--radius-sm);
+    }
+
+    .button--icon:hover {
+        color: var(--ink-1);
+        background: var(--fill-muted);
+        border-color: transparent;
+    }
+
+    .button--small {
+        min-height: 32px;
+        padding: 0 var(--space-3);
+        font-size: var(--step-2);
+        border-radius: var(--radius-sm);
+    }
+
+    .button--icon.button--small {
+        width: 32px;
+        padding: 0;
+    }
+
+    .button:disabled,
+    .button[aria-disabled="true"] {
+        color: var(--ink-disabled);
+        background: var(--surface-subtle);
+        border-color: var(--border);
+        box-shadow: none;
+        cursor: not-allowed;
+    }
+
+    .button--quiet:disabled,
+    .button--icon:disabled,
+    .button--danger:not(.button--primary):disabled,
+    .button--link:disabled {
+        background: transparent;
+        border-color: transparent;
+    }
+
+    /* ── Field ─────────────────────────────────────────────────────────
+     *
+     * A label, the control and an optional hint or error, stacked. `.input`
+     * goes on the `input`, `textarea` or `select` itself, so a control
+     * outside a field looks the same. An error says what happened and how
+     * to fix it; the control points at it with `aria-describedby` and
+     * carries `aria-invalid="true"`. */
+
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .field__label {
+        font: 500 var(--control-font) / 1.3 var(--font-ui);
+        color: var(--ink-1);
+    }
+
+    .field__hint {
+        font-size: var(--control-small-font);
+        color: var(--ink-3);
+    }
+
+    .field__error {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        font-size: var(--control-small-font);
+        color: var(--danger-fg);
+    }
+
+    .input {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: var(--control-height);
+        padding: var(--control-block) var(--control-inline);
+        font: 400 var(--control-font) / 1.4 var(--font-ui);
+        color: var(--ink-1);
+        background: var(--surface-field);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-md);
+        transition:
+            border-color var(--dur-ui) var(--ease-out),
+            background var(--dur-ui) var(--ease-out),
+            box-shadow var(--dur-ui) var(--ease-out);
+    }
+
+    .input::placeholder {
+        color: var(--ink-placeholder);
+    }
+
+    .input:focus {
+        outline: none;
+        background: var(--surface-card);
+        border-color: var(--accent);
+        box-shadow: var(--ring-input);
+    }
+
+    .input[aria-invalid="true"] {
+        background: var(--danger-bg);
+        border-color: var(--danger-border);
+    }
+
+    .input[aria-invalid="true"]:focus {
+        box-shadow: 0 0 0 3px rgb(214 69 69 / 16%);
+    }
+
+    .input:disabled {
+        color: var(--ink-3);
+        cursor: not-allowed;
+    }
+
+    textarea.input {
+        resize: vertical;
+    }
+
+    select.input {
+        appearance: none;
+        padding-right: calc(var(--control-inline) + 20px);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a93a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 10 5 5 5-5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        background-size: 16px;
+    }
+
+    /* Verbatim input: codes, identifiers, source. */
+    .input--mono {
+        font-family: var(--font-mono);
+        font-size: calc(var(--control-font) - 1px);
+    }
+
+    /* ── Choice ────────────────────────────────────────────────────────
+     *
+     * A checkbox or radio and its words, as one line, so the words are
+     * the target and not the eight pixels of the control. */
+
+    .choice {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        font-size: var(--control-font);
+        line-height: 20px;
+        color: var(--ink-1);
+        cursor: pointer;
+    }
+
+    /* The box sits on the first line of the words, however many there are. */
+    .choice input {
+        margin: 2px 0 0;
+    }
+
+    .choice:has(input:disabled) {
+        cursor: default;
+    }
+
+    /* Drawn rather than native, so the box is the same size, colour and
+     * alignment in every browser and in the desktop window. */
+    input[type="checkbox"],
+    input[type="radio"] {
+        box-sizing: border-box;
+        flex-shrink: 0;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        vertical-align: -3px;
+        background: var(--surface-card) center / 12px no-repeat;
+        border: 1.5px solid var(--border-dashed);
+        border-radius: 4px;
+        appearance: none;
+        cursor: pointer;
+        transition:
+            background-color 120ms var(--ease-out),
+            border-color 120ms var(--ease-out),
+            box-shadow 120ms var(--ease-out);
+    }
+
+    input[type="radio"] {
+        border-radius: 50%;
+    }
+
+    input[type="checkbox"]:hover:not(:disabled),
+    input[type="radio"]:hover:not(:disabled) {
+        border-color: var(--accent);
+    }
+
+    input[type="checkbox"]:checked {
+        background-color: var(--accent);
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        border-color: var(--accent);
+    }
+
+    input[type="radio"]:checked {
+        background-color: var(--surface-card);
+        border-color: var(--accent);
+        box-shadow: inset 0 0 0 3px var(--surface-card), inset 0 0 0 8px var(--accent);
+    }
+
+    input[type="checkbox"]:disabled,
+    input[type="radio"]:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+
+    /* A set of choices: the question is the legend. */
+    .fieldset {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        margin: 0;
+        padding: var(--space-3) var(--space-4) var(--space-4);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+    }
+
+    /* WebKit lays a legend out as a flex item and stretches it, which
+     * takes the whole top border away with it. */
+    .fieldset > legend {
+        width: fit-content;
+        padding: 0 var(--space-1);
+        font: var(--text-small);
+        color: var(--ink-2);
+    }
+
+    /* ── Chip ──────────────────────────────────────────────────────────
+     *
+     * A state with a fixed meaning. Always words, so colour is never the
+     * only cue; a glyph may go before them. */
+
+    .chip {
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        font: var(--text-label);
+        white-space: nowrap;
+        color: var(--ink-2);
+        background: var(--fill-muted);
+        border: 1px solid transparent;
+        border-radius: var(--radius-pill);
+    }
+
+    .chip--accent {
+        color: var(--accent-soft-fg);
+        background: var(--accent-soft-bg);
+    }
+
+    .chip--success {
+        color: var(--success-fg);
+        background: var(--success-bg);
+    }
+
+    .chip--warning {
+        color: var(--warning-fg);
+        background: var(--warning-bg);
+    }
+
+    .chip--danger {
+        color: var(--danger-fg);
+        background: var(--danger-bg);
+        border-color: rgb(214 69 69 / 25%);
+    }
+
+    /* Something missing: a dashed outline and no fill. */
+    .chip--dashed {
+        color: var(--ink-3);
+        background: transparent;
+        border: 1px dashed var(--border-dashed);
+    }
+
+    .chip .glyph {
+        width: 13px;
+        height: 13px;
+        stroke-width: 2;
+    }
+
+    /* A small number beside a heading or a destination. */
+    .count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 20px;
+        box-sizing: border-box;
+        padding: 1px 7px;
+        font: var(--text-label);
+        font-variant-numeric: tabular-nums;
+        color: var(--ink-2);
+        background: var(--fill-muted-strong);
+        border-radius: var(--radius-pill);
+    }
+
+    /* ── Avatar and badge ──────────────────────────────────────────────
+     *
+     * A person is a circle with an initial; a group is a rounded square
+     * with its initials. */
+
+    .avatar {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        font: 600 14px / 1 var(--font-ui);
+        color: #fff;
+        background: linear-gradient(135deg, #6f9ff0, var(--accent));
+        border-radius: 50%;
+    }
+
+    .badge {
+        display: inline-flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        font: 500 16px / 1 var(--font-ui);
+        color: #e3eeff;
+        background: radial-gradient(120% 90% at 50% 120%, var(--blue-400) 0%, var(--navy-700) 55%, var(--navy-850) 100%);
+        border-radius: var(--radius-md);
+    }
+
+    /* ── Card ──────────────────────────────────────────────────────────
+     *
+     * White on the page. `--empty` is an empty state or an invitation to
+     * make something, outlined in dashes. */
+
+    .card {
+        box-sizing: border-box;
+        color: var(--ink-1);
+        background: var(--surface-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-card);
+    }
+
+    .card--empty {
+        background: transparent;
+        border: 1px dashed var(--border-dashed);
+        box-shadow: none;
+    }
+
+    /* The special resource of a group: the brand light rises in it. */
+    .card--vault {
+        color: #e3eeff;
+        background: var(--glow-vault);
+        border: 0;
+        box-shadow: none;
+    }
+
+    /* A line of text saying there is nothing here yet, and what to do. */
+    .empty {
+        margin: 0;
+        color: var(--ink-3);
+    }
+
+    /* ── Table ─────────────────────────────────────────────────────────
+     *
+     * Rows in a card. A row that goes somewhere is an `a` with the class
+     * `.table__row`, whole, ending in a chevron. The columns are the
+     * consumer's: set `--columns` on the table, as a track list. */
+
+    .table {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .table__head,
+    .table__row {
+        display: grid;
+        grid-template-columns: var(--columns, 1fr);
+        gap: var(--space-4);
+        align-items: center;
+        padding: var(--space-3) var(--space-6);
+    }
+
+    .table__head {
+        padding-block: 10px;
+        font: var(--text-label);
+        color: var(--ink-3);
+        background: var(--surface-subtle);
+        border-block: 1px solid var(--divider);
+    }
+
+    .table__row {
+        min-height: 60px;
+        box-sizing: border-box;
+        color: var(--ink-1);
+        text-decoration: none;
+        border-bottom: 1px solid var(--divider);
+        transition: background var(--dur-ui) var(--ease-out);
+    }
+
+    .table__row:last-child {
+        border-bottom: 0;
+    }
+
+    a.table__row:hover {
+        background: var(--surface-subtle);
+    }
+
+    .chevron {
+        color: var(--ink-4);
+    }
+
+    /* ── Menu ──────────────────────────────────────────────────────────
+     *
+     * A panel of actions or destinations, one `.menu__item` each. Works as
+     * a `popover`; where it opens is the consumer's to say. `aria-current`
+     * or `aria-checked="true"` marks where you are. Destructive items go
+     * last, after a separator. */
+
+    .menu {
+        box-sizing: border-box;
+        min-width: 200px;
+        margin: 0;
+        padding: 6px;
+        color: var(--ink-1);
+        background: var(--surface-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow-float);
+    }
+
+    .menu__item {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        min-height: 36px;
+        padding: 0 10px;
+        font: 400 14px / 1.3 var(--font-ui);
+        color: inherit;
+        text-align: left;
+        text-decoration: none;
+        background: transparent;
+        border: 0;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+    }
+
+    .menu__item:hover,
+    .menu__item:focus-visible {
+        background: var(--fill-muted);
+        outline-offset: -2px;
+    }
+
+    .menu__item[aria-current]:not([aria-current="false"]),
+    .menu__item[aria-checked="true"] {
+        font-weight: 500;
+        color: var(--accent-soft-fg);
+    }
+
+    .menu__item:disabled {
+        color: var(--ink-disabled);
+        background: transparent;
+        cursor: not-allowed;
+    }
+
+    .menu__item--danger {
+        color: var(--danger-fg);
+    }
+
+    .menu__item--danger:hover {
+        background: var(--danger-bg);
+    }
+
+    .menu__item .glyph {
+        width: 16px;
+        height: 16px;
+        color: var(--ink-3);
+    }
+
+    .menu__item--danger .glyph {
+        color: inherit;
+    }
+
+    .menu__hint {
+        margin-left: auto;
+        font: var(--text-mono-sm);
+        color: var(--ink-3);
+    }
+
+    .menu__separator {
+        height: 1px;
+        margin: 6px 4px;
+        background: var(--divider);
+        border: 0;
+    }
+
+    .menu__heading {
+        margin: 0;
+        padding: 8px 10px 4px;
+        font: var(--text-label);
+        color: var(--ink-3);
+    }
+
+    /* ── Dialog ────────────────────────────────────────────────────────
+     *
+     * On a `dialog` opened with `showModal()`: a title in a sentence, what
+     * will happen, and the buttons at the right, the exact verb last. */
+
+    .dialog {
+        box-sizing: border-box;
+        width: min(520px, calc(100vw - 32px));
+        max-height: calc(100vh - 64px);
+        padding: 0;
+        color: var(--ink-1);
+        background: var(--surface-card);
+        border: 0;
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-float);
+    }
+
+    /* A dialog takes the focus itself when opened; the ring is for its
+     * controls. */
+    .dialog:focus {
+        outline: none;
+    }
+
+    .dialog::backdrop {
+        background: rgb(3 14 41 / 45%);
+    }
+
+    .dialog__body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-4);
+        padding: var(--space-6);
+    }
+
+    .dialog__title {
+        margin: 0;
+        font: var(--text-section);
+    }
+
+    .dialog__text {
+        margin: 0;
+        font: var(--text-meta);
+        color: var(--ink-2);
+    }
+
+    .dialog__actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--space-2);
+        padding-top: var(--space-2);
+    }
+
+    /* ── Notice ────────────────────────────────────────────────────────
+     *
+     * Something that went wrong with what was asked, above the thing it is
+     * about. `--warning` is a condition to keep in mind; plain is neutral. */
+
+    .problem {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        margin: 0;
+        padding: 10px 14px;
+        font: var(--text-meta);
+        color: var(--danger-fg);
+        background: var(--danger-bg);
+        border: 1px solid rgb(214 69 69 / 30%);
+        border-radius: var(--radius-md);
+    }
+
+    .notice {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-2);
+        margin: 0;
+        padding: 10px 14px;
+        font: var(--text-meta);
+        color: var(--ink-2);
+        background: var(--surface-subtle);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+    }
+
+    .notice--warning {
+        color: var(--warning-fg);
+        background: var(--warning-bg);
+        border-color: transparent;
+    }
+
+    .notice--success {
+        color: var(--success-fg);
+        background: var(--success-bg);
+        border-color: transparent;
+    }
+
+    /* ── Toast ─────────────────────────────────────────────────────────
+     *
+     * One line saying what just happened, with an optional action. Where
+     * it sits is the consumer's to say. */
+
+    .toast {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        max-width: min(560px, calc(100vw - 32px));
+        padding: 10px 12px 10px 16px;
+        font: var(--text-meta);
+        color: var(--on-dark-1);
+        background: var(--navy-800);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-float);
+    }
+
+    .toast--error {
+        color: var(--danger-fg);
+        background: var(--surface-card);
+        border: 1px solid rgb(214 69 69 / 35%);
+    }
+
+    .toast .button--link {
+        color: var(--sky-200);
+    }
+
+    .toast--error .button--link {
+        color: var(--danger-fg);
+    }
+
+    /* ── Tooltip ───────────────────────────────────────────────────────
+     *
+     * Dark, small, for icon-only buttons; with the shortcut when there is
+     * one. */
+
+    .tooltip {
+        box-sizing: border-box;
+        padding: 5px 8px;
+        font: 400 13px / 1.3 var(--font-ui);
+        color: var(--on-dark-1);
+        white-space: nowrap;
+        background: var(--navy-800);
+        border-radius: var(--radius-xs);
+        pointer-events: none;
+    }
+
+    .tooltip kbd {
+        margin-left: 6px;
+        font: inherit;
+        color: var(--on-dark-3);
+    }
+
+    /* ── Segmented control ─────────────────────────────────────────────
+     *
+     * Two or three views of one thing. Each option is a button with
+     * `aria-pressed`. */
+
+    .segmented {
+        display: inline-flex;
+        gap: 2px;
+        padding: 3px;
+        background: var(--fill-muted);
+        border-radius: 12px;
+    }
+
+    .segmented > button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        padding: 0 14px;
+        font: 500 14px / 1 var(--font-ui);
+        color: var(--ink-3);
+        background: transparent;
+        border: 0;
+        border-radius: 9px;
+        cursor: pointer;
+        transition: background var(--dur-ui) var(--ease-out), color var(--dur-ui) var(--ease-out);
+    }
+
+    .segmented > button:hover {
+        color: var(--ink-1);
+    }
+
+    .segmented > button[aria-pressed="true"] {
+        color: var(--ink-1);
+        background: var(--surface-card);
+        box-shadow: 0 1px 2px rgb(20 40 90 / 10%);
+    }
+
+    .segmented .glyph {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* ── Loading ───────────────────────────────────────────────────────
+     *
+     * A grey shape where content will be; a spinner only inside a button
+     * or beside a job. */
+
+    .skeleton {
+        background: var(--fill-muted);
+        border-radius: var(--radius-sm);
+    }
+
+    .spinner {
+        display: inline-block;
+        flex-shrink: 0;
+        width: 14px;
+        height: 14px;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: stemma-spin 0.8s linear infinite;
+    }
+
+    @keyframes stemma-spin {
+        to {
+            transform: rotate(1turn);
+        }
+    }
+
+    /* ── The wordmark ──────────────────────────────────────────────────
+     *
+     * "Stemma" in Inter, the only place that face is used. */
+
+    .wordmark {
+        font-family: var(--font-brand);
+        font-weight: 480;
+        letter-spacing: -0.035em;
+        line-height: 1;
+    }
+}

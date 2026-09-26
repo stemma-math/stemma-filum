@@ -503,7 +503,7 @@ fn asked(
             p class="label" {
                 a href={ "/g/" (group.slug()) } { (group.name) }
             }
-            h1 { "New line" }
+            h1 { "New line of work" }
 
             @if let Some(problem) = problem {
                 p class="problem" { (problem) }
@@ -514,18 +514,18 @@ fn asked(
 
                 label class="field" {
                     span class="label" { "Title" }
-                    input type="text" name="title" value=(title) autofocus required;
+                    input class="input" type="text" name="title" value=(title) autofocus required;
                 }
 
                 label class="field" {
                     span class="label" { "Description" }
-                    textarea name="description" rows="3" { (description) }
+                    textarea class="input" name="description" rows="3" { (description) }
                     span class="field__hint" {
                         "Optional. What this line is about, in a sentence or two."
                     }
                 }
 
-                fieldset {
+                fieldset class="fieldset" {
                     legend class="label" { "Visibility" }
 
                     label class="choice" {
@@ -542,7 +542,7 @@ fn asked(
                     }
                 }
 
-                button class="button" type="submit" { "Create line" }
+                button class="button button--primary" type="submit" { "Create line" }
             }
         }
     }
@@ -604,7 +604,7 @@ fn offered(
                  class="stack" {
                 (signature(signed))
 
-                fieldset {
+                fieldset class="fieldset" {
                     legend class="label" { "History to share" }
 
                     label class="choice" {
@@ -617,7 +617,7 @@ fn offered(
                     }
                 }
 
-                fieldset {
+                fieldset class="fieldset" {
                     legend class="label" { "Who can write" }
 
                     label class="choice" {
@@ -647,7 +647,7 @@ fn offered(
                     }
                 }
 
-                button class="button" type="submit" disabled[!held.is_empty()] {
+                button class="button button--primary" type="submit" disabled[!held.is_empty()] {
                     "Share"
                 }
             }

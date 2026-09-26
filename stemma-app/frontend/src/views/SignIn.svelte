@@ -62,22 +62,27 @@
 <Entrance>
   <Brand />
   {#if beginning}
-    <span class="entrance-kicker">Secure connection</span>
-    <h1>Type this code</h1>
-    <p class="code">{beginning.code}</p>
-    <p class="quiet">at {beginning.url}</p>
-    <button onclick={() => api.openLink(beginning!.url_complete).catch(() => {})}>Open it in the browser</button>
-    <p class="quiet">Waiting for approval in your browser...</p>
-    <button class="quiet-button" onclick={() => restart()}>Use a different server</button>
+    <h1 class="entrance__title">Type this code</h1>
+    <p class="entrance__text">Open the address below in your browser, sign in, and type the code to let this machine act for you.</p>
+    <p class="entrance__code identifier">{beginning.code}</p>
+    <p class="entrance__text identifier">{beginning.url}</p>
+    <div class="row__actions">
+      <button type="button" class="button button--primary" onclick={() => api.openLink(beginning!.url_complete).catch(() => {})}>Open it in the browser</button>
+      <button type="button" class="button" onclick={() => restart()}>Use a different server</button>
+    </div>
+    <p class="entrance__waiting"><span class="spinner" aria-hidden="true"></span>Waiting for approval in your browser…</p>
   {:else}
-    <span class="entrance-kicker">Desktop workspace</span>
-    <h1>Connect this machine</h1>
-    <p class="quiet">Enter the address of your Stemma server. You will confirm access in your browser.</p>
-    {#if problem}<p class="problem">{problem}</p>{/if}
-    <form onsubmit={begin}>
-      <!-- svelte-ignore a11y_autofocus -->
-      <input type="text" bind:value={server} placeholder="stemma.example.org" aria-label="Server address" autofocus />
-      <button type="submit">Continue</button>
+    <h1 class="entrance__title">Connect this machine</h1>
+    <p class="entrance__text">Enter the address of your Stemma server. You will confirm access in your browser.</p>
+    <form class="stack" onsubmit={begin}>
+      <label class="field">
+        <span class="field__label">Server address</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="input" type="text" bind:value={server} placeholder="stemma.example.org" autofocus
+          aria-invalid={problem ? "true" : undefined} aria-describedby={problem ? "sign-in-problem" : undefined} />
+        {#if problem}<span class="field__error" id="sign-in-problem">{problem}</span>{/if}
+      </label>
+      <div class="row__actions"><button class="button button--primary" type="submit">Continue</button></div>
     </form>
   {/if}
 </Entrance>

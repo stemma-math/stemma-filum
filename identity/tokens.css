@@ -1,80 +1,193 @@
-/* Stemma design tokens.
- *
- * Deep blue identifies the product and its navigation; cool paper-like
- * surfaces hold the work. Serif is reserved for mathematics and signed
- * prose, grotesk for interface language and mono for verbatim material.
- * Only three colours carry meaning: a human commitment (`--ditto`), a
- * machine proof (`--verified`) and a refutation (`--refuted`).
- */
+/* Generated from tokens.json by build.mjs. Do not edit. */
 
 :root {
-    color-scheme: light;
-
-    /* Surfaces and ink. */
-    --paper: #f1f5f9;
-    --paper-raise: #ffffff;
-    --paper-sunk: #e9eff6;
-    --ink: #101d2f;
-    --ink-2: #48566a;
-    --ink-3: #758298;
-    --rule: #d5dfea;
-    --rule-soft: #e6edf4;
-
-    /* Earned colours. */
-    --ditto: #2d6de7;
-    --verified: #0c7a66;
-    --refuted: #b33b4a;
-
-    /* The product's blue. */
-    --night: #031a3b;
-    --night-deep: #01122d;
-    --night-soft: #0b3972;
-    --navy: #06234c;
-    --blue: #69a7ff;
-    --blue-soft: #dceaff;
-    --focus-ring: 0 0 0 3px rgb(45 109 231 / 12%);
-    --panel-shadow: 0 12px 36px rgb(25 53 84 / 8%);
-
-    /* The mark, one colour per node and the edge leaving it. */
-    --mark-top: #f3f9ff;
-    --mark-left: #a9ceff;
-    --mark-right: #72aaf2;
-
-    /* Faces. */
-    --serif: "Libertinus Serif", "Linux Libertine O", Georgia, serif;
-    --grotesk: "Archivo", "Archivo Narrow", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    --narrow: "Archivo Narrow", "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
-    --mono: "Iosevka", "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
-
-    /* Type scale. */
+    /* Brand navy ramp, for dark surfaces. The front page and the theme colour. */
+    --navy-950: #030e29;
+    /* Top of the sidebar gradient. */
+    --navy-900: #030f2c;
+    /* Brand badges, top of the vault card. */
+    --navy-850: #04133a;
+    /* Bottom of the sidebar gradient; tooltips. */
+    --navy-800: #061a45;
+    --navy-700: #0b2a66;
+    --blue-600: #1a4f9e;
+    --blue-500: #2f5fd6;
+    --blue-400: #3f7fd4;
+    --sky-300: #8fb6e8;
+    --sky-200: #a8c9f0;
+    --ice-100: #dbe7ff;
+    --ice-50: #f4f8ff;
+    /* Primary buttons, links, selection. White on it is 5.6:1. */
+    --accent: #2f5fd6;
+    --accent-hover: #244a9e;
+    /* Role chips, the Central chip. */
+    --accent-soft-bg: #e9effc;
+    /* 7.2:1 on accent-soft-bg. */
+    --accent-soft-fg: #244a9e;
+    /* A 2px outline, 2px offset, on every focusable element. */
+    --focus-ring: #6f9cff;
+    /* Light surfaces, where the work is. */
+    --surface-page: #f3f5fa;
+    --surface-card: #ffffff;
+    /* Table header rows. */
+    --surface-subtle: #f8fafd;
+    /* Inputs at rest; white when focused. */
+    --surface-field: #f7f9fc;
+    /* Neutral chips, segmented control tracks, skeletons. */
+    --fill-muted: #eef1f6;
+    /* Count badges. */
+    --fill-muted-strong: #e6ebf4;
+    --border: #e3e8f1;
+    /* Outline buttons, inputs. */
+    --border-strong: #d7deea;
+    /* Empty states, a missing formalization. */
+    --border-dashed: #c6d0e2;
+    --divider: #eef1f6;
+    /* Text, 17.3:1 on white. */
+    --ink-1: #111a2e;
+    /* Secondary headings, chip text, 9.6:1. */
+    --ink-2: #3c4557;
+    /* Meta text and captions, 5.9:1. */
+    --ink-3: #5b6477;
+    /* Icons only (chevrons, drag handles): 3.1:1 fails for text. */
+    --ink-4: #8a93a6;
+    /* Placeholders, 4.7:1. */
+    --ink-placeholder: #6c7488;
+    --ink-disabled: #a3abbb;
+    /* Text on navy: the current item, names. 15.9:1 on navy-800. */
+    --on-dark-1: #f4f8ff;
+    /* Navigation items, 11.3:1. */
+    --on-dark-2: #c6d4ee;
+    /* Secondary, 8.0:1. */
+    --on-dark-3: #9fb3d6;
+    /* Section labels, identifiers, 6.8:1. */
+    --on-dark-4: #8fa6cc;
+    --on-dark-line: rgba(170, 200, 240, .18);
+    --on-dark-fill: rgba(255, 255, 255, .05);
+    /* The current navigation item. */
+    --on-dark-active: rgba(143, 182, 232, .16);
+    /* The user card and the sync card. */
+    --on-dark-card: rgba(3, 15, 44, .62);
+    /* Something done or in good order. */
+    --success-fg: #1f6b47;
+    --success-bg: #e6f4ec;
+    --success-icon: #2f8a5b;
+    --success-dot: #4cc38a;
+    /* Destructive actions and errors. */
+    --danger-fg: #b42318;
+    --danger-bg: #fff7f7;
+    --danger-border: #d64545;
+    --warning-fg: #8a4a06;
+    --warning-bg: #fcefdc;
+    /* Block kinds in the editor. A label always goes with the colour. */
+    --block-prose-fg: #3c4557;
+    --block-prose-bg: #eef1f6;
+    /* 6.6:1 on its background. */
+    --block-definition-fg: #4a3fc0;
+    --block-definition-bg: #efedfc;
+    /* Theorems and every other result environment. 6.1:1. */
+    --block-result-fg: #8a4a06;
+    --block-result-bg: #fcefdc;
+    /* The brand light rising from below. Only on the front page, the sidebars, the vault card and app icons. */
+    --glow-sidebar: radial-gradient(150% 48% at 50% 112%, rgba(168, 201, 240, .42) 0%, rgba(63, 127, 212, .30) 30%, rgba(10, 36, 88, 0) 64%), linear-gradient(180deg, var(--navy-900) 0%, var(--navy-800) 100%);
+    --glow-vault: radial-gradient(130% 80% at 50% 125%, rgba(143, 182, 232, .55) 0%, rgba(63, 127, 212, .35) 32%, rgba(4, 19, 58, 0) 70%), linear-gradient(180deg, var(--navy-850) 0%, #0a2458 100%);
+    /* The interface's own words. */
+    --font-ui: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+    /* The wordmark, and nothing else: weight 420–480, tracking -0.035em to -0.049em. */
+    --font-brand: Inter, 'SF Pro Display', system-ui, sans-serif;
+    /* Identifiers: usr:, grp:, thm:, paths, versions. */
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* Mathematical content, as the typeset line sets it. */
+    --font-math: 'Libertinus Serif', 'Linux Libertine O', Georgia, serif;
+    /* Page titles, with letter-spacing -0.02em. */
+    --text-display: 600 34px/1.1 var(--font-ui);
+    /* The editor's document title. */
+    --text-title: 600 22px/1.2 var(--font-ui);
+    /* Card titles, -0.01em. */
+    --text-card: 600 19px/1.3 var(--font-ui);
+    /* Section headings in content. */
+    --text-section: 600 18px/1.3 var(--font-ui);
+    --text-body: 400 16px/1.5 var(--font-ui);
+    /* 500 when current. */
+    --text-nav: 400 15px/1.3 var(--font-ui);
+    --text-meta: 400 14px/1.45 var(--font-ui);
+    --text-small: 500 13px/1.4 var(--font-ui);
+    /* Chips, table headers, section labels. Sentence case, never uppercase. */
+    --text-label: 500 12px/1.3 var(--font-ui);
+    --text-mono-sm: 400 12px/1.4 var(--font-mono);
+    --text-content: 400 19px/1.55 var(--font-math);
+    /* A type scale for sizes the text roles do not cover. */
     --step-1: 12px;
     --step-2: 13px;
     --step-3: 15px;
-    --step-4: 17px;
-    --step-5: 21px;
-    --step-6: 27px;
+    --step-4: 16px;
+    --step-5: 19px;
+    --step-6: 22px;
     --step-7: 34px;
-
-    /* Spacing. */
+    /* A 4px grid. */
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 12px;
     --space-4: 16px;
-    --space-5: 24px;
-    --space-6: 32px;
-    --space-7: 48px;
-    --space-8: 64px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-11: 44px;
+    --space-12: 48px;
+    --space-14: 56px;
+    --space-16: 64px;
+    /* Tiny badges. */
+    --radius-xs: 6px;
+    /* Icon buttons, small inputs in block headers. */
+    --radius-sm: 8px;
+    /* Buttons, navigation items, fields. */
+    --radius-md: 10px;
+    /* Block cards, the user card, the floating bar. */
+    --radius-lg: 14px;
+    /* Content cards and dialogs. */
+    --radius-xl: 16px;
+    /* The sign-in card. */
+    --radius-2xl: 22px;
+    --radius-pill: 999px;
+    --sidebar-web: 272px;
+    --sidebar-desktop: 256px;
+    /* The right rail on a group's page. */
+    --rail-group: 340px;
+    /* The right panel in the editor. */
+    --panel-desktop: 300px;
+    --content-max: 1200px;
+    --shadow-card: 0 1px 2px rgba(20, 40, 90, .04);
+    /* Floating bars, popovers, menus, dialogs. */
+    --shadow-float: 0 10px 30px -12px rgba(20, 40, 90, .25);
+    --shadow-auth: 0 1px 2px rgba(20, 40, 90, .04), 0 18px 50px -24px rgba(30, 60, 130, .18);
+    /* A selected block, with a #cfd9f2 border. */
+    --ring-selected: 0 0 0 3px rgba(47, 95, 214, .10);
+    /* A focused input, with an accent border. */
+    --ring-input: 0 0 0 3px rgba(47, 95, 214, .18);
+    /* Buttons scale to .96 while pressed. */
+    --dur-press: 120ms;
+    /* Hovers and popovers. */
+    --dur-ui: 180ms;
+    --ease-out: cubic-bezier(.22, 1, .36, 1);
+    /* The front page giving way to the sign-in; 500ms with reduced motion. */
+    --dur-landing: 1600ms;
 }
 
-/* The mark (`mark.svg`). Size and placement belong to whoever uses it. */
-
-.brand-mark__edge {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 3;
-    stroke-linecap: round;
+:root,
+[data-density="comfortable"] {
+    --control-height: 40px;
+    --control-font: var(--step-3);
+    --control-small-font: var(--step-2);
+    --control-block: var(--space-2);
+    --control-inline: var(--space-3);
+    --button-inline: var(--space-4);
 }
 
-.brand-mark__node {
-    fill: currentColor;
+[data-density="compact"] {
+    --control-height: 34px;
+    --control-font: 14px;
+    --control-small-font: var(--step-1);
+    --control-block: 6px;
+    --control-inline: 10px;
+    --button-inline: 14px;
 }

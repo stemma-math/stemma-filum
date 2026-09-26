@@ -282,13 +282,31 @@ fn git() -> Router<Instance> {
     )
 }
 
-/// Stylesheet, faces, scripts and textures.
+/// Stylesheet, faces, scripts, textures, the mark and the icons.
 fn assets() -> Router<Instance> {
-    Router::new()
+    let router = Router::new()
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
-        .route(assets::SURFACE_PATH, get(assets::surface))
+        .route(assets::LANDING_PATH, get(assets::landing))
+        .route(assets::MARK_ANIMATED_PATH, get(assets::mark_animated))
+        .route(assets::SYMBOL_PATH, get(assets::symbol))
+        .route(assets::SHELL_PATH, get(assets::shell))
+        .route(assets::GLYPHS_PATH, get(assets::glyphs))
         .route(assets::NOISE_PATH, get(assets::noise))
-        .route(assets::FONT_PATH, get(assets::font))
+        .route(assets::MARK_ON_DARK_PATH, get(assets::mark_on_dark))
+        .route(assets::MARK_ON_LIGHT_PATH, get(assets::mark_on_light))
+        .route(assets::MANIFEST_PATH, get(assets::manifest))
+        .route(assets::FONT_PATH, get(assets::font));
+
+    stemma_identity::WEB_ICONS
+        .iter()
+        .fold(router, |router, (name, _)| {
+            router.route(
+                &format!("/{name}"),
+                get(move |headers: axum::http::HeaderMap| async move {
+                    assets::icon(name, &headers)
+                }),
+            )
+        })
 }
 
 /// What became of a message.

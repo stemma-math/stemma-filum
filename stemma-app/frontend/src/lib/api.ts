@@ -10,6 +10,9 @@ type Bridge = { core: { invoke<T>(command: string, args?: Record<string, unknown
 declare global {
   interface Window {
     __TAURI__?: Bridge & {
+      event?: {
+        listen<T>(name: string, handler: (event: { payload: T }) => void): Promise<() => void>;
+      };
       window?: {
         getCurrentWindow(): {
           onCloseRequested(
@@ -27,6 +30,11 @@ function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) return Promise.reject(new Error("this window has no application behind it"));
   return invoke<T>(command, args);
+}
+
+/** Hears a view chosen from the application's menu. */
+export function onViewChosen(handler: (view: string) => void): Promise<() => void> {
+  return window.__TAURI__?.event?.listen<string>("view", (event) => handler(event.payload)) ?? Promise.resolve(() => {});
 }
 
 /** An error as a sentence, without the `Error:` prefix. */

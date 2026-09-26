@@ -353,13 +353,20 @@ fn body(
         .count();
 
     html! {
-        div class="stack" {
-            h1 { (machine.label) }
-            p class="quiet identifier" { (machine.id.to_string()) }
-            p class="quiet" {
-                (machine.presence)
-                @if let Some(seen) = &machine.last_seen_at {
-                    " · last heard from " (seen)
+        header class="page-head" {
+            div class="page-head__text" {
+                h1 class="page-title" { (machine.label) }
+                div class="page-meta" {
+                    span class="identifier" { (machine.id.to_string()) }
+                    @match machine.presence {
+                        stemma_core::machine::Presence::Awake => {
+                            span class="chip chip--success" { span class="dot" {} "Online" }
+                        }
+                        stemma_core::machine::Presence::Asleep => span class="chip" { "Offline" },
+                    }
+                    @if let Some(seen) = &machine.last_seen_at {
+                        span { "Last heard from " (seen) }
+                    }
                 }
             }
         }
@@ -394,7 +401,7 @@ fn body(
                                 input type="hidden" name="group" value=(group.slug());
                                 input type="hidden" name="serve"
                                       value=@if *serving { "no" } @else { "yes" };
-                                button class="button button--quiet" type="submit" {
+                                button class="button" type="submit" {
                                     @match serving {
                                         true => "Stop running jobs",
                                         false => "Run jobs",
@@ -414,9 +421,12 @@ fn body(
             p class="quiet" {
                 "Remove access for this machine and stop assigning new work to it."
             }
-            form method="post" action={ "/machines/" (machine.id) "/retire" } {
+            form method="post" action={ "/machines/" (machine.id) "/retire" }
+                 data-confirm-title="Revoke this machine?"
+                 data-confirm-text="It loses access to this instance and gets no new work. Signing it in again makes it a new machine."
+                 data-confirm-verb="Revoke access" {
                 (signature(signed))
-                button class="button button--quiet" type="submit" { "Revoke access" }
+                button class="button button--danger" type="submit" { "Revoke access" }
             }
         }
     }
@@ -480,7 +490,7 @@ fn job_list(signed: &SignedIn, machine: &Machine, ran: &[jobs::Job], owed: usize
                                      action={ "/machines/" (machine.id) "/jobs/"
                                               (job.id) "/clear" } {
                                     (signature(signed))
-                                    button class="button button--quiet" type="submit" {
+                                    button class="button" type="submit" {
                                         "Mark as resolved"
                                     }
                                 }

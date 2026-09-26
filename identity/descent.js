@@ -37,15 +37,15 @@ const palette = (figure) => {
     const token = (name, fallback) => styles.getPropertyValue(name).trim() || fallback;
 
     return {
-        ink: token("--ink", "#101d2f"),
-        quiet: token("--ink-3", "#758298"),
-        rule: token("--rule", "#d5dfea"),
-        soft: token("--rule-soft", "#e6edf4"),
-        ditto: token("--ditto", "#2d6de7"),
-        verified: token("--verified", "#0c7a66"),
-        paper: token("--paper", "#f1f5f9"),
-        mono: token("--mono", "monospace"),
-        grotesk: token("--grotesk", "sans-serif"),
+        ink: token("--ink-1", "#111a2e"),
+        quiet: token("--ink-3", "#5b6477"),
+        rule: token("--border", "#e3e8f1"),
+        soft: token("--divider", "#eef1f6"),
+        ditto: token("--accent", "#2f5fd6"),
+        verified: token("--success-fg", "#1f6b47"),
+        paper: token("--surface-page", "#f3f5fa"),
+        mono: token("--font-mono", "monospace"),
+        grotesk: token("--font-ui", "sans-serif"),
     };
 };
 

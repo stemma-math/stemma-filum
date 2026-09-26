@@ -14,6 +14,8 @@ mod claims;
 mod compose;
 mod editing;
 mod machine;
+#[cfg(target_os = "macos")]
+mod menu;
 mod reviews;
 mod vault;
 mod workspace;
@@ -22,7 +24,12 @@ use stemma::home::{Environment, Home};
 
 /// Starts the desktop application.
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(menu::build).on_menu_event(menu::chosen);
+
+    builder
         .manage(account::SigningIn::default())
         .invoke_handler(tauri::generate_handler![
             account::whoami,

@@ -17,7 +17,10 @@
         "width": 1480,
         "height": 940,
         "minWidth": 820,
-        "minHeight": 600
+        "minHeight": 600,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -33,7 +36,9 @@
       "../identity/icons/32x32.png",
       "../identity/icons/128x128.png",
       "../identity/icons/128x128@2x.png",
-      "../identity/icons/icon.icns"
+      "../identity/icons/icon.png",
+      "../identity/icons/icon.icns",
+      "../identity/icons/icon.ico"
     ],
     "category": "DeveloperTool",
     "shortDescription": "A daily working platform for mathematics research groups",

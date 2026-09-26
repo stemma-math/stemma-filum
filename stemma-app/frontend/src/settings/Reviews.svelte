@@ -3,7 +3,7 @@
   import { api, said } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import { latestRequest } from "../lib/lifecycle";
-  import { tell } from "../lib/status.svelte";
+  import { fail, tell } from "../lib/status.svelte";
   import type { Moved, Review, Verdict } from "../lib/types";
 
   const readRequest = latestRequest();
@@ -23,20 +23,20 @@
       const next = await api.proposal(proposal);
       if (active()) reading = next;
     } catch (error) {
-      tell(said(error));
+      fail(error);
     }
   }
 
   async function decide(proposal: string, verdict: Verdict) {
-    try { tell(await api.decideProposal(proposal, verdict)); } catch (error) { tell(said(error)); return; }
+    try { tell(await api.decideProposal(proposal, verdict)); } catch (error) { fail(error); return; }
     if (verdict === "accept") {
-      try { tell(await api.applyProposal(proposal)); } catch (error) { tell(`accepted, and not written here: ${said(error)}`); }
+      try { tell(await api.applyProposal(proposal)); } catch (error) { fail(`Accepted, and not written here: ${said(error)}`); }
     }
     await load();
   }
 
   async function write(proposal: string) {
-    try { tell(await api.applyProposal(proposal)); } catch (error) { tell(said(error)); }
+    try { tell(await api.applyProposal(proposal)); } catch (error) { fail(error); }
   }
 
   /** Classes for one diff row; a frozen run is framed as a whole. */
@@ -56,33 +56,33 @@
   onMount(load);
 </script>
 
-<h2>Reviews</h2>
-<p class="quiet">Agent proposals waiting for review.</p>
-<div>
+<h3 class="settings__title">Reviews</h3>
+<p class="setting__note">Agent proposals waiting for review.</p>
+<div class="reviews">
   {#if problem}
-    {problem}
+    <p class="setting__note setting__note--failed">{problem}</p>
   {:else if !loaded}
-    Loading...
+    <div class="skeleton setting__skeleton"></div>
   {:else}
     {#each app.waiting as one (one.proposal)}
       <div class="row">
         <div>
           <p class="row__name">{one.line}</p>
-          <p class="quiet">{one.task} · {one.agent} · {one.vendor} {one.model}</p>
+          <p class="row__meta"><span class="identifier">{one.task}</span> · {one.agent} · {one.vendor} {one.model}</p>
         </div>
-        <div class="row__actions"><button onclick={() => read(one.proposal)}>Open</button></div>
+        <div class="row__actions"><button type="button" class="button button--small" onclick={() => read(one.proposal)}>Open</button></div>
       </div>
     {:else}
-      <p class="quiet">There are no proposals awaiting your review.</p>
+      <p class="empty-box">There are no proposals awaiting your review.</p>
     {/each}
   {/if}
 </div>
-<section>
-  {#if reading}
-    {@const review = reading}
-    <p class="label">{review.line} · {review.task}</p>
-    <p class="quiet identifier">{review.vendor} · {review.model} · prompt {review.prompt_revision}</p>
-    <p class="label">What changed · {review.extent}</p>
+{#if reading}
+  {@const review = reading}
+  <section class="review">
+    <h4 class="setting__title">{review.line} · <span class="identifier">{review.task}</span></h4>
+    <p class="row__meta identifier">{review.vendor} · {review.model} · prompt {review.prompt_revision}</p>
+    <h4 class="setting__title">What changed <span class="count">{review.extent}</span></h4>
     <div class="diff">
       {#each review.rows as row, at (at)}
         <div class={rowClass(review.rows, at)}>
@@ -96,23 +96,23 @@
       {/each}
     </div>
     {#if review.lean_source}
-      <p class="label">Lean module</p>
+      <h4 class="setting__title">Lean module</h4>
       <pre class="diff">{review.lean_source}</pre>
     {/if}
-    <p class="label">What was checked</p>
+    <h4 class="setting__title">What was checked</h4>
     <ul class="findings">
       {#each review.findings as finding, at (at)}<li>{finding}</li>{/each}
     </ul>
     {#if review.state === "awaiting_review"}
       <div class="row__actions">
-        <button onclick={() => decide(review.proposal, "reject")}>Reject</button>
-        <button onclick={() => decide(review.proposal, "ask_again")}>Ask again</button>
-        <button class="primary" onclick={() => decide(review.proposal, "accept")}>Accept</button>
+        <button type="button" class="button button--small" onclick={() => decide(review.proposal, "reject")}>Reject</button>
+        <button type="button" class="button button--small" onclick={() => decide(review.proposal, "ask_again")}>Ask again</button>
+        <button type="button" class="button button--primary button--small" onclick={() => decide(review.proposal, "accept")}>Accept</button>
       </div>
-      <p class="quiet">Accepting records you as the reviewer and preserves the model information.</p>
+      <p class="setting__note">Accepting records you as the reviewer and preserves the model information.</p>
     {:else}
-      <p class="quiet">This proposal was {review.state}.</p>
-      <button onclick={() => write(review.proposal)}>Apply</button>
+      <p class="setting__note">This proposal was {review.state}.</p>
+      <div class="row__actions"><button type="button" class="button button--small" onclick={() => write(review.proposal)}>Apply</button></div>
     {/if}
-  {/if}
-</section>
+  </section>
+{/if}

@@ -6,8 +6,8 @@
 //! mathematics.
 //!
 //! The groups are cards rather than a list because a card can carry what a
-//! group is for and what has been shared in it, and that is the thing
-//! somebody is choosing between. Everything deeper is the group's own page.
+//! group is for and how much is in it, and that is the thing somebody is
+//! choosing between. Everything deeper is the group's own page.
 
 use axum::extract::State;
 use axum::response::{IntoResponse, Response};
@@ -15,14 +15,12 @@ use maud::{Markup, html};
 use stemma_core::artefact::{LineDigest, Scope};
 use stemma_core::repository::Side;
 
-use super::layout::page;
+use super::layout::{glyph, initials, page};
 use super::visitor::{SignedIn, Visitor};
 use super::{Instance, WebError};
-use crate::store::groups::{Membership, Request};
+use crate::store::groups::{Membership, Outcome, Request};
+use crate::store::machines::Machine;
 use crate::store::proposals::{self, Proposal};
-
-/// How many of a group's shared lines a card names before it counts.
-const ON_A_CARD: usize = 4;
 
 /// A group, as the overview shows it.
 struct Card {
@@ -30,6 +28,8 @@ struct Card {
     membership: Membership,
     /// Every line the group has shared.
     shared: Vec<LineDigest>,
+    /// How many people are in it.
+    members: usize,
 }
 
 /// The page somebody sees when they are signed in.
@@ -59,15 +59,33 @@ pub async fn home(
     let mut cards = Vec::new();
     for membership in chrome.workspace.groups.clone() {
         let shared = shared_lines(&instance, &membership, &signed).await?;
-        cards.push(Card { membership, shared });
+        let group = membership.group.id.clone();
+        let members = instance
+            .read(move |connection| crate::store::groups::members(connection, &group))
+            .await?
+            .len();
+        cards.push(Card {
+            membership,
+            shared,
+            members,
+        });
     }
+
+    let machines: Vec<Machine> = chrome
+        .workspace
+        .machines
+        .iter()
+        .map(|(machine, _)| machine.clone())
+        .collect();
 
     Ok(page(
         &chrome,
         body(
             &signed,
+            &chrome.instance,
             &cards,
             &requests,
+            &machines,
             &proposals,
             &obligations,
             chrome.workspace.may_ask,
@@ -104,48 +122,76 @@ async fn shared_lines(
 }
 
 /// What the overview holds.
+#[allow(clippy::too_many_arguments)]
 fn body(
     signed: &SignedIn,
+    instance: &str,
     cards: &[Card],
     requests: &[Request],
+    machines: &[Machine],
     proposals: &[Proposal],
     obligations: &[crate::store::vault::Obligation],
     may_ask: bool,
 ) -> Markup {
+    // An approved request is a group now, and the group has its own card.
+    let requests: Vec<&Request> = requests
+        .iter()
+        .filter(|request| request.outcome != Some(Outcome::Approved))
+        .collect();
+    let nothing = cards.is_empty() && requests.is_empty();
+
     html! {
-        div class="stack" {
-            h1 { (signed.user.display_name) }
-            p class="quiet identifier" { (signed.user.id.to_string()) }
-        }
-
-        div class="block" id="groups" {
-            p class="label" { "Groups" }
-
-            @if cards.is_empty() && !may_ask {
-                p class="empty" {
-                    "You have not joined a research group yet. An invitation puts you in one."
-                }
-            } @else {
-                div class="cards" {
-                    @for card in cards {
-                        (group_card(card))
-                    }
-                    @if may_ask {
-                        (new_group_card())
-                    }
-                }
-            }
+        header class="page-head" {
+            h1 class="page-title" { "Overview" }
+            p class="page-subtitle" { "Your groups and machines on " (instance) "." }
         }
 
         (reviews(proposals))
         (decisions(signed, obligations))
 
-        @if !requests.is_empty() {
-            div class="block" {
-                p class="label" { "Your group requests" }
-                ul class="register" {
-                    @for request in requests {
-                        (crate::web::groups::own_request(request))
+        section class="section" id="groups" aria-labelledby="groups-title" {
+            h2 class="section-title" id="groups-title" {
+                "Groups" span class="count" { (cards.len()) }
+            }
+
+            @if nothing && !may_ask {
+                div class="card card--empty empty-card" {
+                    p class="empty" {
+                        "You have not joined a research group yet. An invitation puts you in one."
+                    }
+                }
+            } @else {
+                div class="group-grid" {
+                    @for card in cards {
+                        (group_card(card))
+                    }
+                    @for request in &requests {
+                        (request_card(request))
+                    }
+                    @if may_ask {
+                        (new_group_card(nothing))
+                    }
+                }
+            }
+        }
+
+        section class="section" id="machines" aria-labelledby="machines-title" {
+            h2 class="section-title" id="machines-title" {
+                "Machines" span class="count" { (machines.len()) }
+            }
+
+            @if machines.is_empty() {
+                div class="card card--empty empty-card" {
+                    p class="empty" {
+                        "No machines connected. Sign in on a computer with "
+                        code { "stemma login" } " and run " code { "stemma node init" }
+                        " to connect it."
+                    }
+                }
+            } @else {
+                div class="machine-list" {
+                    @for machine in machines {
+                        (machine_row(machine))
                     }
                 }
             }
@@ -153,58 +199,103 @@ fn body(
     }
 }
 
-/// One group, and the way into it.
+/// One group, and the way into it: the whole card is the link.
 fn group_card(card: &Card) -> Markup {
     let group = &card.membership.group;
-    let slug = group.slug();
+    let members = match card.members {
+        1 => "1 member".to_owned(),
+        count => format!("{count} members"),
+    };
+    let shared = match card.shared.len() {
+        0 => "Nothing shared yet".to_owned(),
+        1 => "1 shared line".to_owned(),
+        count => format!("{count} shared lines"),
+    };
 
     html! {
-        a class="card" href={ "/g/" (slug) } {
-            div class="card__head" {
-                span class="card__name" { (group.name) }
-                span class="card__role" { (card.membership.role) }
+        a class="card group-card" href={ "/g/" (group.slug()) } {
+            span class="group-card__top" {
+                span class="badge" aria-hidden="true" { (initials(&group.name)) }
+                span class="chip chip--accent" { (super::groups::role_words(card.membership.role)) }
             }
-            p class="quiet identifier" { (group.id.to_string()) }
+            span class="group-card__name" { (group.name) }
+            span class="identifier quiet" { (group.id.to_string()) }
 
             @if let Some(description) = &group.description {
-                p class="card__about" { (description) }
+                span class="group-card__about" { (description) }
             }
 
-            div class="card__lines" {
-                @if card.shared.is_empty() {
-                    p class="empty" { "Nothing shared yet." }
-                } @else {
-                    p class="label" { "Shared lines · " (card.shared.len()) }
-                    ul class="card__register" {
-                        @for line in card.shared.iter().take(ON_A_CARD) {
-                            li {
-                                span class="card__line" { (line.shown_as()) }
-                                @if let Some(description) = &line.description {
-                                    span class="quiet" { (description) }
-                                }
-                            }
-                        }
-                    }
-                    @if card.shared.len() > ON_A_CARD {
-                        p class="quiet" {
-                            (card.shared.len() - ON_A_CARD) " more inside"
-                        }
-                    }
+            span class="group-card__foot" {
+                span { (shared) " · " (members) }
+                span class="chevron" { (glyph("chevron-right")) }
+            }
+        }
+    }
+}
+
+/// A group somebody asked for and nobody has decided on, or one that was
+/// declined, with what the maintainer said.
+fn request_card(request: &Request) -> Markup {
+    html! {
+        div class="card group-card group-card--request" {
+            span class="group-card__top" {
+                span class="badge badge--muted" aria-hidden="true" { (initials(&request.name)) }
+                @match request.outcome {
+                    Some(Outcome::Declined) => span class="chip chip--danger" { "Declined" },
+                    _ => span class="chip chip--warning" { "Pending" },
                 }
             }
-
-            span class="card__enter" { "Open group" }
+            span class="group-card__name" { (request.name) }
+            span class="identifier quiet" { "grp:" (request.slug) }
+            span class="group-card__about" {
+                @match (&request.outcome, &request.note) {
+                    (_, Some(note)) => (note),
+                    (None, None) => "Waiting for a maintainer.",
+                    _ => "A maintainer declined it.",
+                }
+            }
         }
     }
 }
 
 /// The card that makes a group where there is none.
-fn new_group_card() -> Markup {
+fn new_group_card(alone: bool) -> Markup {
     html! {
-        a class="card card--new" href="/groups/new" {
-            span class="card__plus" aria-hidden="true" { "+" }
-            span class="card__name" { "Request a research group" }
-            p class="quiet" { "A maintainer decides, and you become its owner." }
+        div class=@if alone { "card card--empty request-card request-card--alone" } @else { "card card--empty request-card" } {
+            span class="request-card__title" { "Request a research group" }
+            p class="quiet" {
+                @if alone { "You are not in a research group yet. " }
+                "A maintainer decides, and you become its owner."
+            }
+            a class="button" href="/groups/new" {
+                (glyph("add")) "Request a group"
+            }
+        }
+    }
+}
+
+/// One machine, and the way to its page.
+fn machine_row(machine: &Machine) -> Markup {
+    let awake = machine.presence == stemma_core::machine::Presence::Awake;
+
+    html! {
+        a class="card machine-row" href={ "/machines/" (machine.id) } {
+            span class="machine-row__icon" { (glyph("machine")) }
+            span class="machine-row__who" {
+                span class="machine-row__name" { (machine.label) }
+                span class="identifier quiet" { (machine.id.to_string()) }
+            }
+            @if awake {
+                span class="chip chip--success" { span class="dot" {} "Online" }
+            } @else {
+                span class="chip" {
+                    "Offline"
+                    @if let Some(seen) = &machine.last_seen_at {
+                        " · last seen " (seen.get(..16).unwrap_or(seen))
+                    }
+                }
+            }
+            span class="chevron" { (glyph("chevron-right")) }
         }
     }
 }
@@ -217,8 +308,8 @@ fn new_group_card() -> Markup {
 fn reviews(proposals: &[Proposal]) -> Markup {
     html! {
         @if !proposals.is_empty() {
-            div class="block" id="reviews" {
-                p class="label" { "Proposals awaiting your review · " (proposals.len()) }
+            section class="block" id="reviews" {
+                h2 class="block__title" { "Proposals awaiting your review" span class="count" { (proposals.len()) } }
                 ul class="register" {
                     @for proposal in proposals {
                         li {
@@ -238,20 +329,20 @@ fn reviews(proposals: &[Proposal]) -> Markup {
 fn decisions(signed: &SignedIn, obligations: &[crate::store::vault::Obligation]) -> Markup {
     html! {
         @if !obligations.is_empty() {
-            div class="block" {
-                p class="label" { "Pending decisions · " (obligations.len()) }
+            section class="block" {
+                h2 class="block__title" { "Pending decisions" span class="count" { (obligations.len()) } }
                 @for obligation in obligations {
                     form method="post" action={ "/audit-obligations/" (obligation.id) "/decide" } {
                         (super::layout::signature(signed))
                         p { "The audit of bridge " code { (obligation.bridge) } " was withdrawn; "
                             code { (obligation.statement) } " depends on it." }
-                        select name="decision" {
+                        select class="input" name="decision" {
                             option value="stands" { "It stands as it is" }
                             option value="rewrite" { "I will rewrite it" }
                             option value="waiting_for_audit" { "I am waiting for another audit" }
                         }
-                        input name="note" placeholder="Record why" required;
-                        button class="button" { "Record signed decision" }
+                        input class="input" name="note" placeholder="Record why" required;
+                        button class="button button--primary" { "Record signed decision" }
                     }
                 }
             }

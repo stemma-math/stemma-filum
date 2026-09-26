@@ -8,7 +8,7 @@ use support::Harness;
 async fn the_instance_serves_its_own_faces() {
     let mut instance = Harness::new();
 
-    let face = instance.get("/assets/fonts/iosevka-400.woff2").await;
+    let face = instance.get("/assets/fonts/jetbrains-mono-400.woff2").await;
 
     assert!(face.status.is_success());
     assert_eq!(face.content_type.as_deref(), Some("font/woff2"));
@@ -59,4 +59,28 @@ async fn nothing_a_page_loads_comes_from_anywhere_else() {
 
         assert!(same_origin, "the stylesheet sends a reader to {address}");
     }
+}
+
+#[tokio::test]
+async fn the_instance_serves_its_icons_and_manifest_at_the_root() {
+    let mut instance = Harness::new();
+
+    let icon = instance.get("/favicon.ico").await;
+    assert!(icon.status.is_success());
+    assert_eq!(icon.content_type.as_deref(), Some("image/x-icon"));
+
+    let touch = instance.get("/apple-touch-icon.png").await;
+    assert_eq!(touch.content_type.as_deref(), Some("image/png"));
+
+    let manifest = instance.get("/site.webmanifest").await;
+    assert_eq!(
+        manifest.content_type.as_deref(),
+        Some("application/manifest+json")
+    );
+    assert!(manifest.says("/icon-512.png"));
+    assert!(manifest.says("#030e29"));
+
+    let front = instance.get("/").await;
+    assert!(front.says("href=\"/favicon.svg\""));
+    assert!(front.says("href=\"/site.webmanifest\""));
 }

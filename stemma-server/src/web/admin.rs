@@ -151,9 +151,9 @@ pub async fn area(
         .await?;
 
     let body = html! {
-        div class="stack" {
-            h1 { "Admin" }
-            p class="quiet" {
+        header class="page-head" {
+            h1 class="page-title" { "Administration" }
+            p class="page-subtitle" {
                 "Manage accounts, group requests and platform settings."
             }
         }
@@ -325,12 +325,12 @@ fn authenticate_body(signed: &SignedIn, next: Option<&str>, problem: Option<&str
                 }
 
                 div class="field" {
-                    label for="password" { "Password" }
-                    input type="password" id="password" name="password"
+                    label class="field__label" for="password" { "Password" }
+                    input class="input" type="password" id="password" name="password"
                           autocomplete="current-password" autofocus required;
                 }
 
-                button class="button" type="submit" { "Continue" }
+                button class="button button--primary" type="submit" { "Continue" }
             }
         }
     }
@@ -340,7 +340,7 @@ fn authenticate_body(signed: &SignedIn, next: Option<&str>, problem: Option<&str
 fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Markup {
     html! {
         div class="block" {
-            p class="label" { "Group requests · " (requests.len()) }
+            h2 class="block__title" { "Group requests" span class="count" { (requests.len()) } }
 
             @if requests.is_empty() {
                 p class="empty" { "There are no pending group requests." }
@@ -369,12 +369,12 @@ fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Ma
                                      action={ "/admin/requests/" (request.id) "/approve" } {
                                     (signature(signed))
                                     div class="field" {
-                                        label for={ "note-" (request.id) } { "Optional note" }
-                                        input type="text" id={ "note-" (request.id) } name="note";
+                                        label class="field__label" for={ "note-" (request.id) } { "Optional note" }
+                                        input class="input" type="text" id={ "note-" (request.id) } name="note";
                                     }
                                     div class="actions" {
-                                        button class="button" type="submit" { "Approve" }
-                                        button class="button button--quiet" type="submit"
+                                        button class="button button--primary" type="submit" { "Approve" }
+                                        button class="button" type="submit"
                                                formaction={ "/admin/requests/" (request.id) "/decline" } {
                                             "Decline"
                                         }
@@ -393,7 +393,7 @@ fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Ma
 fn accounts_block(accounts: &[User], maintainers: &[users::HeldGrant]) -> Markup {
     html! {
         div class="block" {
-            p class="label" { "Accounts · " (accounts.len()) }
+            h2 class="block__title" { "Accounts" span class="count" { (accounts.len()) } }
 
             div class="scroll" {
                 table {
@@ -444,43 +444,43 @@ fn settings_block(signed: &SignedIn, policy: &Policy) -> Markup {
                 (signature(signed))
 
                 div class="field" {
-                    label for="name" { "Instance name" }
-                    input type="text" id="name" name="name"
+                    label class="field__label" for="name" { "Instance name" }
+                    input class="input" type="text" id="name" name="name"
                           value=(policy.instance_name.clone().unwrap_or_default());
                 }
 
                 div class="field" {
-                    label for="operator" { "Operator" }
-                    input type="text" id="operator" name="operator"
+                    label class="field__label" for="operator" { "Operator" }
+                    input class="input" type="text" id="operator" name="operator"
                           value=(policy.operator.clone().unwrap_or_default());
                 }
 
                 div class="field" {
-                    label for="contact" { "Contact details" }
-                    input type="text" id="contact" name="contact"
+                    label class="field__label" for="contact" { "Contact details" }
+                    input class="input" type="text" id="contact" name="contact"
                           value=(policy.contact.clone().unwrap_or_default());
                 }
 
                 div class="field" {
-                    label {
+                    label class="choice" {
                         input type="checkbox" name="registration_open" value="yes"
                               checked[policy.registration_open];
-                        " Anyone may create an account"
+                        span { "Anyone may create an account" }
                     }
-                    label {
+                    label class="choice" {
                         input type="checkbox" name="group_requests_open" value="yes"
                               checked[policy.group_requests_open];
-                        " Account holders may ask for a group"
+                        span { "Account holders may ask for a group" }
                     }
                 }
 
                 div class="field" {
-                    label for="invitation_ttl_days" { "Invitation validity in days" }
-                    input type="text" id="invitation_ttl_days" name="invitation_ttl_days"
+                    label class="field__label" for="invitation_ttl_days" { "Invitation validity in days" }
+                    input class="input" type="text" id="invitation_ttl_days" name="invitation_ttl_days"
                           class="numeric" value=(policy.invitation_ttl_days);
                 }
 
-                button class="button" type="submit" { "Save" }
+                button class="button button--primary" type="submit" { "Save" }
             }
 
             p class="quiet" {

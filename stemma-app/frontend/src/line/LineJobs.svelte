@@ -7,7 +7,7 @@
 </script>
 
 {#if jobs.problem}
-  {jobs.problem}
+  <p class="panel__text panel__text--failed">{jobs.problem}</p>
 {:else}
-  <JobList jobs={jobs.list} empty="Nothing is running here." />
+  <JobList jobs={jobs.list} empty="Nothing is running." />
 {/if}
