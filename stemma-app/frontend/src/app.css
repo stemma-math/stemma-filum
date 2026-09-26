@@ -957,11 +957,13 @@
     background: var(--fill-muted);
 }
 
-/* The box that adds a block to the selection sits over the grip, and
- * shows itself on hover or once anything is selected. */
+/* The box that adds a block to the selection sits in the margin beside
+ * the grip, and shows itself on hover or once anything is selected. The
+ * grip never hides: hiding it under the pointer would cancel a drag. */
 .block__select {
     position: absolute;
-    inset: 4px 3px;
+    top: 4px;
+    left: -30px;
     width: 16px;
     height: 16px;
     margin: 0;
@@ -973,21 +975,6 @@
 .block--selecting .block__select,
 .block__select:focus-visible {
     opacity: 1;
-}
-
-.block:hover .block__grip,
-.block--selecting .block__grip {
-    visibility: hidden;
-}
-
-.block:hover .block__lead:hover .block__grip {
-    visibility: visible;
-}
-
-/* Pointing at the grip moves the box out into the margin, clear of the
- * card's edge, so both can be reached. */
-.block:hover .block__lead:hover .block__select {
-    inset: 4px auto auto -30px;
 }
 
 .block__type {

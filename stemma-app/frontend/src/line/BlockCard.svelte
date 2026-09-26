@@ -64,6 +64,8 @@
   function dragOver(event: DragEvent) {
     if (!line.editable || !event.dataTransfer?.types.includes(DRAGGED)) return;
     event.preventDefault();
+    // WebKit refuses the drop unless the effect matches what the drag allows.
+    event.dataTransfer.dropEffect = "move";
     const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
     dropping = event.clientY < box.top + box.height / 2 ? "above" : "below";
   }
@@ -209,7 +211,7 @@
    * clicks. */
   function pointer(event: PointerEvent) {
     const target = event.target as HTMLElement;
-    if (target.closest("button, .bubble, .block__select, a")) return;
+    if (target.closest("button, .bubble, .block__select, .block__grip, a")) return;
     onselect(event.shiftKey || event.metaKey || event.ctrlKey);
   }
 
