@@ -3,6 +3,7 @@
   // wrong when the last change did not typeset.
   import Glyph from "../components/Glyph.svelte";
   import { app } from "../lib/app.svelte";
+  import { blockCard } from "../lib/dom";
   import type { LineSession } from "../lib/line.svelte";
 
   let { line }: { line: LineSession } = $props();
@@ -51,7 +52,7 @@
     if (!block) return;
     line.selected.clear();
     line.selected.add(block);
-    requestAnimationFrame(() => window.document.querySelector(`[data-block="${block}"]`)?.scrollIntoView({ block: "center" }));
+    requestAnimationFrame(() => blockCard(block)?.scrollIntoView({ block: "center" }));
   }
 </script>
 

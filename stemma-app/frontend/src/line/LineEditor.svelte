@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import Glyph from "../components/Glyph.svelte";
   import { app, type View } from "../lib/app.svelte";
+  import { blurOnEnter } from "../lib/dom";
   import { jobs } from "../lib/jobs.svelte";
   import type { LineSession } from "../lib/line.svelte";
   import { fail } from "../lib/status.svelte";
@@ -97,7 +98,7 @@
             bind:value={titleDraft}
             disabled={!line.editable || !line.document}
             onchange={(event) => retitle(event.currentTarget.value)}
-            onkeydown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+            onkeydown={blurOnEnter}
           />
         </label>
         <label class="autosize editor-head__about" data-value={aboutDraft || "Add a description"}>
@@ -108,7 +109,7 @@
             placeholder={line.editable ? "Add a description" : ""}
             disabled={!line.editable || !line.document}
             onchange={(event) => redescribe(event.currentTarget.value)}
-            onkeydown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+            onkeydown={blurOnEnter}
           />
         </label>
         <span class="chip">

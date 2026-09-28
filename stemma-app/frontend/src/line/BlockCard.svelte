@@ -3,6 +3,7 @@
   import Bubble from "../components/Bubble.svelte";
   import Glyph from "../components/Glyph.svelte";
   import { DEFINITION_ENVIRONMENTS, THEOREM_ENVIRONMENTS, isStatement, move, proofOf, setProof, siglumPrefix } from "../lib/blocks";
+  import { blurOnEnter } from "../lib/dom";
   import { blockEditor, type BlockEditor } from "../lib/editor";
   import type { LineSession } from "../lib/line.svelte";
   import { tasksFor } from "../lib/tasks";
@@ -279,7 +280,7 @@
             autofocus
             onchange={(event) => setEnvironment(event.currentTarget.value)}
             onblur={(event) => setEnvironment(event.currentTarget.value)}
-            onkeydown={(event) => { if (event.key === "Escape") { naming = false; } if (event.key === "Enter") event.currentTarget.blur(); }}
+            onkeydown={(event) => { if (event.key === "Escape") naming = false; blurOnEnter(event); }}
           />
         {:else}
           <button
@@ -313,7 +314,7 @@
         disabled={!line.editable}
         aria-label="Title"
         onchange={(event) => setTitle(event.currentTarget.value)}
-        onkeydown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+        onkeydown={blurOnEnter}
       />
 
       <input
@@ -325,7 +326,7 @@
         aria-invalid={siglumProblem !== null}
         aria-describedby={siglumProblem ? siglumError : undefined}
         onchange={(event) => setSiglum(event.currentTarget.value)}
-        onkeydown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+        onkeydown={blurOnEnter}
       />
 
       <Uses {line} {statement} />
