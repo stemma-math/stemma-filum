@@ -170,49 +170,50 @@ while the generated files are out of date.
 
 ## Verification
 
-The normal pre-commit suite is:
+`just` with no arguments lists every recipe by group. The suite a pull
+request must pass is:
 
 ```sh
 just check
 ```
 
-It checks formatting, tests, type-checks and builds the frontend, builds the
-Rust documentation, runs Clippy with warnings denied, and runs the complete Rust
-workspace test suite. The
-client HTTP tests and repository transport integration tests bind loopback TCP
-ports. Run the suite with local network permission if a sandbox blocks binding.
-The repository transport tests can also be run separately:
-
-```sh
-just test-repositories
-```
+It checks the Rust formatting and the identity's generated tokens, tests,
+type-checks and builds the frontend, builds the Rust documentation and the
+Lean package, runs Clippy with warnings denied, and runs the complete Rust
+workspace test suite. The client HTTP tests and the repository transport
+integration tests bind loopback TCP ports; run the suite with local network
+permission if a sandbox blocks binding.
 
 Useful narrower commands are:
 
 ```sh
-just test          # all Rust tests
-just test-app      # desktop Rust shell and frontend
-just test-server   # server library and HTTP integration tests
+just test                 # all Rust tests
+just test stemma-server   # the tests of one crate
+just test-app             # the desktop frontend and Rust shell
+just test-repositories    # the Git repository transport
+just format               # format the Rust code in place
 ```
 
 ## Local server
 
-Use an isolated directory so testing never touches an installed instance:
+The `server` and `client` recipes work on an isolated instance under
+`.test-state/`, so testing never touches an installed one. Configure it
+once:
 
 ```sh
-export STEMMA_TEST_ROOT="$PWD/.test-state/server"
-mkdir -p "$STEMMA_TEST_ROOT"
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" setup \
-  --data-dir "$STEMMA_TEST_ROOT/data"
+just server-setup
 ```
 
-After completing the generated configuration:
+After completing the generated configuration
+(`.test-state/server/server.toml`):
 
 ```sh
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" migrate
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" check
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" serve
+just server migrate
+just server check
+just server              # serves it in the foreground
 ```
 
-Run the CLI and app with a separate `STEMMA_HOME`, sign in to that address, and
-keep the server in the foreground so failures remain visible.
+`just client …` runs `stemma` with the test account's `STEMMA_HOME`
+(`.test-state/client`); run the application with the same home, as above,
+sign in to the test server's address, and keep the server in the foreground
+so failures remain visible.
