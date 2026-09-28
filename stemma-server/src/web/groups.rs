@@ -5,7 +5,6 @@
 //! let people create them outright, and that is a policy, not a different
 //! mechanism.
 
-use anyhow::Context;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -18,6 +17,7 @@ use stemma_core::repository::Side;
 
 use super::api::Credential;
 use super::layout::{Chrome, glyph, page, signature};
+use super::membership::membership;
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::{self, Group, Member};
@@ -32,16 +32,7 @@ pub async fn change_pins(
     Path(slug): Path<String>,
     Json(pins): Json<stemma_core::repository::Pins>,
 ) -> Result<Response, WebError> {
-    let slug = Slug::parse(&slug).map_err(|_| WebError::NotFound)?;
-    let user = credential.user.id.clone();
-    let (group, role) = instance
-        .read(move |connection| {
-            let group = groups::by_slug(connection, &slug)?.context("group not found")?;
-            let role = groups::role_of(connection, &group.id, &user)?.context("not a member")?;
-            Ok((group, role))
-        })
-        .await
-        .map_err(|_| WebError::NotFound)?;
+    let (group, role) = membership(&instance, &slug, &credential.user.id).await?;
     if !role.is_at_least(GroupRole::Admin) {
         return Err(WebError::Forbidden(
             "Only a group admin or owner can change Lean package pins.".to_owned(),
@@ -374,14 +365,7 @@ pub async fn invite(
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
 
-    let Some(group) = lookup(&instance, &slug).await? else {
-        return Err(WebError::NotFound);
-    };
-
-    let (role, _, _) = read_space(&instance, &group, &signed).await?;
-    let Some(role) = role else {
-        return Err(WebError::NotFound);
-    };
+    let (group, role) = membership(&instance, &slug, &signed.user.id).await?;
 
     if !role.can_invite() {
         return Err(WebError::Forbidden(
@@ -483,13 +467,9 @@ pub async fn withdraw(
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
 
-    let Some(group) = lookup(&instance, &slug).await? else {
-        return Err(WebError::NotFound);
-    };
+    let (group, role) = membership(&instance, &slug, &signed.user.id).await?;
 
-    let (role, _, _) = read_space(&instance, &group, &signed).await?;
-
-    if !role.is_some_and(GroupRole::can_invite) {
+    if !role.can_invite() {
         return Err(WebError::NotFound);
     }
 
@@ -653,18 +633,13 @@ pub async fn remove_picture(
 /// Somebody outside it is told there is nothing here, as its page tells
 /// them; a member is told why not.
 async fn manageable(instance: &Instance, slug: &str, signed: &SignedIn) -> Result<Group, WebError> {
-    let Some(group) = lookup(instance, slug).await? else {
-        return Err(WebError::NotFound);
-    };
+    let (group, role) = membership(instance, slug, &signed.user.id).await?;
 
-    let (role, _, _) = read_space(instance, &group, signed).await?;
-
-    match role {
-        None => Err(WebError::NotFound),
-        Some(role) if !role.may_manage() => Err(WebError::Forbidden(
+    match role.may_manage() {
+        true => Ok(group),
+        false => Err(WebError::Forbidden(
             "Only an admin or the owner of this group can change its details.".to_owned(),
         )),
-        Some(_) => Ok(group),
     }
 }
 

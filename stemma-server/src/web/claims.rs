@@ -67,7 +67,9 @@ pub async fn take(
                 crate::store::lines::by_name(connection, &group, side, &line, &owner)?
                 && (side == Side::Private && started.author != owner || !started.admits(&owner))
             {
-                anyhow::bail!("only its author can edit this line; others send proposals")
+                anyhow::bail!(WebError::Forbidden(
+                    "Only its author can edit this line; others send proposals.".to_owned()
+                ))
             }
 
             if let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)? {
@@ -75,8 +77,7 @@ pub async fn take(
             }
             claims::take(connection, &group, side, line.as_str(), &id, &owner)
         })
-        .await
-        .map_err(refused)?;
+        .await?;
 
     Ok(Json(standing(&claim, &machine.id)).into_response())
 }
@@ -95,20 +96,20 @@ pub async fn renew(
     let claim = instance
         .write(move |connection| {
             in_the_group(connection, &group, &owner)?;
-            let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)?
-            else {
-                anyhow::bail!("nothing here");
-            };
+            let claim = claims::holder(connection, &group, side, line.as_str(), &owner)?
+                .ok_or(WebError::NotFound)?;
 
             visible(&claim, &owner)?;
             if claim.machine == id {
                 claims::renew(connection, &claim.id)?;
             }
 
-            claims::holder(connection, &group, side, line.as_str(), &owner)?.context_or_nothing()
+            Ok(
+                claims::holder(connection, &group, side, line.as_str(), &owner)?
+                    .ok_or(WebError::NotFound)?,
+            )
         })
-        .await
-        .map_err(nothing_here)?;
+        .await?;
 
     Ok(Json(standing(&claim, &machine.id)).into_response())
 }
@@ -160,18 +161,18 @@ pub async fn ask(
         .write(move |connection| {
             in_the_group(connection, &group, &owner)?;
 
-            let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)?
-            else {
-                anyhow::bail!("nothing here");
-            };
+            let claim = claims::holder(connection, &group, side, line.as_str(), &owner)?
+                .ok_or(WebError::NotFound)?;
 
             visible(&claim, &owner)?;
             claims::ask(connection, &claim.id, Some(&id))?;
 
-            claims::holder(connection, &group, side, line.as_str(), &owner)?.context_or_nothing()
+            Ok(
+                claims::holder(connection, &group, side, line.as_str(), &owner)?
+                    .ok_or(WebError::NotFound)?,
+            )
         })
-        .await
-        .map_err(nothing_here)?;
+        .await?;
 
     Ok(Json(standing(&claim, &machine.id)).into_response())
 }
@@ -253,14 +254,13 @@ pub async fn hand_back(
             };
 
             if claim.owner != who {
-                anyhow::bail!("nothing here");
+                anyhow::bail!(WebError::NotFound);
             }
 
             claims::release(connection, &claim.id)?;
             crate::store::lines::by_name(connection, &id, chosen, &name, &who)
         })
-        .await
-        .map_err(nothing_here)?;
+        .await?;
 
     if let Some(line) = released {
         crate::history::settle(&instance, line.id).await?;
@@ -291,7 +291,7 @@ fn standing(claim: &Claim, asking: &stemma_core::id::MachineId) -> serde_json::V
 /// A personal claim reveals activity only to its owner.
 fn visible(claim: &Claim, who: &stemma_core::id::UserId) -> anyhow::Result<()> {
     if claim.side == Side::Private && &claim.owner != who {
-        anyhow::bail!("nothing here");
+        anyhow::bail!(WebError::NotFound);
     }
     Ok(())
 }
@@ -304,48 +304,6 @@ fn in_the_group(
 ) -> anyhow::Result<()> {
     match groups::role_of(connection, group, who)?.is_some() {
         true => Ok(()),
-        false => anyhow::bail!("nothing here"),
-    }
-}
-
-/// Turns the one refusal these handlers raise into a missing page.
-fn nothing_here(error: WebError) -> WebError {
-    match error {
-        WebError::Internal(reason) if reason.to_string() == "nothing here" => WebError::NotFound,
-        other => other,
-    }
-}
-
-/// The same, plus the one refusal that is worth saying out loud.
-fn refused(error: WebError) -> WebError {
-    match error {
-        WebError::Internal(reason)
-            if reason.to_string().starts_with("only its author can edit") =>
-        {
-            WebError::Forbidden(capitalised(&reason.to_string()))
-        }
-        other => nothing_here(other),
-    }
-}
-
-/// A reason, as a sentence.
-fn capitalised(reason: &str) -> String {
-    let mut characters = reason.chars();
-
-    match characters.next() {
-        Some(first) => format!("{}{}.", first.to_uppercase(), characters.as_str()),
-        None => reason.to_owned(),
-    }
-}
-
-/// A claim that has to be there by the time it is read back.
-trait Reread {
-    /// The claim, or the one refusal these handlers raise.
-    fn context_or_nothing(self) -> anyhow::Result<Claim>;
-}
-
-impl Reread for Option<Claim> {
-    fn context_or_nothing(self) -> anyhow::Result<Claim> {
-        self.ok_or_else(|| anyhow::anyhow!("nothing here"))
+        false => anyhow::bail!(WebError::NotFound),
     }
 }

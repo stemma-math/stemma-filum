@@ -154,7 +154,9 @@ pub async fn root(
     credential: Credential,
     Path((group, side)): Path<(String, String)>,
 ) -> Result<Response, WebError> {
-    let group = member(&instance, &credential, &group).await?;
+    let group = super::membership::group_of(&instance, &group, &credential.user.id)
+        .await?
+        .id;
     let side: Side = side.parse().map_err(|_| WebError::NotFound)?;
     let path = match side {
         Side::Shared => instance.repositories().shared(&group),
@@ -332,21 +334,4 @@ async fn seen(instance: &Instance, credential: &Credential, id: &str) -> Result<
         })
         .await?
         .ok_or(WebError::NotFound)
-}
-
-/// The group a machine names, when its owner is in it.
-async fn member(
-    instance: &Instance,
-    credential: &Credential,
-    slug: &str,
-) -> Result<GroupId, WebError> {
-    let group = GroupId::new(Slug::parse(slug).map_err(|_| WebError::NotFound)?);
-    let reader = credential.user.id.clone();
-    let asked = group.clone();
-
-    let member = instance
-        .read(move |connection| Ok(groups::role_of(connection, &asked, &reader)?.is_some()))
-        .await?;
-
-    member.then_some(group).ok_or(WebError::NotFound)
 }

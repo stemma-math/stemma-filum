@@ -17,15 +17,16 @@ use maud::{Markup, html};
 use serde::Deserialize;
 use stemma_core::access::WhoWrites;
 use stemma_core::document::Document;
-use stemma_core::id::{GroupId, Slug};
+use stemma_core::id::GroupId;
 use stemma_core::line::{Line, Name, NodeKind};
 use stemma_core::render;
 use stemma_core::repository::Side;
 
 use super::layout::{page, signature};
+use super::membership::group_of;
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
-use crate::store::groups::{self, Group};
+use crate::store::groups::Group;
 use crate::store::lines;
 use crate::store::revisions::Content;
 
@@ -66,7 +67,7 @@ pub async fn form(
     signed: SignedIn,
     Path(slug): Path<String>,
 ) -> Result<Response, WebError> {
-    let group = admit(&instance, &signed, &slug).await?;
+    let group = group_of(&instance, &slug, &signed.user.id).await?;
     let chrome = super::layout::around(&instance, &signed, "New line")
         .await?
         .at(format!("/g/{}", group.slug()));
@@ -83,7 +84,7 @@ pub async fn start(
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
 
-    let group = admit(&instance, &signed, &slug).await?;
+    let group = group_of(&instance, &slug, &signed.user.id).await?;
     let side = match form.seen_by.trim() {
         "group" => Side::Shared,
         _ => Side::Private,
@@ -172,7 +173,9 @@ async fn born(
                 };
 
                 if crate::git::holds_line(&path, &name) {
-                    anyhow::bail!("There is already a line by that name here.");
+                    anyhow::bail!(WebError::BadRequest(
+                        "There is already a line by that name here.".to_owned()
+                    ));
                 }
 
                 crate::git::start_line(
@@ -231,7 +234,7 @@ pub async fn share_form(
     signed: SignedIn,
     Path((slug, line)): Path<(String, String)>,
 ) -> Result<Response, WebError> {
-    let group = admit(&instance, &signed, &slug).await?;
+    let group = group_of(&instance, &slug, &signed.user.id).await?;
     let Ok(name) = Name::parse(&line) else {
         return Err(WebError::NotFound);
     };
@@ -259,7 +262,7 @@ pub async fn share(
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
 
-    let group = admit(&instance, &signed, &slug).await?;
+    let group = group_of(&instance, &slug, &signed.user.id).await?;
     let Ok(name) = Name::parse(&line) else {
         return Err(WebError::NotFound);
     };
@@ -406,7 +409,7 @@ pub async fn remove(
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
 
-    let group = admit(&instance, &signed, &slug).await?;
+    let group = group_of(&instance, &slug, &signed.user.id).await?;
     let Ok(name) = Name::parse(&line) else {
         return Err(WebError::NotFound);
     };
@@ -422,7 +425,7 @@ pub async fn api_remove(
     credential: super::api::Credential,
     Path((slug, line)): Path<(String, String)>,
 ) -> Result<Response, WebError> {
-    let group = belongs(&instance, &credential.user, &slug).await?;
+    let group = group_of(&instance, &slug, &credential.user.id).await?;
     let Ok(name) = Name::parse(&line) else {
         return Err(WebError::NotFound);
     };
@@ -731,7 +734,7 @@ pub async fn api_start(
     credential: super::api::Credential,
     axum::Json(asking): axum::Json<AskingToStart>,
 ) -> Result<Response, WebError> {
-    let group = belongs(&instance, &credential.user, &asking.group).await?;
+    let group = group_of(&instance, &asking.group, &credential.user.id).await?;
     let side = match asking.seen_by.trim() {
         "group" => Side::Shared,
         _ => Side::Private,
@@ -757,7 +760,7 @@ pub async fn api_share(
     Path((slug, line)): Path<(String, String)>,
     axum::Json(asking): axum::Json<AskingToShare>,
 ) -> Result<Response, WebError> {
-    let group = belongs(&instance, &credential.user, &slug).await?;
+    let group = group_of(&instance, &slug, &credential.user.id).await?;
     let Ok(name) = Name::parse(&line) else {
         return Err(WebError::NotFound);
     };
@@ -812,36 +815,4 @@ pub struct AskingToShare {
     /// `author` or `anyone`.
     #[serde(default)]
     pub writing: String,
-}
-
-/// The group, if this account is in it.
-async fn belongs(
-    instance: &Instance,
-    who: &crate::store::users::User,
-    slug: &str,
-) -> Result<Group, WebError> {
-    let Ok(slug) = Slug::parse(slug.trim()) else {
-        return Err(WebError::NotFound);
-    };
-    let who = who.id.clone();
-
-    let found = instance
-        .read(move |connection| {
-            let Some(group) = groups::by_slug(connection, &slug)? else {
-                return Ok(None);
-            };
-
-            match groups::role_of(connection, &group.id, &who)?.is_some() {
-                true => Ok(Some(group)),
-                false => Ok(None),
-            }
-        })
-        .await?;
-
-    found.ok_or(WebError::NotFound)
-}
-
-/// The group, if this reader is in it.
-async fn admit(instance: &Instance, signed: &SignedIn, slug: &str) -> Result<Group, WebError> {
-    belongs(instance, &signed.user, slug).await
 }

@@ -469,7 +469,11 @@ async fn a_member_with_much_local_history_can_still_fetch() {
         &clone,
         &["cat-file", "-e", "origin/main:lines/arrived/line.json"],
     );
-    assert!(arrived.worked, "the new line did not arrive: {}", arrived.said);
+    assert!(
+        arrived.worked,
+        "the new line did not arrive: {}",
+        arrived.said
+    );
 
     listening.finish();
 }

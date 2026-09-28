@@ -38,7 +38,7 @@ pub async fn manage(
     signed: SignedIn,
     Path(slug): Path<String>,
 ) -> Result<Response, WebError> {
-    let (group, role) = member_group(&instance, &signed, &slug).await?;
+    let (group, role) = super::membership::membership(&instance, &slug, &signed.user.id).await?;
     let id = group.id.clone();
     let releases = instance
         .read(move |connection| releases::for_group(connection, &id))
@@ -58,7 +58,7 @@ pub async fn publish(
     axum::Form(form): axum::Form<Publish>,
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
-    let (group, role) = member_group(&instance, &signed, &slug).await?;
+    let (group, role) = super::membership::membership(&instance, &slug, &signed.user.id).await?;
     if !role.is_at_least(GroupRole::Admin) {
         return Err(WebError::Forbidden(
             "Only an admin or the owner of this group can publish a release.".to_owned(),
@@ -345,25 +345,6 @@ fn safe_source_path(path: &str) -> bool {
         && FilePath::new(path)
             .components()
             .all(|part| matches!(part, Component::Normal(_)))
-}
-
-async fn member_group(
-    instance: &Instance,
-    signed: &SignedIn,
-    slug: &str,
-) -> Result<(Group, GroupRole), WebError> {
-    let slug = Slug::parse(slug).map_err(|_| WebError::NotFound)?;
-    let user = signed.user.id.clone();
-    let found = instance
-        .read(move |connection| {
-            let Some(group) = groups::by_slug(connection, &slug)? else {
-                return Ok(None);
-            };
-            let role = groups::role_of(connection, &group.id, &user)?;
-            Ok(role.map(|role| (group, role)))
-        })
-        .await?;
-    found.ok_or(WebError::NotFound)
 }
 
 async fn public_group_by_slug(instance: &Instance, slug: &str) -> Result<Option<Group>, WebError> {
