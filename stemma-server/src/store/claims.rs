@@ -12,9 +12,11 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use stemma_core::claim::{CLAIM_SECONDS, Held};
+use stemma_core::event::{ClaimChange, Event};
 use stemma_core::id::{ClaimId, GroupId, MachineId, UserId};
 use stemma_core::repository::Side;
 
+use super::events::{self, Audience};
 use super::id_at;
 
 /// One standing claim.
@@ -145,7 +147,58 @@ pub fn take(
         )
         .context("cannot take the line")?;
 
+    tell(connection, group, side, line, owner, ClaimChange::Taken)?;
+
     holder(connection, group, side, line, owner)?.context("the claim cannot be read back")
+}
+
+/// Says a claim changed, to whoever can see the line.
+fn tell(
+    connection: &Connection,
+    group: &GroupId,
+    side: Side,
+    line: &str,
+    owner: &UserId,
+    change: ClaimChange,
+) -> Result<()> {
+    let audience = match side {
+        Side::Shared => Audience::Group(group),
+        Side::Private => Audience::Person(group, owner),
+    };
+
+    events::publish(
+        connection,
+        audience,
+        &Event::Claim {
+            group: group.slug().as_str().to_owned(),
+            side,
+            line: line.to_owned(),
+            change,
+        },
+    )?;
+
+    Ok(())
+}
+
+/// Says a claim known only by its identifier changed.
+fn tell_about(connection: &Connection, claim: &ClaimId, change: ClaimChange) -> Result<()> {
+    let found: Option<(String, String, String, String)> = connection
+        .query_row(
+            "SELECT group_id, side, line, user_id FROM claims WHERE id = ?1",
+            [claim.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .context("cannot read the claim")?;
+
+    let Some((group, side, line, owner)) = found else {
+        return Ok(());
+    };
+    let (Ok(group), Ok(side), Ok(owner)) = (group.parse(), side.parse(), owner.parse()) else {
+        return Ok(());
+    };
+
+    tell(connection, &group, side, &line, &owner, change)
 }
 
 /// Says the machine is still writing.
@@ -166,13 +219,17 @@ pub fn renew(connection: &Connection, claim: &ClaimId) -> Result<()> {
 /// Anybody may put down a claim held by a machine of theirs, from that
 /// machine or from the web: both sides are the same person's.
 pub fn release(connection: &Connection, claim: &ClaimId) -> Result<()> {
-    connection
+    let released = connection
         .execute(
             "UPDATE claims SET released_at = datetime('now')
               WHERE id = ?1 AND released_at IS NULL",
             params![claim.to_string()],
         )
         .context("cannot let the line go")?;
+
+    if released > 0 {
+        tell_about(connection, claim, ClaimChange::Released)?;
+    }
 
     Ok(())
 }
@@ -181,7 +238,7 @@ pub fn release(connection: &Connection, claim: &ClaimId) -> Result<()> {
 ///
 /// Asking twice says nothing new, so the first ask is the one recorded.
 pub fn ask(connection: &Connection, claim: &ClaimId, from: Option<&MachineId>) -> Result<()> {
-    connection
+    let asked = connection
         .execute(
             "UPDATE claims
                 SET asked_at = datetime('now'), asked_by = ?2
@@ -189,6 +246,10 @@ pub fn ask(connection: &Connection, claim: &ClaimId, from: Option<&MachineId>) -
             params![claim.to_string(), from.map(ToString::to_string)],
         )
         .context("cannot ask for the line")?;
+
+    if asked > 0 {
+        tell_about(connection, claim, ClaimChange::Asked)?;
+    }
 
     Ok(())
 }

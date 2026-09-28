@@ -98,7 +98,32 @@ pub fn register(
         )
         .context("cannot register the machine")?;
 
-    by_token(connection, token_id)?.context("the machine cannot be read back")
+    let machine = by_token(connection, token_id)?.context("the machine cannot be read back")?;
+    tell(connection, &machine.id, None)?;
+
+    Ok(machine)
+}
+
+/// Says a machine changed, to its owner and to the groups it serves, who
+/// see what it offers. `also` is a group it has just stopped serving.
+fn tell(connection: &Connection, machine: &MachineId, also: Option<&GroupId>) -> Result<()> {
+    let Some(found) = by_id(connection, machine)? else {
+        return Ok(());
+    };
+    let event = stemma_core::event::Event::Machine {
+        machine: machine.to_string(),
+    };
+
+    super::events::publish(
+        connection,
+        super::events::Audience::Alone(&found.owner),
+        &event,
+    )?;
+    for group in groups(connection, machine)?.iter().chain(also) {
+        super::events::publish(connection, super::events::Audience::Group(group), &event)?;
+    }
+
+    Ok(())
 }
 
 /// The machine holding this credential, if one does.
@@ -215,6 +240,7 @@ pub fn report(connection: &mut Connection, machine: &MachineId, found: &[Detecte
             .context("cannot record what the machine found")?;
     }
 
+    tell(&transaction, machine, None)?;
     transaction.commit()?;
 
     Ok(())
@@ -283,6 +309,8 @@ pub fn enable(connection: &Connection, machine: &MachineId, group: &GroupId) -> 
         )
         .context("cannot turn the machine on for the group")?;
 
+    tell(connection, machine, None)?;
+
     Ok(())
 }
 
@@ -294,6 +322,8 @@ pub fn disable(connection: &Connection, machine: &MachineId, group: &GroupId) ->
             params![machine.to_string(), group.to_string()],
         )
         .context("cannot turn the machine off for the group")?;
+
+    tell(connection, machine, Some(group))?;
 
     Ok(())
 }
@@ -339,6 +369,7 @@ pub fn retire(connection: &Connection, machine: &MachineId) -> Result<bool> {
                 params![machine.to_string()],
             )
             .context("cannot take the machine's credential back")?;
+        tell(connection, machine, None)?;
     }
 
     Ok(retired > 0)

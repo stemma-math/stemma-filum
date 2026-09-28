@@ -12,6 +12,7 @@
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
+use stemma_core::event::Event;
 use stemma_core::id::{GroupId, JobId, MachineId, Slug, UserId};
 use stemma_core::job::{Choice, JobState, Outcome, Task};
 use stemma_core::line::Name;
@@ -186,7 +187,33 @@ pub fn launch(connection: &Connection, asked: &Launch) -> Result<Job> {
         )
         .context("cannot add the job to the queue")?;
 
+    tell(connection, &id)?;
+
     by_id(connection, &id)?.context("the job cannot be read back")
+}
+
+/// Says a job changed, to whoever can see its line.
+fn tell(connection: &Connection, id: &JobId) -> Result<()> {
+    let Some(job) = by_id(connection, id)? else {
+        return Ok(());
+    };
+
+    let audience = match job.side {
+        Side::Shared => super::events::Audience::Group(&job.group),
+        Side::Private => super::events::Audience::Person(&job.group, &job.launched_by),
+    };
+
+    super::events::publish(
+        connection,
+        audience,
+        &Event::Job {
+            group: job.group.slug().as_str().to_owned(),
+            job: job.id.to_string(),
+            state: job.state.to_string(),
+        },
+    )?;
+
+    Ok(())
 }
 
 /// One job.
@@ -273,6 +300,7 @@ pub fn take_next(
         return Ok(None);
     }
 
+    tell(&transaction, &job.id)?;
     let job = by_id(&transaction, &job.id)?;
     transaction.commit()?;
 
@@ -305,6 +333,10 @@ pub fn finish(
         )
         .context("cannot record how the job ended")?;
 
+    if recorded > 0 {
+        tell(connection, id)?;
+    }
+
     Ok(recorded > 0)
 }
 
@@ -317,6 +349,10 @@ pub fn withdraw(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool
             params![id.to_string(), by.to_string()],
         )
         .context("cannot call the job back")?;
+
+    if withdrawn > 0 {
+        tell(connection, id)?;
+    }
 
     Ok(withdrawn > 0)
 }
@@ -335,6 +371,10 @@ pub fn clear(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool> {
             params![id.to_string(), by.to_string()],
         )
         .context("cannot record the decision")?;
+
+    if cleared > 0 {
+        tell(connection, id)?;
+    }
 
     Ok(cleared > 0)
 }

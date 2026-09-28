@@ -4846,6 +4846,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "clap",
+ "futures-util",
  "getrandom 0.3.4",
  "hmac",
  "lettre",

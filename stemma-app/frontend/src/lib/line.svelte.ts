@@ -31,7 +31,7 @@ export class LineSession {
   /** The agent that is asked, as `machine|agent`. */
   agent = $state("");
 
-  readonly offers: Offer[];
+  offers = $state<Offer[]>([]);
 
   canUndo = $state(false);
   canRedo = $state(false);
@@ -279,6 +279,32 @@ export class LineSession {
 
   requestClaim() {
     return this.#claimWith(() => api.requestClaim(this.path));
+  }
+
+  /** Looks at who is writing the line again, taking nothing: the instance
+   * said the claim changed. A line this machine was waiting for and is
+   * now free is taken, as opening it would have. */
+  async lookAtClaim() {
+    try {
+      const claim = await api.claimStatus(this.path);
+      if (claim.standing === "open" && !this.writing) {
+        await this.takeClaim();
+        return;
+      }
+      this.claim = claim;
+      this.claimError = null;
+      this.writing = claim.standing === "writing";
+    } catch {
+      // What was shown stays until the next look works.
+    }
+  }
+
+  /** The machines working for the group changed what they offer. */
+  offersChanged(offers: Offer[]) {
+    this.offers = offers;
+    if (!this.agents.some((one) => one.value === this.agent && !one.reason)) {
+      this.agent = (this.agents.find((one) => !one.reason) ?? this.agents[0])?.value ?? "";
+    }
   }
 
   async #claimWith(ask: () => Promise<Claim>) {

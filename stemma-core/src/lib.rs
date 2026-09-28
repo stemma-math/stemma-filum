@@ -16,6 +16,7 @@ pub mod claim;
 pub mod descent;
 pub mod diff;
 pub mod document;
+pub mod event;
 pub mod fact;
 pub mod id;
 pub mod job;

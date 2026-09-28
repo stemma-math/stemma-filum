@@ -8,10 +8,12 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use stemma_core::access::WhoWrites;
+use stemma_core::event::{Event, LineChange};
 use stemma_core::id::{GroupId, LineId, UserId};
 use stemma_core::line::Name;
 use stemma_core::repository::Side;
 
+use super::events::{self, Audience};
 use super::id_at;
 
 /// One line the instance knows was started.
@@ -97,7 +99,38 @@ pub fn start(
         )
         .context("cannot record the line")?;
 
+    tell(connection, group, side, name, author, LineChange::Started)?;
+
     by_name(connection, group, side, name, author)?.context("the line cannot be read back")
+}
+
+/// Says a line changed, to whoever can see it.
+fn tell(
+    connection: &Connection,
+    group: &GroupId,
+    side: Side,
+    name: &Name,
+    author: &UserId,
+    change: LineChange,
+) -> Result<()> {
+    let audience = match side {
+        Side::Shared => Audience::Group(group),
+        Side::Private => Audience::Person(group, author),
+    };
+
+    events::publish(
+        connection,
+        audience,
+        &Event::Line {
+            group: group.slug().as_str().to_owned(),
+            side,
+            line: name.as_str().to_owned(),
+            change,
+            revision: None,
+        },
+    )?;
+
+    Ok(())
 }
 
 /// Records that a line moved to the group, and who writes it there.
@@ -134,6 +167,14 @@ pub fn share(
 
     let shared = by_name(&transaction, group, Side::Shared, name, author)?
         .context("the line cannot be read back")?;
+    tell(
+        &transaction,
+        group,
+        Side::Shared,
+        name,
+        author,
+        LineChange::Shared,
+    )?;
     transaction.commit()?;
     Ok(shared)
 }
@@ -155,6 +196,8 @@ pub fn forget(
             params![group.to_string(), side.as_str(), name.as_str(), author.to_string()],
         )
         .context("cannot forget the line")?;
+
+    tell(connection, group, side, name, author, LineChange::Deleted)?;
 
     Ok(())
 }

@@ -183,3 +183,13 @@ export type AuditAction = "attest" | "withdraw";
 
 /** What `sign_in_poll` answers while a sign-in is pending or once it ends. */
 export type SignInState = "signed" | "waiting" | "nothing" | "refused" | "ran_out";
+
+/** What the instance said changed (`stemma_core::event::Event`). */
+export type ServerEvent =
+  | { kind: "line"; group: string; side: string; line: string; change: "started" | "written" | "shared" | "deleted"; revision?: number }
+  | { kind: "claim"; group: string; side: string; line: string; change: "taken" | "released" | "asked" }
+  | { kind: "group"; group: string; change: "created" | "joined" }
+  | { kind: "job"; group: string; job: string; state: string }
+  | { kind: "proposal"; group: string; proposal: string; state: string }
+  | { kind: "machine"; machine: string }
+  | { kind: "reset" };

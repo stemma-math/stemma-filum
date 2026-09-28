@@ -69,6 +69,7 @@ fn start_logging() {
 async fn run(instance: Instance) -> Result<()> {
     let listen = instance.settings.listen.clone();
     let public_url = instance.settings.public_url.clone();
+    tokio::spawn(maintain(instance.clone()));
     let router = router(instance);
 
     tracing::info!("listening on {listen}, answering as {public_url}");
@@ -103,6 +104,22 @@ async fn run(instance: Instance) -> Result<()> {
 }
 
 /// Lets the reverse proxy reach the socket, and nobody else.
+/// Housekeeping nobody asks for, on a timer, for as long as the server
+/// runs. A round that fails is logged and the next one tries again.
+async fn maintain(instance: Instance) {
+    let mut every = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+
+    loop {
+        every.tick().await;
+
+        match instance.read(crate::store::events::forget_old).await {
+            Ok(0) => {}
+            Ok(forgotten) => tracing::info!("forgot {forgotten} old events"),
+            Err(error) => tracing::warn!("cannot forget old events: {error}"),
+        }
+    }
+}
+
 fn open_to_the_group(path: &std::path::Path) -> Result<()> {
     #[cfg(unix)]
     {

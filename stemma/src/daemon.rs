@@ -47,6 +47,10 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
 
     let mut agents = crate::agents::look(home, &config);
     let mut looked = Instant::now();
+    let woken = match once {
+        true => None,
+        false => Some(wake_on_work(home)),
+    };
 
     writeln!(
         out,
@@ -91,7 +95,15 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
                 return Ok(());
             }
 
-            std::thread::sleep(Duration::from_secs(BEAT_SECONDS));
+            // Until the next beat is due, or until the instance says
+            // there is work, whichever is first.
+            match &woken {
+                Some(woken) => {
+                    let _ = woken.recv_timeout(Duration::from_secs(BEAT_SECONDS));
+                    while woken.try_recv().is_ok() {}
+                }
+                None => std::thread::sleep(Duration::from_secs(BEAT_SECONDS)),
+            }
             continue;
         };
 
@@ -109,6 +121,36 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
             return Ok(());
         }
     }
+}
+
+/// Listens to the instance on a thread of its own, and rings whenever a
+/// job may be waiting: one was queued, a machine changed, or the stream
+/// opened after being away.
+fn wake_on_work(home: &Home) -> std::sync::mpsc::Receiver<()> {
+    use crate::events::Heard;
+    use stemma_core::event::Event;
+
+    let (ring, woken) = std::sync::mpsc::channel();
+    let home = home.clone();
+
+    std::thread::spawn(move || {
+        let never = std::sync::atomic::AtomicBool::new(false);
+
+        crate::events::follow(&home, &never, |heard| {
+            let work = match &heard {
+                Heard::Connected => true,
+                Heard::Changed(Event::Job { state, .. }) => state == "queued",
+                Heard::Changed(Event::Machine { .. } | Event::Reset) => true,
+                _ => false,
+            };
+
+            if work {
+                let _ = ring.send(());
+            }
+        });
+    });
+
+    woken
 }
 
 /// Does one job and reports what came of it.
