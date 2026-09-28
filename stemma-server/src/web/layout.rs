@@ -156,7 +156,7 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
 
     html! {
         (DOCTYPE)
-        html lang="en" {
+        html lang="en" data-theme=[super::appearance::chosen().theme()] {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
@@ -201,7 +201,7 @@ fn masthead(chrome: &Chrome) -> Markup {
     html! {
         header class="masthead" {
             a class="brand" href="/" {
-                (mark_on_light())
+                (mark_on_page())
                 span class="wordmark" { "Stemma" }
             }
 
@@ -286,6 +286,8 @@ fn sidebar(chrome: &Chrome) -> Markup {
                 }
             }
 
+            (super::appearance::switch("appearance--sidebar"))
+
             @if let Some(user) = &chrome.visitor {
                 div class="user-card" {
                     span class="avatar" aria-hidden="true" { (initials(&user.display_name)) }
@@ -358,6 +360,7 @@ fn foot(chrome: &Chrome) -> Markup {
         footer class="foot" {
             span { (chrome.instance) }
             span { "stemma " (env!("CARGO_PKG_VERSION")) }
+            (super::appearance::switch("appearance--foot"))
         }
     }
 }
@@ -406,6 +409,15 @@ pub fn mark_on_dark() -> Markup {
 /// The mark, for light surfaces.
 pub fn mark_on_light() -> Markup {
     html! { img class="mark" src=(MARK_ON_LIGHT_PATH) alt=""; }
+}
+
+/// The mark, for the page, which is light or dark as the reader chose:
+/// both drawings, and the stylesheet shows the one that fits.
+pub fn mark_on_page() -> Markup {
+    html! {
+        img class="mark mark--for-light" src=(MARK_ON_LIGHT_PATH) alt="";
+        img class="mark mark--for-dark" src=(MARK_ON_DARK_PATH) alt="";
+    }
 }
 
 /// The page shown when a request could not be answered.

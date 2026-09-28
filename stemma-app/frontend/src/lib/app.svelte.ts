@@ -11,7 +11,7 @@ import type { Known, Signed, Stepped, Waiting } from "./types";
 export type Stage = "welcome" | "editor" | "new-line" | "vault";
 
 /** Which page of the settings dialog is showing. */
-export type Panel = "machine" | "reviews" | "account";
+export type Panel = "machine" | "reviews" | "account" | "appearance";
 
 /** How an open line is shown: its blocks to edit, or the typeset page. */
 export type View = "blocks" | "pdf";

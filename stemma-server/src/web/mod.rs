@@ -6,6 +6,7 @@
 
 pub mod admin;
 pub mod api;
+pub mod appearance;
 pub mod artefacts;
 pub mod assets;
 pub mod auth;
@@ -173,6 +174,7 @@ pub fn router() -> Router<Instance> {
         .merge(assets())
         .fallback(get(not_found))
         .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))
+        .layer(axum::middleware::from_fn(appearance::remember))
 }
 
 /// Server-rendered pages and the forms they post.
@@ -182,6 +184,7 @@ fn pages() -> Router<Instance> {
         .route("/login", get(auth::login_form).post(auth::log_in))
         .route("/register", get(auth::register_form).post(auth::register))
         .route("/logout", post(auth::log_out))
+        .route("/appearance", post(appearance::choose))
         .route("/forgotten", get(reset::asking).post(reset::forgotten))
         .route("/reset/{secret}", get(reset::form).post(reset::set))
         .route("/device", get(device::form).post(device::answer))

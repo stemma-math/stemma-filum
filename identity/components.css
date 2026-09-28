@@ -11,10 +11,6 @@
 @layer stemma.base, stemma.components;
 
 @layer stemma.base {
-    :root {
-        color-scheme: light;
-    }
-
     /* Focus is never removed. */
     :focus-visible {
         outline: 2px solid var(--focus-ring);
@@ -173,19 +169,19 @@
     /* A destructive action that is the one a dialog is for. */
     .button--primary.button--danger {
         color: #fff;
-        background: var(--danger-fg);
-        border-color: var(--danger-fg);
+        background: var(--danger-solid);
+        border-color: var(--danger-solid);
     }
 
     .button--primary.button--danger:hover {
-        background: #8f1c13;
-        border-color: #8f1c13;
+        background: var(--danger-solid-hover);
+        border-color: var(--danger-solid-hover);
     }
 
     .button--link {
         min-height: 0;
         padding: 0;
-        color: var(--accent);
+        color: var(--link-fg);
         background: transparent;
         border: 0;
         text-decoration: underline;
@@ -194,7 +190,6 @@
     }
 
     .button--link:hover {
-        color: var(--accent-hover);
         background: transparent;
         text-decoration-color: currentColor;
     }
@@ -364,7 +359,7 @@
     /* Drawn rather than native, so the box is the same size, colour and
      * alignment in every browser and in the desktop window. At rest it is
      * a field; chosen, it takes the accent with white on it, as the
-     * primary button does. The edge is 3:1 against the page. */
+     * primary button does. The edge is 3:1 against a card. */
     input[type="checkbox"],
     input[type="radio"] {
         box-sizing: border-box;

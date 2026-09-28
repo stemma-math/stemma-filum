@@ -27,8 +27,14 @@ const declarations = (tokens, name) =>
         `    --${name(token)}: ${cssValue(token)};`,
     ]);
 
+// The dark appearance follows the system unless the page says otherwise
+// with `data-theme` on its root, which either appearance can force.
 const css = ({ dictionary }) => {
-    const plain = dictionary.allTokens.filter((token) => token.path[0] !== "density");
+    const plain = dictionary.allTokens.filter((token) => !["density", "dark"].includes(token.path[0]));
+    const dark = declarations(
+        dictionary.allTokens.filter((token) => token.path[0] === "dark"),
+        (token) => token.name,
+    );
     const density = (which) =>
         dictionary.allTokens.filter((token) => token.path[0] === "density" && token.path[1] === which);
     const densityName = (token) => token.path.slice(2).join("-");
@@ -36,7 +42,20 @@ const css = ({ dictionary }) => {
         `/* ${HEADER} */`,
         "",
         ":root {",
+        "    color-scheme: light;",
         ...declarations(plain, (token) => token.name),
+        "}",
+        "",
+        "@media (prefers-color-scheme: dark) {",
+        '    :root:not([data-theme="light"]) {',
+        "        color-scheme: dark;",
+        ...dark.map((line) => `    ${line}`),
+        "    }",
+        "}",
+        "",
+        ':root[data-theme="dark"] {',
+        "    color-scheme: dark;",
+        ...dark,
         "}",
         "",
         ":root,",
