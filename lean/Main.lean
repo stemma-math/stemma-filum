@@ -22,6 +22,7 @@ private def parseArguments (arguments : List String) : Except String Arguments :
           .error "at least one module is required"
         else
           .ok { blocks, modules }
+    | ["--blocks"] => .error "`--blocks` needs a path"
     | "--blocks" :: path :: rest => loop rest (some path) modules
     | argument :: rest =>
       if argument.startsWith "-" then
