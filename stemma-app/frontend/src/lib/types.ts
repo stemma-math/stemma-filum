@@ -102,7 +102,20 @@ export type LeanDigest = {
   lean: string;
   mathlib: string;
   compiled: boolean;
-  statements: string[];
+  blocks: {
+    block: string;
+    state: "verified" | "refuted" | "unverified";
+    diagnostic: string;
+    declarations: {
+      name: string;
+      module: string;
+      statement: string;
+      sorry_free: boolean;
+      axioms: string[];
+      reaches: string[];
+      statement_closure: string;
+    }[];
+  }[];
   diagnostic: string;
 };
 

@@ -5,6 +5,8 @@
 //! let people create them outright, and that is a policy, not a different
 //! mechanism.
 
+use anyhow::Context;
+use axum::Json;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use maud::{Markup, html};
@@ -14,11 +16,133 @@ use stemma_core::artefact::{Nodes, Scope};
 use stemma_core::id::{InvitationId, Slug};
 use stemma_core::repository::Side;
 
+use super::api::Credential;
 use super::layout::{Chrome, glyph, page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::{self, Group, Member};
 use crate::store::invitations::{self, Invitation};
+
+/// Changes the exact Lean environment for a group. Only admins and owners
+/// may do this; machines hear the resulting library event and rebuild all of
+/// the group's work.
+pub async fn change_pins(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(slug): Path<String>,
+    Json(pins): Json<stemma_core::repository::Pins>,
+) -> Result<Response, WebError> {
+    let slug = Slug::parse(&slug).map_err(|_| WebError::NotFound)?;
+    let user = credential.user.id.clone();
+    let (group, role) = instance
+        .read(move |connection| {
+            let group = groups::by_slug(connection, &slug)?.context("group not found")?;
+            let role = groups::role_of(connection, &group.id, &user)?.context("not a member")?;
+            Ok((group, role))
+        })
+        .await
+        .map_err(|_| WebError::NotFound)?;
+    if !role.is_at_least(GroupRole::Admin) {
+        return Err(WebError::Forbidden(
+            "Only a group admin or owner can change Lean package pins.".to_owned(),
+        ));
+    }
+    validate_pins(&pins)?;
+
+    let id = group.id.clone();
+    let name = credential.user.display_name.clone();
+    let email = credential.user.email.clone();
+    let commit = instance
+        .writing_git(move |repositories| {
+            crate::git::write_pins(
+                repositories,
+                &id,
+                pins,
+                &crate::git::Author {
+                    name: &name,
+                    email: &email,
+                },
+            )
+        })
+        .await?;
+
+    let id = group.id.clone();
+    let event = stemma_core::event::Event::Library {
+        group: group.slug().as_str().to_owned(),
+        side: Side::Shared,
+        commit: commit.clone(),
+        change: stemma_core::event::LibraryChange::PinsChanged,
+    };
+    instance
+        .write(move |connection| {
+            crate::store::events::publish(
+                connection,
+                crate::store::events::Audience::Group(&id),
+                &event,
+            )?;
+            Ok(())
+        })
+        .await?;
+
+    Ok(Json(serde_json::json!({ "commit": commit })).into_response())
+}
+
+fn validate_pins(pins: &stemma_core::repository::Pins) -> Result<(), WebError> {
+    let required = [
+        ("Lean", pins.lean.as_deref()),
+        ("Mathlib", pins.mathlib.as_deref()),
+        ("the Stemma Lean package", pins.stemma.as_deref()),
+    ];
+    for (name, value) in required {
+        if value.is_none_or(|value| value.trim().is_empty() || unsafe_pin(value)) {
+            return Err(WebError::BadRequest(format!(
+                "{name} needs a safe, exact pin."
+            )));
+        }
+    }
+    let mut package_names = std::collections::BTreeSet::from([
+        "mathlib".to_owned(),
+        "stemma".to_owned(),
+        "group_library".to_owned(),
+    ]);
+    for dependency in &pins.dependencies {
+        let valid_name = !dependency.name.is_empty()
+            && dependency
+                .name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_');
+        let valid_git = url::Url::parse(&dependency.git)
+            .is_ok_and(|url| matches!(url.scheme(), "https" | "ssh"));
+        let valid_subdir = dependency.sub_dir.as_deref().is_none_or(|path| {
+            let path = std::path::Path::new(path);
+            !path.as_os_str().is_empty()
+                && path
+                    .components()
+                    .all(|part| matches!(part, std::path::Component::Normal(_)))
+                && !path.to_string_lossy().contains(['"', '\\'])
+        });
+        if !valid_name
+            || !package_names.insert(dependency.name.clone())
+            || !valid_git
+            || dependency.rev.trim().is_empty()
+            || unsafe_pin(&dependency.rev)
+            || !valid_subdir
+        {
+            return Err(WebError::BadRequest(format!(
+                "`{}` is not a safe Lake package pin.",
+                dependency.name
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn unsafe_pin(value: &str) -> bool {
+    value.len() > 200
+        || value
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '"' | '\\'))
+}
 
 /// What the request form sends.
 #[derive(Debug, Deserialize)]

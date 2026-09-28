@@ -226,7 +226,10 @@ pub fn group_pins(clone: &Path, manifest: &Manifest) -> stemma_core::repository:
     let mut pins = manifest.pins.clone();
 
     if manifest.side != repository::Side::Private
-        || (pins.typst.is_some() && pins.lean.is_some() && pins.mathlib.is_some())
+        || (pins.typst.is_some()
+            && pins.lean.is_some()
+            && pins.mathlib.is_some()
+            && pins.stemma.is_some())
     {
         return pins;
     }
@@ -243,6 +246,10 @@ pub fn group_pins(clone: &Path, manifest: &Manifest) -> stemma_core::repository:
         pins.typst = pins.typst.or(shared.pins.typst);
         pins.lean = pins.lean.or(shared.pins.lean);
         pins.mathlib = pins.mathlib.or(shared.pins.mathlib);
+        pins.stemma = pins.stemma.or(shared.pins.stemma);
+        if pins.dependencies.is_empty() {
+            pins.dependencies = shared.pins.dependencies;
+        }
     }
     pins
 }

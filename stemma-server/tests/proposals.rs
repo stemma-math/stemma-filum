@@ -121,9 +121,7 @@ async fn awaiting(harness: &mut Harness) -> String {
                     line_id: Some(line.id),
                     revision: line.revision,
                     against: None,
-                    task: Task::Fill {
-                        after: Some("thm:main".parse().unwrap()),
-                    },
+                    task: Task::Fill { after: None },
                     agent: Slug::parse("claude").unwrap(),
                     choice: Choice::Anyone,
                     by: user.id.clone(),
@@ -136,6 +134,7 @@ async fn awaiting(harness: &mut Harness) -> String {
                 &Offer {
                     source: proposed(),
                     lean_source: None,
+                    library_change: None,
                     vendor: "Anthropic".to_owned(),
                     model: "claude-opus-4".to_owned(),
                     prompt_revision: "1".to_owned(),

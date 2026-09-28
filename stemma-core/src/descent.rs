@@ -134,6 +134,7 @@ impl Descent {
 pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Descent {
     let mut descent = Descent::default();
     let mut level_of: BTreeMap<Siglum, usize> = BTreeMap::new();
+    let mut level_of_block = BTreeMap::new();
     let mut place_of: BTreeMap<Siglum, usize> = BTreeMap::new();
     let mut after_box: Option<(usize, usize)> = None;
     let mut counted: BTreeMap<usize, usize> = BTreeMap::new();
@@ -177,6 +178,7 @@ pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Des
             );
 
             level_of.insert(node.siglum.clone(), level);
+            level_of_block.insert(node.block, level);
             place_of.insert(node.siglum.clone(), at);
             draw(&mut descent, node, &place_of);
 
@@ -196,7 +198,7 @@ pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Des
             let level = black_box
                 .after
                 .as_ref()
-                .and_then(|after| level_of.get(after))
+                .and_then(|after| level_of_block.get(after))
                 .map(|level| level + 1)
                 .unwrap_or(0);
             let at = put(
@@ -231,6 +233,7 @@ pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Des
         );
 
         level_of.insert(node.siglum.clone(), level);
+        level_of_block.insert(node.block, level);
         place_of.insert(node.siglum.clone(), at);
         draw(&mut descent, node, &place_of);
 
@@ -253,7 +256,7 @@ pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Des
         let level = black_box
             .after
             .as_ref()
-            .and_then(|after| level_of.get(after))
+            .and_then(|after| level_of_block.get(after))
             .map(|level| level + 1)
             .unwrap_or(0);
         let at = put(

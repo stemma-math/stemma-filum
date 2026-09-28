@@ -20,26 +20,25 @@ export const LABELS: Record<string, string> = {
 
 const offer = (verb: string, anchor: string): Offered => ({ verb, label: LABELS[verb], task: `${verb}@${anchor}` });
 
-/** What can be asked about one block. A statement is named by the siglum
- * the line reads it as, so nothing can be asked about it while the line
- * does not read. */
+/** What can be asked about one block. Stable block identity anchors the
+ * request; the node lookup still ensures the complete line reads. */
 export function tasksFor(document: LineDocument, block: Block, nodeOf: (block: string) => Node | undefined): Offered[] {
   if (block.kind === "prose") return [offer("develop", block.id)];
 
   const statement = block.kind === "proof" ? document.blocks.find((one) => one.id === block.of) : block;
   if (!statement || !isStatement(statement)) return [];
-  const siglum = nodeOf(statement.id)?.siglum;
-  if (!siglum) return [];
-  if (block.kind === "proof") return [offer("prove", siglum)];
+  if (!nodeOf(statement.id)) return [];
+  const anchor = statement.id;
+  if (block.kind === "proof") return [offer("prove", anchor)];
 
   const theorem = statement.kind === "theorem";
   return [
-    ...(statement.proof ? [offer("prove", siglum)] : []),
-    offer("formalize", siglum),
-    ...(theorem ? [offer("refute", siglum)] : []),
-    ...(!statement.central ? [offer("rewrite", siglum)] : []),
-    ...(theorem && !statement.central ? [offer("promote", siglum)] : []),
-    ...(theorem && statement.central ? [offer("fill", siglum)] : []),
+    ...(statement.proof ? [offer("prove", anchor)] : []),
+    offer("formalize", anchor),
+    ...(theorem ? [offer("refute", anchor)] : []),
+    ...(!statement.central ? [offer("rewrite", anchor)] : []),
+    ...(theorem && !statement.central ? [offer("promote", anchor)] : []),
+    ...(theorem && statement.central ? [offer("fill", anchor)] : []),
   ];
 }
 

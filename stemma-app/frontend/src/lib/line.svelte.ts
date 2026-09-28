@@ -109,9 +109,13 @@ export class LineSession {
     return this.writing && !this.#locked;
   }
 
-  /** Sigla Lean verified in the last compiled module. */
+  /** Stable blocks Lean verified in the last library check. */
   get verified(): Set<string> {
-    return new Set(this.opened.lean?.compiled ? this.opened.lean.statements : []);
+    return new Set(
+      this.opened.lean?.compiled
+        ? this.opened.lean.blocks.filter((result) => result.state === "verified").map((result) => result.block)
+        : [],
+    );
   }
 
   /** What the line reads a block as, when it is a statement and the line reads. */

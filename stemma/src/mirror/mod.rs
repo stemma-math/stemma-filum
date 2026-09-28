@@ -314,6 +314,21 @@ impl Mirror {
         Ok(())
     }
 
+    /// Marks every line affected by a library change for an immediate rebuild.
+    /// A shared package is a dependency of both sides; a private package affects
+    /// only its owner's private lines.
+    pub fn rebuild(&self, group: &str, side: Side) -> Result<()> {
+        let _locked = self.store.lock()?;
+        for mut record in self.store.all()? {
+            let affected = record.group == group && (record.side == side || side == Side::Shared);
+            if affected {
+                record.unbuilt = Some(0);
+                self.store.put(&record)?;
+            }
+        }
+        Ok(())
+    }
+
     /// The record of one line.
     pub fn find(&self, group: &str, side: Side, name: &str) -> Result<Option<Record>> {
         self.store.named(group, side, name)
@@ -545,6 +560,9 @@ impl Mirror {
                     if std::fs::read_to_string(&at).ok().as_deref() != Some(content.as_str()) {
                         crate::storage::replace(&at, &content)?;
                     }
+                    let mut permissions = std::fs::metadata(&at)?.permissions();
+                    permissions.set_readonly(true);
+                    std::fs::set_permissions(&at, permissions)?;
                 }
             }
         }

@@ -10,9 +10,10 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
+use stemma_core::id::BlockId;
 use stemma_core::job::{Outcome, Task};
-use stemma_core::line::{BlackBox, Line, Siglum};
-use stemma_core::proposal::Offer;
+use stemma_core::line::{BlackBox, Line};
+use stemma_core::proposal::{LibraryChange, Offer};
 use stemma_core::repository::{self, Side};
 
 use crate::agents::{self, Ran};
@@ -97,9 +98,15 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
     if needs_lean_check(&task, &outcome) {
         let checked = proposal
             .as_ref()
-            .and_then(|offer| offer.lean_source.as_deref())
-            .ok_or_else(|| "the agent offered no complete Lean module".to_owned())
-            .and_then(|lean_source| {
+            .ok_or_else(|| "the agent offered no formal change".to_owned())
+            .and_then(|offer| {
+                if let Some(change) = &offer.library_change {
+                    return check_library_offer(change, &task, &line, &handed.line);
+                }
+                let lean_source = offer
+                    .lean_source
+                    .as_deref()
+                    .ok_or_else(|| "the agent offered no complete Lean module".to_owned())?;
                 let clone = repository_of(home, handed).ok_or_else(|| {
                     "this machine does not have the line's repository yet".to_owned()
                 })?;
@@ -116,9 +123,18 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
                 )?;
                 let declared = crate::lean::declared_statements(lean_source);
                 match &task {
-                    Task::Formalize { statement } if !declared.contains(statement) => Err(format!(
-                        "the compiled module does not declare that it verifies `{statement}`"
-                    )),
+                    Task::Formalize { block } => {
+                        let statement = line
+                            .node_at(block)
+                            .ok_or_else(|| "the statement block is no longer there".to_owned())?;
+                        if declared.contains(&statement.siglum) {
+                            Ok(())
+                        } else {
+                            Err(format!(
+                                "the compiled module does not declare that it verifies `{block}`"
+                            ))
+                        }
+                    }
                     Task::Verify { after } => {
                         let black_box = line
                             .boxes()
@@ -128,8 +144,9 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
                         let missing: Vec<String> = black_box
                             .interior
                             .iter()
-                            .filter(|statement| !declared.contains(statement))
-                            .map(ToString::to_string)
+                            .filter_map(|block| line.node_at(block))
+                            .filter(|statement| !declared.contains(&statement.siglum))
+                            .map(|statement| statement.block.to_string())
                             .collect();
                         if missing.is_empty() {
                             Ok(())
@@ -182,6 +199,52 @@ fn needs_lean_check(task: &Task, outcome: &Outcome) -> bool {
         && matches!(outcome, Outcome::Produced { .. })
 }
 
+fn check_library_offer(
+    change: &LibraryChange,
+    task: &Task,
+    line: &Line,
+    line_name: &str,
+) -> Result<(), String> {
+    if change.files.is_empty() {
+        return Err("the agent offered an empty Lean library change".to_owned());
+    }
+    let marked: std::collections::BTreeSet<String> = change
+        .files
+        .iter()
+        .filter_map(|file| file.after.as_deref())
+        .flat_map(|source| {
+            source
+                .split("@[stemma \"")
+                .skip(1)
+                .filter_map(|rest| rest.split_once('"').map(|(mark, _)| mark.to_owned()))
+        })
+        .collect();
+    let required: Vec<BlockId> = match task {
+        Task::Formalize { block } => vec![*block],
+        Task::Verify { after } => {
+            line.boxes()
+                .into_iter()
+                .find(|black_box| &black_box.after == after)
+                .ok_or_else(|| "the black box is no longer there".to_owned())?
+                .interior
+        }
+        _ => Vec::new(),
+    };
+    let missing: Vec<_> = required
+        .into_iter()
+        .filter(|block| !marked.contains(&format!("{line_name}/{block}")))
+        .map(|block| block.to_string())
+        .collect();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "the Lean library change does not mark {}",
+            missing.join(", ")
+        ))
+    }
+}
+
 /// Everything this machine returns after doing one job.
 pub struct Completed {
     /// The typed public outcome.
@@ -203,6 +266,8 @@ const PROPOSAL_START: &str = "stemma: proposal";
 const PROPOSAL_END: &str = "stemma: end proposal";
 const LEAN_START: &str = "stemma: lean";
 const LEAN_END: &str = "stemma: end lean";
+const LIBRARY_START: &str = "stemma: library";
+const LIBRARY_END: &str = "stemma: end library";
 const MODEL: &str = "stemma: model ";
 
 fn proposal(agent: &str, output: &str) -> Option<Offer> {
@@ -222,6 +287,8 @@ fn proposal(agent: &str, output: &str) -> Option<Offer> {
     Some(Offer {
         source,
         lean_source: section(output, LEAN_START, LEAN_END),
+        library_change: section(output, LIBRARY_START, LIBRARY_END)
+            .and_then(|change| serde_json::from_str(&change).ok()),
         vendor,
         model: model.to_owned(),
         prompt_revision: PROMPT_REVISION.to_owned(),
@@ -387,14 +454,16 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option
     let _ = writeln!(asked, "{}", source.trim());
     let _ = writeln!(asked, "----------------------------------------");
     let _ = writeln!(asked);
-    let _ = writeln!(asked, "{}", asked_of(task, line, other));
+    let _ = writeln!(asked, "{}", asked_of(task, line, &handed.line, other));
     let _ = writeln!(asked);
     let _ = writeln!(
         asked,
         "When you have a change to offer, print `stemma: proposal` on its own, \
          then the complete proposed line.json, then `stemma: end proposal`. \
          If Lean changes, then print `stemma: lean`, the complete `Main.lean` module, \
-         and `stemma: end lean`. After it print `stemma: model MODEL-ID` with the concrete model you used, \
+         and `stemma: end lean`. A group-library change is instead printed between \
+         `stemma: library` and `stemma: end library` as a JSON `base` commit and a `files` \
+         array of path, before and after. After it print `stemma: model MODEL-ID` with the concrete model you used, \
          and finally `stemma: produced`. If you found nothing, end with `{NOTHING}`. \
          Finding nothing is an ordinary answer and a useful one."
     );
@@ -422,7 +491,7 @@ Every `content` is Typst markup: `$x^2$` for mathematics, `@siglum` to cite a st
 Brackets in it must be balanced or escaped as `\\[` and `\\]`.";
 
 /// The one thing this job asks for.
-fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
+fn asked_of(task: &Task, line: &Line, line_name: &str, other: Option<&str>) -> String {
     match task {
         Task::Fill { after } => {
             let between = line
@@ -431,20 +500,22 @@ fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
                 .find(|black_box| &black_box.after == after);
 
             match between {
-                Some(black_box) => format!("Fill the black box {}.", bounded(&black_box)),
+                Some(black_box) => format!("Fill the black box {}.", bounded(line, &black_box)),
                 None => "Fill the black box that box refers to, which is no longer there. \
                          Say so rather than guessing."
                     .to_owned(),
             }
         }
-        Task::Refute { statement } => format!(
-            "Look for a counterexample to `{statement}`. If you do not find one, \
+        Task::Refute { block } => format!(
+            "Look for a counterexample to `{}`. If you do not find one, \
              that settles nothing and you must not say it does: say only that you \
-             did not find one."
+             did not find one.",
+            named(line, block)
         ),
-        Task::Formalize { statement } => format!(
-            "Formalize `{statement}` in Lean. Keep its prose fixed. The Lean module must include \
-             the exact marker `-- stemma: verifies {statement}` immediately above the declaration."
+        Task::Formalize { block } => format!(
+            "Formalize `{}` in Lean. Keep its prose fixed. Mark every declaration that backs it \
+             with `@[stemma \"{line_name}/{block}\"]`.",
+            named(line, block)
         ),
         Task::Verify { after } => {
             let between = line
@@ -454,28 +525,32 @@ fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
             match between {
                 Some(black_box) => format!(
                     "Write a Lean argument verifying every statement in the black box {}. \
-                     Mark each compiled statement with `-- stemma: verifies SIGLUM`.",
-                    bounded(&black_box)
+                     Mark each declaration with `@[stemma \"{line_name}/BLOCK-ID\"]`, using the \
+                     stable block identifier it establishes.",
+                    bounded(line, &black_box),
                 ),
                 None => "The black box to verify is no longer there. Say so rather than guessing."
                     .to_owned(),
             }
         }
-        Task::Promote { statement } => format!(
-            "Promote `{statement}` out of its black box by setting `\"central\": true`. \
+        Task::Promote { block } => format!(
+            "Promote `{}` out of its black box by setting `\"central\": true`. \
              Do not change its claim. Explain why it deserves a stable name; promotion freezes \
-             it, splits the surrounding box, and reserves a human correspondence audit."
+             it, splits the surrounding box, and reserves a human correspondence audit.",
+            named(line, block)
         ),
-        Task::Prove { statement } => format!(
-            "Write the proof of `{statement}` in its proof block, or finish the one there. \
+        Task::Prove { block } => format!(
+            "Write the proof of `{}` in its proof block, or finish the one there. \
              Do not change the statement. Add the lemmas the proof needs as new blocks \
              before it, each with its own proof. If you find no proof, say so rather than \
-             offering an incomplete one as complete."
+             offering an incomplete one as complete.",
+            named(line, block)
         ),
-        Task::Rewrite { statement } => format!(
-            "Rewrite `{statement}` so that it is correct and precise, keeping what it means. \
+        Task::Rewrite { block } => format!(
+            "Rewrite `{}` so that it is correct and precise, keeping what it means. \
              Keep its block identifier. Adjust what uses it only where the new statement \
-             requires it, and explain every change of meaning."
+             requires it, and explain every change of meaning.",
+            named(line, block)
         ),
         Task::Develop { block } => format!(
             "The prose block `{block}` describes mathematics informally. Develop it: replace \
@@ -504,18 +579,26 @@ fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
 }
 
 /// A box, said by its two ends.
-fn bounded(black_box: &BlackBox) -> String {
-    let named = |siglum: &Option<Siglum>| match siglum {
-        Some(siglum) => format!("`{siglum}`"),
+fn bounded(line: &Line, black_box: &BlackBox) -> String {
+    let boundary = |block: &Option<BlockId>| match block {
+        Some(block) => format!("`{}`", named(line, block)),
         None => "the start of the line".to_owned(),
     };
 
     match (&black_box.after, &black_box.before) {
-        (after, Some(before)) => format!("between {} and `{before}`", named(after)),
+        (after, Some(before)) => {
+            format!("between {} and `{}`", boundary(after), named(line, before))
+        }
         // The end of a line is open, and that is the ordinary state of
         // work in progress rather than something missing.
-        (after, None) => format!("that begins after {} and is still open", named(after)),
+        (after, None) => format!("that begins after {} and is still open", boundary(after)),
     }
+}
+
+fn named(line: &Line, block: &BlockId) -> String {
+    line.node_at(block)
+        .map(|node| node.siglum.to_string())
+        .unwrap_or_else(|| block.to_string())
 }
 
 /// Where the raw output of a job is, for the person whose machine it is.
@@ -534,7 +617,9 @@ mod tests {
 
     #[test]
     fn formal_work_preserves_agent_failure_and_nothing_found_outcomes() {
-        let task: Task = "formalize@thm:first".parse().unwrap();
+        let task = Task::Formalize {
+            block: line().node(&"thm:first".parse().unwrap()).unwrap().block,
+        };
         assert!(!needs_lean_check(
             &task,
             &Outcome::out_of_reach("agent unavailable")
@@ -594,10 +679,17 @@ mod tests {
         Line::read(&source()).unwrap()
     }
 
+    fn block(line: &Line, named: &str) -> BlockId {
+        line.node(&named.parse().unwrap()).unwrap().block
+    }
+
     #[test]
     fn a_box_is_asked_for_by_both_its_ends() {
-        let task: Task = "fill@thm:first".parse().unwrap();
-        let asked = asked_of(&task, &line(), None);
+        let line = line();
+        let task = Task::Fill {
+            after: Some(block(&line, "thm:first")),
+        };
+        let asked = asked_of(&task, &line, "quotient-groups", None);
 
         assert!(
             asked.contains("between `thm:first` and `thm:second`"),
@@ -605,13 +697,19 @@ mod tests {
         );
 
         let first: Task = "fill".parse().unwrap();
-        assert!(asked_of(&first, &line(), None).contains("between the start of the line"));
+        assert!(
+            asked_of(&first, &line, "quotient-groups", None)
+                .contains("between the start of the line")
+        );
     }
 
     #[test]
     fn the_prompt_says_what_an_agent_may_not_touch() {
-        let task: Task = "fill@thm:first".parse().unwrap();
-        let asked = prompt(&handed("fill@thm:first"), &task, &line(), &source(), None);
+        let line = line();
+        let task = Task::Fill {
+            after: Some(block(&line, "thm:first")),
+        };
+        let asked = prompt(&handed(&task.to_string()), &task, &line, &source(), None);
 
         assert!(asked.contains("Do not change its text"));
         assert!(asked.contains("\"kind\""), "the format is described");
@@ -620,16 +718,42 @@ mod tests {
     }
 
     #[test]
+    fn a_formal_library_offer_marks_the_block_it_establishes() {
+        let line = line();
+        let block = block(&line, "thm:first");
+        let task = Task::Formalize { block };
+        let offered = LibraryChange {
+            base: "0123456789012345678901234567890123456789".to_owned(),
+            files: vec![stemma_core::proposal::LibraryFileChange {
+                path: "Algebra/Quotients.lean".to_owned(),
+                before: None,
+                after: Some(format!(
+                    "@[stemma \"quotient-groups/{block}\"] theorem first : True := by trivial\n"
+                )),
+            }],
+        };
+
+        assert!(check_library_offer(&offered, &task, &line, "quotient-groups").is_ok());
+        assert!(check_library_offer(&offered, &task, &line, "another-line").is_err());
+    }
+
+    #[test]
     fn an_agent_looking_for_a_counterexample_is_told_what_not_finding_one_means() {
-        let task: Task = "refute@thm:first".parse().unwrap();
-        let asked = asked_of(&task, &line(), None);
+        let line = line();
+        let task = Task::Refute {
+            block: block(&line, "thm:first"),
+        };
+        let asked = asked_of(&task, &line, "quotient-groups", None);
 
         assert!(asked.contains("settles nothing"));
     }
 
     #[test]
     fn finding_no_counterexample_is_never_reported_as_the_statement_holding() {
-        let task: Task = "refute@thm:first".parse().unwrap();
+        let line = line();
+        let task = Task::Refute {
+            block: block(&line, "thm:first"),
+        };
         let ran = Ran::Finished(Finished {
             status: Some(0),
             output: "I looked and found nothing.\nstemma: nothing\n".to_owned(),

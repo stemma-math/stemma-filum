@@ -352,6 +352,8 @@ fn body(viewing: &Viewing<'_>) -> Markup {
     } = *viewing;
     let boxes = digest.line.boxes();
     let central = digest.line.central();
+    let checking = written
+        .is_some_and(|written| digest.revision != Some(written.revision) || digest.lean.is_none());
 
     html! {
         header class="page-head" {
@@ -414,10 +416,10 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                     @match element {
                         Element::Node(siglum) => {
                             @if let Some(node) = digest.line.node(&siglum) {
-                                (drawn(node, digest.lean.as_ref(), launchers))
+                                (drawn(node, digest.lean.as_ref(), checking, launchers))
                             }
                         }
-                        Element::Box(black_box) => (drawn_box(&black_box, digest.lean.as_ref(), launchers)),
+                        Element::Box(black_box) => (drawn_box(&black_box, digest.lean.as_ref(), checking, launchers)),
                     }
                 }
 
@@ -484,11 +486,12 @@ fn body(viewing: &Viewing<'_>) -> Markup {
 fn drawn(
     node: &stemma_core::line::Node,
     lean: Option<&stemma_core::artefact::LeanDigest>,
+    checking: bool,
     launchers: &Anchored<'_>,
 ) -> Markup {
     let central = node.is_central();
     let verified = lean.is_some_and(|result| {
-        result.verification_of(&node.siglum) == stemma_core::model::Verification::Verified
+        result.verification_of(&node.block) == stemma_core::model::Verification::Verified
     });
 
     html! {
@@ -505,6 +508,7 @@ fn drawn(
                     span { "proved here" }
                 }
                 @if verified { span { "Lean verified" } }
+                @if checking { span { "Checking" } }
             }
 
             div class="node__body" {
@@ -530,14 +534,14 @@ fn drawn(
                 // false.
                 @if central {
                     (launchers.at(Task::Formalize {
-                        statement: node.siglum.clone(),
+                        block: node.block,
                     }))
                     (launchers.at(Task::Refute {
-                        statement: node.siglum.clone(),
+                        block: node.block,
                     }))
                 } @else if node.siglum.kind.is_statement() {
                     (launchers.at(Task::Promote {
-                        statement: node.siglum.clone(),
+                        block: node.block,
                     }))
                 }
             }
@@ -549,6 +553,7 @@ fn drawn(
 fn drawn_box(
     black_box: &stemma_core::line::BlackBox,
     lean: Option<&stemma_core::artefact::LeanDigest>,
+    checking: bool,
     launchers: &Anchored<'_>,
 ) -> Markup {
     let filled = black_box.state != BoxState::Empty;
@@ -559,6 +564,7 @@ fn drawn_box(
             div class="node__mark" {
                 span { "black box" }
                 @if verified { span { "Lean verified" } }
+                @if checking { span { "Checking" } }
             }
 
             div class="box__band" {
@@ -579,11 +585,11 @@ fn drawn_box(
 
             div class="box__ask" {
                 (launchers.at(Task::Fill {
-                    after: black_box.after.clone(),
+                    after: black_box.after,
                 }))
                 @if filled {
                     (launchers.at(Task::Verify {
-                        after: black_box.after.clone(),
+                        after: black_box.after,
                     }))
                 }
             }

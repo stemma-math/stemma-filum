@@ -16,7 +16,17 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use stemma_core::id::{GroupId, Slug, UserId};
 use stemma_core::line::Name;
+use stemma_core::proposal::LibraryFileChange;
 use stemma_core::repository::{self, Manifest};
+
+/// What applying an approved library change came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LibraryWritten {
+    /// It became this commit.
+    Taken(String),
+    /// These files changed both in the proposal and since its base.
+    Conflicted(Vec<String>),
+}
 
 /// Who the instance is, when it is the one making a commit.
 const COMMITTER: (&str, &str) = ("Stemma", "stemma@localhost");
@@ -68,6 +78,21 @@ impl Repositories {
             .join(group.slug().as_str())
             .join("personal")
             .join(format!("{}.git", user.slug()))
+    }
+
+    /// Every private package belonging to one group, in stable order.
+    pub fn personal_for_group(&self, group: &GroupId) -> Vec<PathBuf> {
+        let directory = self.root.join(group.slug().as_str()).join("personal");
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return Vec::new();
+        };
+        let mut found: Vec<_> = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| exists(path))
+            .collect();
+        found.sort();
+        found
     }
 
     /// The path a request names, if it names one of ours.
@@ -181,12 +206,15 @@ pub fn ensure(path: &Path, manifest: &Manifest) -> Result<bool> {
 
 /// Writes the first commit, without ever making a working tree.
 fn seed(path: &Path, manifest: &Manifest) -> Result<()> {
-    let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], &manifest.to_text())?;
-    let tree = run_with_input(
-        path,
-        &["mktree"],
-        &format!("100644 blob {blob}\t{}\n", repository::MANIFEST),
-    )?;
+    let mut files = vec![(repository::MANIFEST.to_owned(), manifest.to_text())];
+    files.extend(manifest.lake_files());
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut entries = String::new();
+    for (name, contents) in files {
+        let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], &contents)?;
+        entries.push_str(&format!("100644 blob {blob}\t{name}\n"));
+    }
+    let tree = run_with_input(path, &["mktree"], &entries)?;
     let commit = run(
         path,
         &[
@@ -436,6 +464,166 @@ pub fn bring_line(to: &Path, from: &Path, name: &Name, history: bool) -> Result<
     Ok(())
 }
 
+/// Moves the private modules carrying a line's marks, and their local imports,
+/// into the shared package. A module carrying marks for another private line
+/// is refused rather than leaking that line while moving this one.
+pub fn bring_line_library(
+    to: &Path,
+    from: &Path,
+    line: &Name,
+    author: &Author<'_>,
+) -> Result<Vec<String>> {
+    let private_head = head_commit(from).context("the private library has no branch")?;
+    let shared_head = head_commit(to).context("the shared library has no branch")?;
+    let sources: std::collections::BTreeMap<String, String> = root_files(from)?
+        .into_iter()
+        .filter(|(path, _)| path.ends_with(".lean"))
+        .collect();
+    let prefix = format!("{}/", line.as_str());
+    let mut selected: std::collections::BTreeSet<String> = sources
+        .iter()
+        .filter(|(_, source)| {
+            marks_in(source)
+                .iter()
+                .any(|mark| mark.starts_with(&prefix))
+        })
+        .map(|(path, _)| path.clone())
+        .collect();
+    if selected.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let by_module: std::collections::BTreeMap<String, String> = sources
+        .keys()
+        .map(|path| (module_of(path), path.clone()))
+        .collect();
+    let mut pending: Vec<String> = selected.iter().cloned().collect();
+    while let Some(path) = pending.pop() {
+        let Some(source) = sources.get(&path) else {
+            continue;
+        };
+        for imported in imports_in(source) {
+            if let Some(dependency) = by_module.get(&imported)
+                && selected.insert(dependency.clone())
+            {
+                pending.push(dependency.clone());
+            }
+        }
+    }
+
+    for path in &selected {
+        let foreign: Vec<_> = marks_in(&sources[path])
+            .into_iter()
+            .filter(|mark| !mark.starts_with(&prefix))
+            .collect();
+        if !foreign.is_empty() {
+            bail!(
+                "{} also carries marks for private work ({}); split the module before sharing",
+                path,
+                foreign.join(", ")
+            );
+        }
+    }
+
+    let mut into_shared = Vec::new();
+    let mut out_of_private = Vec::new();
+    for path in &selected {
+        let source = sources[path].clone();
+        let before = content_at(to, &shared_head, path)?;
+        if before.as_ref().is_some_and(|current| current != &source) {
+            bail!("the shared library already has a different `{path}`");
+        }
+        into_shared.push(LibraryFileChange {
+            path: path.clone(),
+            before: before.clone(),
+            after: Some(source.clone()),
+        });
+        out_of_private.push(LibraryFileChange {
+            path: path.clone(),
+            before: Some(source),
+            after: None,
+        });
+    }
+
+    let root = "GroupLibrary.lean";
+    let before = content_at(to, &shared_head, root)?.unwrap_or_default();
+    let mut imports: std::collections::BTreeSet<String> = before
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("import ").map(str::to_owned))
+        .collect();
+    imports.extend(
+        selected
+            .iter()
+            .filter(|path| path.as_str() != root)
+            .map(|path| module_of(path)),
+    );
+    let after = imports
+        .into_iter()
+        .map(|module| format!("import {module}\n"))
+        .collect::<String>();
+    if after != before {
+        into_shared.push(LibraryFileChange {
+            path: root.to_owned(),
+            before: Some(before),
+            after: Some(after),
+        });
+    }
+
+    match write_library(
+        to,
+        &shared_head,
+        &into_shared,
+        author,
+        &format!("Share {} formalization", line),
+    )? {
+        LibraryWritten::Taken(_) => {}
+        LibraryWritten::Conflicted(files) => {
+            bail!(
+                "the shared library changed concurrently in {}",
+                files.join(", ")
+            )
+        }
+    }
+    match write_library(
+        from,
+        &private_head,
+        &out_of_private,
+        author,
+        &format!("Move {} formalization to the group", line),
+    )? {
+        LibraryWritten::Taken(_) => {}
+        LibraryWritten::Conflicted(files) => {
+            bail!(
+                "the private library changed concurrently in {}",
+                files.join(", ")
+            )
+        }
+    }
+
+    Ok(selected.into_iter().collect())
+}
+
+fn marks_in(source: &str) -> Vec<String> {
+    source
+        .split("@[stemma \"")
+        .skip(1)
+        .filter_map(|rest| rest.split_once('"').map(|(mark, _)| mark.to_owned()))
+        .collect()
+}
+
+fn imports_in(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("import "))
+        .flat_map(str::split_whitespace)
+        .map(str::to_owned)
+        .collect()
+}
+
+fn module_of(path: &str) -> String {
+    path.trim_end_matches(".lean").replace(['/', '\\'], ".")
+}
+
 /// Takes a line out of a repository, saying why in `message`.
 pub fn drop_line(path: &Path, name: &Name, author: &Author<'_>, message: &str) -> Result<String> {
     let inside = format!("{}/{}", repository::LINES, name);
@@ -518,6 +706,270 @@ pub fn write_line(
     let _ = std::fs::remove_dir_all(index.with_extension("worktree"));
 
     built
+}
+
+/// Applies an approved agent change to a library, merging concurrent work per file.
+///
+/// Files untouched by the proposal always come from the current head. A proposed
+/// file is accepted when the current head still agrees with its base; when both
+/// changed it differently, the complete proposal waits for another review.
+pub fn write_library(
+    path: &Path,
+    base: &str,
+    changes: &[LibraryFileChange],
+    author: &Author<'_>,
+    message: &str,
+) -> Result<LibraryWritten> {
+    let head = head_commit(path).context("the repository has no branch yet")?;
+    run(
+        path,
+        &["rev-parse", "--verify", &format!("{base}^{{commit}}")],
+    )
+    .context("the library change names no commit in this repository")?;
+
+    let mut conflicts = Vec::new();
+    let mut changes_tree = false;
+    for change in changes {
+        check_library_path(&change.path)?;
+        let at_base = content_at(path, base, &change.path)?;
+        if at_base != change.before {
+            anyhow::bail!(
+                "the approved change does not match its base for {}",
+                change.path
+            );
+        }
+        let current = content_at(path, &head, &change.path)?;
+        if current != change.before && current != change.after && change.after != change.before {
+            conflicts.push(change.path.clone());
+        }
+        if change.after != change.before && current != change.after {
+            changes_tree = true;
+        }
+    }
+    if !conflicts.is_empty() {
+        conflicts.sort();
+        return Ok(LibraryWritten::Conflicted(conflicts));
+    }
+    if !changes_tree {
+        return Ok(LibraryWritten::Taken(head));
+    }
+
+    let commit = write_commit(path, author, message, |index| {
+        for change in changes {
+            let current = content_at(path, &head, &change.path)?;
+            if change.after == change.before || current == change.after {
+                continue;
+            }
+            match &change.after {
+                Some(contents) => {
+                    let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], contents)?;
+                    index_git(
+                        path,
+                        index,
+                        &[
+                            "update-index",
+                            "--add",
+                            "--cacheinfo",
+                            &format!("100644,{blob},{}", change.path),
+                        ],
+                    )?;
+                }
+                None => {
+                    index_git(
+                        path,
+                        index,
+                        &["update-index", "--force-remove", &change.path],
+                    )?;
+                }
+            }
+        }
+        Ok(())
+    })?;
+
+    Ok(LibraryWritten::Taken(commit))
+}
+
+/// Applies a person's approved agent proposal, keeping package configuration
+/// under the separate admin-only pin operation.
+pub fn write_approved_library(
+    path: &Path,
+    base: &str,
+    changes: &[LibraryFileChange],
+    author: &Author<'_>,
+) -> Result<LibraryWritten> {
+    if changes.is_empty() {
+        bail!("the approved library change contains no files");
+    }
+    for change in changes {
+        if change.before == change.after {
+            bail!("the approved change does not change {}", change.path);
+        }
+        if matches!(
+            change.path.as_str(),
+            repository::MANIFEST
+                | repository::LAKEFILE
+                | repository::LEAN_TOOLCHAIN
+                | "GroupLibrary.lean"
+                | "PrivateLibrary.lean"
+        ) {
+            bail!("the server manages `{}`", change.path);
+        }
+    }
+    let written = write_library(
+        path,
+        base,
+        changes,
+        author,
+        "Apply approved Lean library change",
+    )?;
+    if matches!(written, LibraryWritten::Conflicted(_)) {
+        return Ok(written);
+    }
+
+    let head = head_commit(path).context("the repository has no branch yet")?;
+    let manifest = content_at(path, &head, repository::MANIFEST)?
+        .context("the library has no Stemma manifest")?;
+    let manifest = Manifest::parse(&manifest)?;
+    let root = match manifest.side {
+        repository::Side::Shared => "GroupLibrary.lean",
+        repository::Side::Private => "PrivateLibrary.lean",
+    };
+    let before = content_at(path, &head, root)?.unwrap_or_default();
+    let mut imports: std::collections::BTreeSet<String> = before
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("import ").map(str::to_owned))
+        .collect();
+    imports.insert(match manifest.side {
+        repository::Side::Shared => "Stemma".to_owned(),
+        repository::Side::Private => "GroupLibrary".to_owned(),
+    });
+    for change in changes
+        .iter()
+        .filter(|change| change.path.ends_with(".lean"))
+    {
+        let module = module_of(&change.path);
+        match &change.after {
+            Some(_) => {
+                imports.insert(module);
+            }
+            None => {
+                imports.remove(&module);
+            }
+        }
+    }
+    let after = imports
+        .into_iter()
+        .map(|module| format!("import {module}\n"))
+        .collect::<String>();
+    write_library(
+        path,
+        &head,
+        &[LibraryFileChange {
+            path: root.to_owned(),
+            before: Some(before),
+            after: Some(after),
+        }],
+        author,
+        "Update Lean library imports",
+    )
+}
+
+/// Changes a group's pins and regenerates the Lake configuration mirrored by
+/// every member package. This is an administrative operation, separate from
+/// agent-authored library files.
+pub fn write_pins(
+    repositories: &Repositories,
+    group: &GroupId,
+    mut pins: stemma_core::repository::Pins,
+    author: &Author<'_>,
+) -> Result<String> {
+    let shared = repositories.shared(group);
+    let head = head_commit(&shared).context("the shared library has no branch")?;
+    let written = show(&shared, &head, repository::MANIFEST)?;
+    let mut manifest = Manifest::parse(&written)?;
+    pins.package = manifest.pins.package.clone();
+    manifest.pins = pins;
+    let generated: std::collections::BTreeMap<_, _> = manifest
+        .lake_files()
+        .into_iter()
+        .filter(|(path, _)| path == repository::LAKEFILE || path == repository::LEAN_TOOLCHAIN)
+        .collect();
+    let mut changes = vec![LibraryFileChange {
+        path: repository::MANIFEST.to_owned(),
+        before: Some(written),
+        after: Some(manifest.to_text()),
+    }];
+    for (path, after) in generated {
+        changes.push(LibraryFileChange {
+            before: content_at(&shared, &head, &path)?,
+            path,
+            after: Some(after),
+        });
+    }
+    let commit = match write_library(&shared, &head, &changes, author, "Change Lean package pins")?
+    {
+        LibraryWritten::Taken(commit) => commit,
+        LibraryWritten::Conflicted(files) => {
+            bail!(
+                "the shared library changed concurrently in {}",
+                files.join(", ")
+            )
+        }
+    };
+
+    let toolchain = manifest
+        .lake_files()
+        .into_iter()
+        .find(|(path, _)| path == repository::LEAN_TOOLCHAIN)
+        .map(|(_, content)| content)
+        .context("the group has no Lean toolchain")?;
+    for private in repositories.personal_for_group(group) {
+        let Some(private_head) = head_commit(&private) else {
+            continue;
+        };
+        let change = LibraryFileChange {
+            path: repository::LEAN_TOOLCHAIN.to_owned(),
+            before: content_at(&private, &private_head, repository::LEAN_TOOLCHAIN)?,
+            after: Some(toolchain.clone()),
+        };
+        match write_library(
+            &private,
+            &private_head,
+            &[change],
+            author,
+            "Follow the group's Lean pin",
+        )? {
+            LibraryWritten::Taken(_) => {}
+            LibraryWritten::Conflicted(files) => {
+                bail!(
+                    "a private library changed concurrently in {}",
+                    files.join(", ")
+                )
+            }
+        }
+    }
+
+    Ok(commit)
+}
+
+fn content_at(path: &Path, commit: &str, file: &str) -> Result<Option<String>> {
+    match whole(path, &["show", &format!("{commit}:{file}")]) {
+        Ok(content) => Ok(Some(content)),
+        Err(_) => Ok(None),
+    }
+}
+
+fn check_library_path(path: &str) -> Result<()> {
+    let path = Path::new(path);
+    let plain = !path.as_os_str().is_empty()
+        && path
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)));
+    let reserved = path.starts_with(repository::LINES) || path.starts_with(".git");
+    if !plain || reserved {
+        bail!("`{}` is not a library file", path.display());
+    }
+    Ok(())
 }
 
 /// Who wrote a commit: their name and their address.
@@ -1029,5 +1481,126 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn approved_changes_on_different_files_merge_from_one_base() {
+        let root = somewhere("library-merge");
+        let path = Repositories::new(&root).shared(&group());
+        ensure(&path, &manifest()).unwrap();
+        let base = head_commit(&path).unwrap();
+        let author = Author {
+            name: "Ana",
+            email: "ana@example.org",
+        };
+
+        for (file, contents) in [
+            ("Algebra/Groups.lean", "def G := True\n"),
+            ("Algebra/Rings.lean", "def R := True\n"),
+        ] {
+            assert!(matches!(
+                write_approved_library(
+                    &path,
+                    &base,
+                    &[LibraryFileChange {
+                        path: file.to_owned(),
+                        before: None,
+                        after: Some(contents.to_owned()),
+                    }],
+                    &author,
+                )
+                .unwrap(),
+                LibraryWritten::Taken(_)
+            ));
+        }
+
+        let head = head_commit(&path).unwrap();
+        assert_eq!(
+            show(&path, &head, "Algebra/Groups.lean").unwrap(),
+            "def G := True\n"
+        );
+        assert_eq!(
+            show(&path, &head, "Algebra/Rings.lean").unwrap(),
+            "def R := True\n"
+        );
+        let imports = show(&path, &head, "GroupLibrary.lean").unwrap();
+        assert!(imports.contains("import Algebra.Groups\n"));
+        assert!(imports.contains("import Algebra.Rings\n"));
+        let repeated = write_approved_library(
+            &path,
+            &base,
+            &[LibraryFileChange {
+                path: "Algebra/Groups.lean".to_owned(),
+                before: None,
+                after: Some("def G := True\n".to_owned()),
+            }],
+            &author,
+        )
+        .unwrap();
+        assert_eq!(repeated, LibraryWritten::Taken(head.clone()));
+        assert_eq!(head_commit(&path).as_deref(), Some(head.as_str()));
+
+        assert!(
+            write_approved_library(
+                &path,
+                &head,
+                &[LibraryFileChange {
+                    path: repository::LEAN_TOOLCHAIN.to_owned(),
+                    before: content_at(&path, &head, repository::LEAN_TOOLCHAIN).unwrap(),
+                    after: Some("leanprover/lean4:v4.35.0\n".to_owned()),
+                }],
+                &author,
+            )
+            .is_err(),
+            "ordinary approved work cannot change admin-owned pins"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn sharing_moves_marked_modules_and_their_local_dependencies() {
+        let root = somewhere("library-share");
+        let repositories = Repositories::new(&root);
+        let shared = repositories.shared(&group());
+        let private = repositories.personal(&group(), &user());
+        ensure(&shared, &manifest()).unwrap();
+        ensure(
+            &private,
+            &Manifest::new(group(), repository::Side::Private, "Ana only"),
+        )
+        .unwrap();
+        let base = head_commit(&private).unwrap();
+        let author = Author {
+            name: "Ana",
+            email: "ana@example.org",
+        };
+        let marked = "import Algebra.Helper\n@[stemma \"quotient-groups/blk:01ARZ3NDEKTSV4RRFFQ69G5FAV\"] theorem main : True := by trivial\n";
+        write_approved_library(
+            &private,
+            &base,
+            &[
+                LibraryFileChange {
+                    path: "Algebra/Quotients.lean".to_owned(),
+                    before: None,
+                    after: Some(marked.to_owned()),
+                },
+                LibraryFileChange {
+                    path: "Algebra/Helper.lean".to_owned(),
+                    before: None,
+                    after: Some("def helper := True\n".to_owned()),
+                },
+            ],
+            &author,
+        )
+        .unwrap();
+
+        let moved = bring_line_library(&shared, &private, &quotients(), &author).unwrap();
+        assert_eq!(moved, ["Algebra/Helper.lean", "Algebra/Quotients.lean"]);
+        let shared_head = head_commit(&shared).unwrap();
+        assert!(show(&shared, &shared_head, "Algebra/Quotients.lean").is_ok());
+        assert!(show(&shared, &shared_head, "Algebra/Helper.lean").is_ok());
+        let private_head = head_commit(&private).unwrap();
+        assert!(show(&private, &private_head, "Algebra/Quotients.lean").is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

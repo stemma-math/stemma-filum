@@ -94,6 +94,29 @@ pub async fn receive(
                 {
                     revisions::built_up_to(connection, &found.id, revision)?;
                 }
+                if let Some(lean) = &line.lean {
+                    let audience = match &scope {
+                        Scope::Shared => crate::store::events::Audience::Group(&group),
+                        Scope::Personal(owner) => {
+                            crate::store::events::Audience::Person(&group, owner)
+                        }
+                    };
+                    for result in &lean.blocks {
+                        crate::store::events::publish(
+                            connection,
+                            audience,
+                            &stemma_core::event::Event::Check {
+                                group: group.slug().as_str().to_owned(),
+                                side: nodes.side,
+                                line: line.name.as_str().to_owned(),
+                                revision,
+                                block: result.block,
+                                state: result.state,
+                                diagnostic: result.diagnostic.clone(),
+                            },
+                        )?;
+                    }
+                }
             }
 
             Ok(recorded)

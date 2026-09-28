@@ -42,6 +42,13 @@ fn form_token(page: &Page) -> String {
     rest[..rest.find('"').expect("the end of the token")].to_owned()
 }
 
+fn task(page: &Page, verb: &str) -> String {
+    let marker = format!("name=\"task\" value=\"{verb}@");
+    let start = page.body.find(&marker).expect("a task") + "name=\"task\" value=\"".len();
+    let rest = &page.body[start..];
+    rest[..rest.find('"').expect("the end of the task")].to_owned()
+}
+
 /// Registers somebody and leaves them signed in.
 async fn register(harness: &mut Harness, name: &str) {
     harness
@@ -288,13 +295,14 @@ async fn a_job_launched_from_a_line_is_taken_by_the_machine_that_was_chosen() {
     // reach, rather than being left off the list.
     assert!(line.says("not installed on this machine"));
     assert!(line.says("launcher__agent--out"));
+    let fill = task(&line, "fill");
 
     let launched = harness
         .post(
             "/g/algebra/shared/quotient-groups/jobs",
             &[
                 ("on", &format!("{machine}|claude")),
-                ("task", "fill@thm:first"),
+                ("task", &fill),
                 ("revision", "1"),
                 ("form_token", &form_token(&line)),
             ],
@@ -313,7 +321,7 @@ async fn a_job_launched_from_a_line_is_taken_by_the_machine_that_was_chosen() {
     assert_eq!(taken.status, StatusCode::OK);
 
     let handed = parsed(&taken);
-    assert_eq!(handed["task"].as_str(), Some("fill@thm:first"));
+    assert_eq!(handed["task"].as_str(), Some(fill.as_str()));
     assert_eq!(handed["agent"].as_str(), Some("claude"));
     assert_eq!(handed["revision"].as_u64(), Some(1));
     assert_eq!(handed["line"].as_str(), Some("quotient-groups"));
@@ -433,12 +441,13 @@ async fn somebody_elses_machine_is_never_handed_a_job_that_named_mine() {
 
     // Enric launches the work on her machine on purpose.
     let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    let refute = task(&line, "refute");
     harness
         .post(
             "/g/algebra/shared/quotient-groups/jobs",
             &[
                 ("on", &format!("{her_machine}|claude")),
-                ("task", "refute@thm:first"),
+                ("task", &refute),
                 ("revision", "1"),
                 ("form_token", &form_token(&line)),
             ],

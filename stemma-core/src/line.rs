@@ -373,12 +373,12 @@ impl Node {
 /// What lies between two central statements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlackBox {
-    /// The central statement it comes after, if it comes after one.
-    pub after: Option<Siglum>,
-    /// The central statement it runs up to, if it runs up to one.
-    pub before: Option<Siglum>,
-    /// What is inside it.
-    pub interior: Vec<Siglum>,
+    /// The central block it comes after, if it comes after one.
+    pub after: Option<BlockId>,
+    /// The central block it runs up to, if it runs up to one.
+    pub before: Option<BlockId>,
+    /// The statement blocks inside it, in narrative order.
+    pub interior: Vec<BlockId>,
     /// How much of it is filled in.
     pub state: BoxState,
 }
@@ -421,6 +421,11 @@ impl Line {
         self.nodes.iter().find(|node| &node.siglum == siglum)
     }
 
+    /// The node declared by this block, where it declares one.
+    pub fn node_at(&self, block: &BlockId) -> Option<&Node> {
+        self.nodes.iter().find(|node| &node.block == block)
+    }
+
     /// The statements the line rests on, in order: the central results
     /// that divide it into boxes.
     ///
@@ -441,8 +446,8 @@ impl Line {
     /// apart is the record of attempts, which is not part of the source.
     pub fn boxes(&self) -> Vec<BlackBox> {
         let mut boxes = Vec::new();
-        let mut interior: Vec<Siglum> = Vec::new();
-        let mut after: Option<Siglum> = None;
+        let mut interior: Vec<BlockId> = Vec::new();
+        let mut after: Option<BlockId> = None;
 
         for node in &self.nodes {
             // A definition is a node of the graph in its own right: it is
@@ -454,17 +459,17 @@ impl Line {
 
             if node.is_central() {
                 boxes.push(BlackBox {
-                    after: after.clone(),
-                    before: Some(node.siglum.clone()),
+                    after,
+                    before: Some(node.block),
                     state: state_of(&interior),
                     interior: std::mem::take(&mut interior),
                 });
 
-                after = Some(node.siglum.clone());
+                after = Some(node.block);
                 continue;
             }
 
-            interior.push(node.siglum.clone());
+            interior.push(node.block);
         }
 
         // The end of a line is open: whatever comes after the last
@@ -541,7 +546,7 @@ pub enum Element {
 }
 
 /// How much of a box is filled in.
-fn state_of(interior: &[Siglum]) -> BoxState {
+fn state_of(interior: &[BlockId]) -> BoxState {
     match interior.is_empty() {
         true => BoxState::Empty,
         // Everything in a line's source was written by a person. What an
@@ -1131,18 +1136,17 @@ mod tests {
 
         assert_eq!(boxes[0].after, None);
         assert_eq!(
-            boxes[0].before.as_ref().map(ToString::to_string).as_deref(),
-            Some("thm:first")
+            boxes[0].before,
+            Some(line.node(&siglum("thm:first")).unwrap().block)
         );
         assert_eq!(boxes[0].state, BoxState::Empty);
 
         assert_eq!(
-            boxes[1]
-                .interior
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>(),
-            ["lem:kernel", "lem:image"]
+            boxes[1].interior,
+            [
+                line.node(&siglum("lem:kernel")).unwrap().block,
+                line.node(&siglum("lem:image")).unwrap().block,
+            ]
         );
         assert_eq!(boxes[1].state, BoxState::FilledByHand);
 
@@ -1160,7 +1164,10 @@ mod tests {
         let boxes = line.boxes();
         assert_eq!(boxes.len(), 1);
         assert_eq!(boxes[0].after, None);
-        assert_eq!(boxes[0].interior, [siglum("lem:a")]);
+        assert_eq!(
+            boxes[0].interior,
+            [line.node(&siglum("lem:a")).unwrap().block]
+        );
     }
 
     #[test]

@@ -91,6 +91,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "builds",
         sql: include_str!("../migrations/0016-builds.sql"),
     },
+    Migration {
+        name: "lean-libraries",
+        sql: include_str!("../migrations/0017-lean-libraries.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.

@@ -85,6 +85,8 @@ struct Due {
     proposals: bool,
     /// Lines let go since the last round, by group, repository and name.
     released: Vec<(String, Side, String)>,
+    /// Libraries whose dependants all need checking again.
+    libraries: Vec<(String, Side)>,
     /// When a line that was saved is ready to leave.
     send_at: Option<Instant>,
     /// When to try again because something is waiting.
@@ -129,6 +131,10 @@ impl Due {
                 } => {
                     self.released.push((group, side, line));
                     self.round = true;
+                }
+                Event::Library { group, side, .. } => {
+                    self.libraries.push((group, side));
+                    self.full = true;
                 }
                 Event::Group { .. } | Event::Reset => {
                     self.full = true;
@@ -213,12 +219,16 @@ fn round(home: &Home, due: &mut Due) -> Said {
     let full = std::mem::take(&mut due.full);
     let proposals = std::mem::take(&mut due.proposals);
     let released = std::mem::take(&mut due.released);
+    let libraries = std::mem::take(&mut due.libraries);
     due.round = false;
     due.send_at = None;
     due.again_at = None;
 
     let mut published = Vec::new();
     let reached = Mirror::at(home).and_then(|mirror| {
+        for (group, side) in &libraries {
+            mirror.rebuild(group, *side)?;
+        }
         let instance = Instance::connect(home)?;
         let mut report = mirror.step(&instance, full, &Which::Paused(PAUSE));
 
@@ -258,6 +268,7 @@ fn round(home: &Home, due: &mut Due) -> Said {
     if reason.is_some() {
         due.full = full;
         due.proposals = proposals;
+        due.libraries = libraries;
         due.again_at = Some(Instant::now() + AGAIN);
     } else if unsent_with(false) {
         // Saved inside the pause: it leaves on the next round.

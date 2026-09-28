@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use stemma_core::id::{JobId, ProposalId, UserId};
-use stemma_core::proposal::Offer;
+use stemma_core::proposal::{LibraryChange, Offer};
 
 use super::jobs::Job;
 
@@ -18,6 +18,10 @@ pub struct Proposal {
     pub source: String,
     /// Complete proposed Lean module, when the proposal formalizes work.
     pub lean_source: Option<String>,
+    /// Per-file change to the Lake package, when one was proposed.
+    pub library_change: Option<LibraryChange>,
+    /// The commit that change became after approval.
+    pub library_commit: Option<String>,
     /// Agent vendor.
     pub vendor: String,
     /// Concrete model.
@@ -35,15 +39,21 @@ pub struct Proposal {
 /// Keeps a validated proposal once per job.
 pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<ProposalId> {
     let id = ProposalId::generate();
+    let library_change = offer
+        .library_change
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
     connection
         .execute(
-            "INSERT INTO proposals (id, job_id, source, lean_source, vendor, model, prompt_revision)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO proposals (id, job_id, source, lean_source, library_change, vendor, model, prompt_revision)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 id.to_string(),
                 job.id.to_string(),
                 offer.source,
                 offer.lean_source,
+                library_change,
                 offer.vendor,
                 offer.model,
                 offer.prompt_revision
@@ -77,21 +87,23 @@ fn tell(connection: &Connection, id: &ProposalId) -> Result<()> {
 pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal>> {
     let row = connection
         .query_row(
-            "SELECT job_id, source, lean_source, vendor, model, prompt_revision, state, decided_by,
-                applied_revision
+            "SELECT job_id, source, lean_source, library_change, library_commit, vendor, model,
+                prompt_revision, state, decided_by, applied_revision
          FROM proposals WHERE id = ?1",
             params![id.to_string()],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
                     row.get(5)?,
                     row.get(6)?,
-                    row.get::<_, Option<String>>(7)?,
-                    row.get::<_, Option<i64>>(8)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<i64>>(10)?,
                 ))
             },
         )
@@ -100,6 +112,8 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         job,
         source,
         lean_source,
+        library_change,
+        library_commit,
         vendor,
         model,
         prompt_revision,
@@ -121,6 +135,11 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         job,
         source,
         lean_source,
+        library_change: library_change
+            .map(|change| serde_json::from_str(&change))
+            .transpose()
+            .context("cannot read the proposed library change")?,
+        library_commit,
         vendor,
         model,
         prompt_revision,
@@ -128,6 +147,15 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         decided_by: decided_by.and_then(|id| id.parse().ok()),
         applied_revision: applied_revision.map(|revision| revision.max(0) as u64),
     }))
+}
+
+/// Records the library commit made by accepting this proposal.
+pub fn library_applied(connection: &Connection, id: &ProposalId, commit: &str) -> Result<()> {
+    connection.execute(
+        "UPDATE proposals SET library_commit = ?2 WHERE id = ?1 AND library_commit IS NULL",
+        params![id.to_string(), commit],
+    )?;
+    Ok(())
 }
 
 /// Records the launcher's first and only decision.
@@ -275,6 +303,7 @@ mod tests {
             &Offer {
                 source: "= A proposal".to_owned(),
                 lean_source: None,
+                library_change: None,
                 vendor: "Anthropic".to_owned(),
                 model: "claude-opus-5".to_owned(),
                 prompt_revision: "1".to_owned(),

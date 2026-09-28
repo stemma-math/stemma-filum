@@ -31,12 +31,35 @@ pub struct Offer {
     /// The complete Lean module beside the source, when formal work changed.
     #[serde(default)]
     pub lean_source: Option<String>,
+    /// An approved-only change to the group's Lake package, when formal work moved there.
+    #[serde(default)]
+    pub library_change: Option<LibraryChange>,
     /// Who supplied the agent.
     pub vendor: String,
     /// The concrete model the agent reported using.
     pub model: String,
     /// Which prompt contract produced it.
     pub prompt_revision: String,
+}
+
+/// A revision-based, per-file change to a Lake package.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LibraryChange {
+    /// The library commit the agent worked from.
+    pub base: String,
+    /// Files changed by the agent. Files absent here are untouched.
+    pub files: Vec<LibraryFileChange>,
+}
+
+/// One file in a proposed library change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LibraryFileChange {
+    /// Its path below the package root.
+    pub path: String,
+    /// What it said at [`LibraryChange::base`], or absence for a new file.
+    pub before: Option<String>,
+    /// What it should say, or absence to remove it.
+    pub after: Option<String>,
 }
 
 /// A change awaiting, or having received, a human decision.
