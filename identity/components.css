@@ -156,16 +156,18 @@
         border-color: transparent;
     }
 
+    /* Outlined like the secondary action, in red, so it keeps its shape
+     * at rest without competing with `--primary`. */
     .button--danger {
         color: var(--danger-fg);
-        background: transparent;
-        border-color: transparent;
+        background: var(--surface-card);
+        border-color: color-mix(in srgb, var(--danger-border) 55%, var(--surface-card));
     }
 
     .button--danger:hover {
         color: var(--danger-fg);
         background: var(--danger-bg);
-        border-color: transparent;
+        border-color: var(--danger-border);
     }
 
     /* A destructive action that is the one a dialog is for. */
@@ -235,7 +237,6 @@
 
     .button--quiet:disabled,
     .button--icon:disabled,
-    .button--danger:not(.button--primary):disabled,
     .button--link:disabled {
         background: transparent;
         border-color: transparent;
