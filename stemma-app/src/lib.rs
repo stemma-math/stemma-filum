@@ -63,6 +63,7 @@ pub fn run() {
             claims::settle,
             machine::machine,
             machine::job_output,
+            machine::cancel_job,
             machine::offers,
             machine::launch,
             machine::node_init,

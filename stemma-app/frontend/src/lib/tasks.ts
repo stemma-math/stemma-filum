@@ -10,10 +10,10 @@ export type Offered = { verb: string; label: string; task: string };
 export const LABELS: Record<string, string> = {
   prove: "Write the proof",
   formalize: "Formalize in Lean",
+  back: "Back this box in Lean",
+  realign: "Realign the narrative",
   refute: "Find a counterexample",
   rewrite: "Rewrite rigorously",
-  promote: "Make central",
-  fill: "Fill the gap after it",
   develop: "Develop into mathematics",
   explore: "Explore next steps",
 };
@@ -34,11 +34,10 @@ export function tasksFor(document: LineDocument, block: Block, nodeOf: (block: s
   const theorem = statement.kind === "theorem";
   return [
     ...(statement.proof ? [offer("prove", anchor)] : []),
-    offer("formalize", anchor),
+    ...(statement.central ? [offer("formalize", anchor), offer("realign", anchor)] : []),
     ...(theorem ? [offer("refute", anchor)] : []),
     ...(!statement.central ? [offer("rewrite", anchor)] : []),
-    ...(theorem && !statement.central ? [offer("promote", anchor)] : []),
-    ...(theorem && statement.central ? [offer("fill", anchor)] : []),
+    ...(theorem && statement.central ? [offer("back", anchor)] : []),
   ];
 }
 

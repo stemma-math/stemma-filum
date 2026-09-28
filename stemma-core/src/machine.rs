@@ -174,6 +174,12 @@ pub struct Detected {
     pub version: Option<String>,
     /// Whether it can be used, and why not when it cannot.
     pub availability: Availability,
+    /// Models this installation accepts, as declared by its owner.
+    #[serde(default)]
+    pub models: Vec<String>,
+    /// Reasoning effort levels this installation accepts.
+    #[serde(default)]
+    pub efforts: Vec<String>,
 }
 
 impl Detected {
@@ -183,6 +189,8 @@ impl Detected {
             agent,
             version,
             availability: Availability::Ready,
+            models: Vec::new(),
+            efforts: Vec::new(),
         }
     }
 
@@ -192,6 +200,8 @@ impl Detected {
             agent,
             version: None,
             availability: Availability::NotInstalled,
+            models: Vec::new(),
+            efforts: Vec::new(),
         }
     }
 }

@@ -21,9 +21,9 @@ test("each kind of block is offered what makes sense for it", () => {
   const { document, prose, definition, lemma, main, nodeOf } = line();
 
   assert.deepEqual(tasksFor(document, prose, nodeOf).map((one) => one.task), [`develop@${prose.id}`]);
-  assert.deepEqual(verbs(tasksFor(document, definition, nodeOf)), ["formalize"]);
-  assert.deepEqual(verbs(tasksFor(document, lemma, nodeOf)), ["prove", "formalize", "refute", "rewrite", "promote"]);
-  assert.deepEqual(verbs(tasksFor(document, main, nodeOf)), ["prove", "formalize", "refute", "fill"]);
+  assert.deepEqual(verbs(tasksFor(document, definition, nodeOf)), ["formalize", "realign"]);
+  assert.deepEqual(verbs(tasksFor(document, lemma, nodeOf)), ["prove", "refute", "rewrite"]);
+  assert.deepEqual(verbs(tasksFor(document, main, nodeOf)), ["prove", "formalize", "realign", "refute", "back"]);
   assert.deepEqual(tasksFor(document, proofOf(document, main.id), nodeOf).map((one) => one.task), [`prove@${main.id}`]);
 });
 
@@ -36,7 +36,7 @@ test("several blocks are offered what all of them can be asked", () => {
   const { document, lemma, main, prose, nodeOf } = line();
   const both = common([tasksFor(document, lemma, nodeOf), tasksFor(document, main, nodeOf)]);
 
-  assert.deepEqual(verbs(both), ["prove", "formalize", "refute"]);
+  assert.deepEqual(verbs(both), ["prove", "refute"]);
   assert.deepEqual(both[0].tasks, [`prove@${lemma.id}`, `prove@${main.id}`]);
   assert.deepEqual(common([tasksFor(document, prose, nodeOf), tasksFor(document, main, nodeOf)]), []);
 });

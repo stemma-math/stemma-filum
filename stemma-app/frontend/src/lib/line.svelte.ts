@@ -31,6 +31,9 @@ export class LineSession {
   readonly selected = new SvelteSet<string>();
   /** The agent that is asked, as `machine|agent`. */
   agent = $state("");
+  /** Optional model and effort overrides for the chosen agent. */
+  model = $state("");
+  effort = $state("");
 
   offers = $state<Offer[]>([]);
 
@@ -59,6 +62,7 @@ export class LineSession {
     this.#remember(opened);
     const first = this.agents.find((one) => !one.reason) ?? this.agents[0];
     this.agent = first?.value ?? "";
+    this.chooseDefaults();
   }
 
   /** Every agent on every machine that works for this group. */
@@ -75,7 +79,10 @@ export class LineSession {
   /** Asks the chosen agent to do each task, one job per task. Everything
    * is saved first, because the job works on what the server has, and
    * what is saved is sent before the job is asked for. */
-  async ask(tasks: string[]): Promise<number> {
+  async ask(
+    tasks: string[],
+    custom?: { request: string; blocks: string[]; library: boolean },
+  ): Promise<number> {
     const [machine, agent] = this.agent.split("|");
     if (!machine || !agent) {
       tell("Choose an agent first.");
@@ -85,7 +92,17 @@ export class LineSession {
     let started = 0;
     for (const task of tasks) {
       try {
-        await api.launch(this.path, task, agent, machine);
+        await api.launch(
+          this.path,
+          task,
+          agent,
+          machine,
+          this.model || null,
+          this.effort || null,
+          custom?.request ?? null,
+          custom?.blocks ?? [],
+          custom?.library ?? false,
+        );
         started += 1;
       } catch (error) {
         fail(error);
@@ -94,6 +111,16 @@ export class LineSession {
     }
     tell(started === 1 ? "Job started." : `${started} jobs started.`);
     return started;
+  }
+
+  /** Chooses the first declared model and effort when the agent changes. */
+  chooseDefaults() {
+    const [machine, agent] = this.agent.split("|");
+    const offered = this.offers
+      .find((one) => one.machine === machine)
+      ?.agents.find((one) => one.name === agent);
+    this.model = offered?.models[0] ?? "";
+    this.effort = offered?.efforts[0] ?? "";
   }
 
   get path() {

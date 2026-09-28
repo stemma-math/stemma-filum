@@ -73,10 +73,22 @@ export const api = {
   settle: (path: string, decisions: Decision[]) => call<string[]>("settle", { path, decisions }),
 
   offers: (group: string) => call<Offer[]>("offers", { group }),
-  launch: (path: string, task: string, agent: string, machine: string) =>
-    call<string>("launch", { path, task, agent, here: false, machine }),
+  launch: (
+    path: string,
+    task: string,
+    agent: string,
+    machine: string,
+    model: string | null,
+    effort: string | null,
+    request: string | null = null,
+    grantBlocks: string[] = [],
+    grantLibrary = false,
+  ) => call<string>("launch", {
+    path, task, agent, here: false, machine, model, effort, request, grantBlocks, grantLibrary,
+  }),
   machine: () => call<Machine>("machine"),
   jobOutput: (job: string) => call<string>("job_output", { job }),
+  cancelJob: (job: string) => call<void>("cancel_job", { job }),
   nodeInit: (groups: string[]) => call<string>("node_init", { groups }),
   daemonInstall: () => call<string>("daemon_install"),
   installCli: () => call<string>("install_cli"),

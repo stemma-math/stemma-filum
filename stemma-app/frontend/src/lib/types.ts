@@ -148,7 +148,14 @@ export type Diagnostic = { error: boolean; block: string | null; line: number | 
 
 export type Preview = { svg: string | null; diagnostics: Diagnostic[] };
 
-export type Agent = { name: string; called: string; availability: string; reason: string | null };
+export type Agent = {
+  name: string;
+  called: string;
+  availability: string;
+  reason: string | null;
+  models: string[];
+  efforts: string[];
+};
 
 export type Job = {
   id: string;
@@ -157,6 +164,9 @@ export type Job = {
   agent: string;
   said: string;
   raw_output: boolean;
+  workspace: string | null;
+  progress: string | null;
+  cancel_requested: boolean;
 };
 
 export type Machine = { label: string; presence: string; agents: Agent[]; jobs: Job[] };
@@ -211,6 +221,9 @@ export type Review = {
   vendor: string;
   model: string;
   prompt_revision: string;
+  operations: unknown[];
+  explanation: string;
+  effort: string | null;
   state: string;
   extent: string;
   rows: Moved[];

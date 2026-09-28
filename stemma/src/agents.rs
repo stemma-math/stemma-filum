@@ -101,7 +101,15 @@ pub fn look(home: &Home, config: &Config) -> Vec<Detected> {
             let name = known.id();
 
             match program(config, known.slug) {
-                Some(program) => Detected::ready(name, version_of(home, &program, known.slug)),
+                Some(program) => {
+                    let mut detected =
+                        Detected::ready(name, version_of(home, &program, known.slug));
+                    if let Some(configured) = config.agents.get(known.slug) {
+                        detected.models.clone_from(&configured.models);
+                        detected.efforts.clone_from(&configured.efforts);
+                    }
+                    detected
+                }
                 None => Detected::missing(name),
             }
         })
@@ -150,12 +158,14 @@ pub struct Finished {
     pub output: String,
     /// Whether it was still going when the time ran out.
     pub gave_up: bool,
+    /// Whether the launcher cancelled the run.
+    pub cancelled: bool,
 }
 
 impl Finished {
     /// Whether it ended the way a program that worked ends.
     pub fn is_clean(&self) -> bool {
-        !self.gave_up && self.status == Some(0)
+        !self.gave_up && !self.cancelled && self.status == Some(0)
     }
 }
 
@@ -174,6 +184,80 @@ pub fn run(config: &Config, slug: &str, prompt: &str, into: &Path) -> Result<Ran
     Ok(Ran::Finished(wait_for(&mut command, into, RUN_LIMIT)?))
 }
 
+/// Runs an agent inside one prepared workspace with its vendor's sandbox
+/// enabled and the job API ahead of the ordinary `PATH`.
+#[allow(clippy::too_many_arguments)]
+pub fn run_in_workspace(
+    config: &Config,
+    slug: &str,
+    prompt: &str,
+    workspace: &Path,
+    api_bin: &Path,
+    into: &Path,
+    model: &str,
+    effort: Option<&str>,
+    limit: Duration,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Result<Ran> {
+    let Some(program) = program(config, slug) else {
+        return Ok(Ran::Missing);
+    };
+    let mut command = Command::new(program);
+    match slug {
+        "codex" => {
+            command.args([
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--config",
+                "sandbox_workspace_write.network_access=true",
+            ]);
+            if model != "default" {
+                command.args(["--model", model]);
+            }
+            if let Some(effort) = effort {
+                command.arg("--config");
+                command.arg(format!("model_reasoning_effort=\"{effort}\""));
+            }
+            command.arg(prompt);
+        }
+        "claude" => {
+            command.args(["-p", "--permission-mode", "acceptEdits"]);
+            if model != "default" {
+                command.args(["--model", model]);
+            }
+            command.arg(prompt);
+        }
+        "gemini" => {
+            command.arg("--sandbox");
+            if model != "default" {
+                command.args(["--model", model]);
+            }
+            command.arg("-p");
+            command.arg(prompt);
+        }
+        _ => return Ok(Ran::Missing),
+    }
+    let mut paths = vec![api_bin.to_owned()];
+    if let Some(existing) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&existing));
+    }
+    command
+        .current_dir(workspace)
+        .env("PATH", std::env::join_paths(paths)?)
+        .env(
+            crate::job_api::STATE_VARIABLE,
+            workspace.join(".stemma/job.json"),
+        );
+
+    Ok(Ran::Finished(wait_for_controlled(
+        &mut command,
+        into,
+        limit,
+        cancelled,
+    )?))
+}
+
 /// Runs a program, writing what it says to a file, and gives up on it
 /// after a while.
 ///
@@ -181,6 +265,16 @@ pub fn run(config: &Config, slug: &str, prompt: &str, into: &Path) -> Result<Ran
 /// a program that fills a pipe nobody is reading stops, and a daemon
 /// that stops waiting for a pipe is a daemon that never comes back.
 fn wait_for(command: &mut Command, into: &Path, limit: Duration) -> Result<Finished> {
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    wait_for_controlled(command, into, limit, &cancelled)
+}
+
+fn wait_for_controlled(
+    command: &mut Command,
+    into: &Path,
+    limit: Duration,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Result<Finished> {
     if let Some(directory) = into.parent() {
         std::fs::create_dir_all(directory)
             .with_context(|| format!("cannot create {}", directory.display()))?;
@@ -200,6 +294,7 @@ fn wait_for(command: &mut Command, into: &Path, limit: Duration) -> Result<Finis
 
     let deadline = Instant::now() + limit;
     let mut gave_up = false;
+    let mut was_cancelled = false;
 
     let status = loop {
         match child.try_wait().context("cannot wait for the agent")? {
@@ -211,6 +306,12 @@ fn wait_for(command: &mut Command, into: &Path, limit: Duration) -> Result<Finis
 
                 break None;
             }
+            None if cancelled.load(std::sync::atomic::Ordering::Relaxed) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                was_cancelled = true;
+                break None;
+            }
             None => std::thread::sleep(POLL),
         }
     };
@@ -219,6 +320,7 @@ fn wait_for(command: &mut Command, into: &Path, limit: Duration) -> Result<Finis
         status,
         output: std::fs::read_to_string(into).unwrap_or_default(),
         gave_up,
+        cancelled: was_cancelled,
     })
 }
 
@@ -502,6 +604,7 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(root.join("nothing-here").display().to_string()),
+                ..Default::default()
             },
         );
 
@@ -531,6 +634,7 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
+                ..Default::default()
             },
         );
 
@@ -556,6 +660,7 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
+                ..Default::default()
             },
         );
 
@@ -584,6 +689,7 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
+                ..Default::default()
             },
         );
 
@@ -609,6 +715,7 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
+                ..Default::default()
             },
         );
 

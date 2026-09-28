@@ -7,13 +7,12 @@
 //! What comes back from the agent stays here. The instance is told the
 //! type of what happened and one line, which is what the group reads.
 
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use stemma_core::id::BlockId;
 use stemma_core::job::{Outcome, Task};
-use stemma_core::line::{BlackBox, Line};
-use stemma_core::proposal::{FormalReview, LibraryChange, Offer};
+use stemma_core::line::Line;
+use stemma_core::proposal::{FormalReview, LibraryChange, LibraryFileChange, Offer, Operation};
 use stemma_core::repository::{self, Side};
 
 use crate::agents::{self, Ran};
@@ -26,7 +25,7 @@ use crate::mirror::{Instance, Mirror, Remote, Which};
 ///
 /// It is recorded with every run, because "an agent said so" is not an
 /// attribution: the vendor, the model and the words it was given are.
-pub const PROMPT_REVISION: &str = "3";
+pub const PROMPT_REVISION: &str = crate::job_workspace::INSTRUCTION_REVISION;
 
 /// Carries out one job and says what came of it.
 ///
@@ -34,6 +33,19 @@ pub const PROMPT_REVISION: &str = "3";
 /// outcomes, because a job that ends in nothing at all leaves the person
 /// who launched it watching a queue.
 pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Handed) -> Completed {
+    let cancelled = std::sync::atomic::AtomicBool::new(false);
+    carry_out_controlled(home, config, instance, handed, &cancelled)
+}
+
+/// Carries out one job while observing a cancellation flag maintained by the
+/// daemon's heartbeat loop.
+pub fn carry_out_controlled(
+    home: &Home,
+    config: &Config,
+    instance: &Instance,
+    handed: &Handed,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Completed {
     let task: Task = match handed.task.parse() {
         Ok(task) => task,
         Err(problem) => return Completed::only(Outcome::out_of_reach(problem.to_string())),
@@ -77,20 +89,139 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
         _ => None,
     };
 
-    let ran = match agents::run(
-        config,
-        &handed.agent,
-        &prompt(handed, &task, &line, &source, other.as_deref()),
-        &agents::output_path(home, &handed.job),
+    let repository = repository_of(home, handed);
+    let workspace = match crate::job_workspace::prepare(
+        handed,
+        &task,
+        &source,
+        repository.as_deref(),
+        handed.grants.clone(),
     ) {
-        Ok(ran) => ran,
+        Ok(workspace) => workspace,
         Err(error) => return Completed::only(Outcome::out_of_reach(format!("{error:#}"))),
     };
-
-    let outcome = became_of(&task, &handed.agent, &ran);
-    let mut proposal = match (&outcome, &ran) {
-        (Outcome::Produced { .. }, Ran::Finished(finished)) => {
-            proposal(&handed.agent, &finished.output)
+    if let Some(other) = &other {
+        let _ = std::fs::write(workspace.root.join("other-line.json"), other);
+    }
+    let agent_config = config
+        .agents
+        .get(&handed.agent)
+        .cloned()
+        .unwrap_or_default();
+    let (model, effort) = match agent_config.selection(
+        task_kind(&task),
+        handed.model.as_deref(),
+        handed.effort.as_deref(),
+    ) {
+        Ok(selection) => selection,
+        Err(error) => return Completed::only(Outcome::out_of_reach(error.to_string())),
+    };
+    let limit = std::time::Duration::from_secs(config.jobs.timeout_minutes.max(1) * 60);
+    let ran = match agents::run_in_workspace(
+        config,
+        &handed.agent,
+        "Read AGENTS.md and TASK.md. Work in this directory and answer only through `stemma-job`.",
+        &workspace.root,
+        &workspace.api_bin,
+        &agents::output_path(home, &handed.job),
+        &model,
+        effort.as_deref(),
+        limit,
+        cancelled,
+    ) {
+        Ok(ran) => ran,
+        Err(error) => {
+            return Completed::at(Outcome::out_of_reach(format!("{error:#}")), workspace.root);
+        }
+    };
+    let state = crate::job_api::read(&workspace.state).ok();
+    let was_cancelled = matches!(&ran, Ran::Finished(finished) if finished.cancelled);
+    let failure = stemma_core::id::Slug::parse(&handed.agent)
+        .ok()
+        .and_then(|agent| agents::trouble(&agent, &ran));
+    let outcome = if was_cancelled {
+        Outcome::Broke {
+            code: "cancelled".to_owned(),
+            said: "the job was cancelled by its launcher".to_owned(),
+        }
+    } else if let Some(failure) = failure {
+        Outcome::from_failure(&failure)
+    } else if let Some(state) = &state
+        && state.done
+        && let Some(reason) = &state.nothing
+    {
+        Outcome::NothingFound {
+            said: reason.clone(),
+        }
+    } else if state
+        .as_ref()
+        .is_some_and(|state| state.done && !state.operations.is_empty())
+    {
+        Outcome::Produced {
+            said: state
+                .as_ref()
+                .map(|state| state.explanation.clone())
+                .unwrap_or_default(),
+        }
+    } else {
+        Outcome::Broke {
+            code: "answer_not_submitted".to_owned(),
+            said: "the agent stopped without submitting through `stemma-job done`".to_owned(),
+        }
+    };
+    let mut proposal = match (&outcome, state) {
+        (Outcome::Produced { .. }, Some(state)) => {
+            let source = match stemma_core::proposal::apply_line_operations(
+                &source,
+                &workspace.grants,
+                &state.operations,
+            ) {
+                Ok(source) => source,
+                Err(error) => {
+                    return Completed::at(
+                        Outcome::Broke {
+                            code: "invalid_operations".to_owned(),
+                            said: error.to_string(),
+                        },
+                        workspace.root,
+                    );
+                }
+            };
+            if state
+                .operations
+                .iter()
+                .any(|operation| matches!(operation, Operation::WriteLibraryFile { .. }))
+                && !workspace.grants.library
+            {
+                return Completed::at(
+                    Outcome::Broke {
+                        code: "operation_out_of_scope".to_owned(),
+                        said: "the answer contains a library operation this job did not grant"
+                            .to_owned(),
+                    },
+                    workspace.root,
+                );
+            }
+            let library_change = library_change(
+                repository.as_deref(),
+                &state.operations,
+                state.readings.clone(),
+            );
+            Some(Offer {
+                source,
+                lean_source: None,
+                library_change,
+                formal_review: None,
+                vendor: stemma_core::machine::known(&handed.agent)
+                    .map(|agent| agent.vendor)
+                    .unwrap_or("unknown")
+                    .to_owned(),
+                model: model.clone(),
+                prompt_revision: PROMPT_REVISION.to_owned(),
+                operations: state.operations,
+                explanation: state.explanation,
+                effort: effort.clone(),
+            })
         }
         _ => None,
     };
@@ -222,7 +353,70 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
         },
         _ => outcome,
     };
-    Completed { outcome, proposal }
+    Completed {
+        outcome,
+        proposal,
+        workspace: Some(workspace.root),
+    }
+}
+
+fn task_kind(task: &Task) -> &'static str {
+    match task {
+        Task::Fill { .. } => "fill",
+        Task::Refute { .. } => "refute",
+        Task::Formalize { .. } => "formalize",
+        Task::FollowRoute { .. } => "realign",
+        Task::Verify { .. } => "back",
+        Task::Promote { .. } => "promote",
+        Task::Prove { .. } => "prove",
+        Task::Rewrite { .. } => "rewrite",
+        Task::Develop { .. } => "develop",
+        Task::Explore => "explore",
+        Task::Reconcile => "reconcile",
+        Task::Custom => "custom",
+        Task::Build => "build",
+    }
+}
+
+fn library_change(
+    repository: Option<&Path>,
+    operations: &[Operation],
+    readings: std::collections::BTreeMap<BlockId, String>,
+) -> Option<LibraryChange> {
+    let files: Vec<_> = operations
+        .iter()
+        .filter_map(|operation| match operation {
+            Operation::WriteLibraryFile {
+                path,
+                before,
+                after,
+            } => Some(LibraryFileChange {
+                path: path.clone(),
+                before: before.clone(),
+                after: after.clone(),
+            }),
+            _ => None,
+        })
+        .collect();
+    if files.is_empty() {
+        return None;
+    }
+    let base = repository
+        .and_then(|repository| {
+            std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(repository)
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        })
+        .unwrap_or_default();
+    Some(LibraryChange {
+        base,
+        files,
+        readings,
+    })
 }
 
 fn needs_lean_check(task: &Task, outcome: &Outcome) -> bool {
@@ -333,6 +527,8 @@ pub struct Completed {
     pub outcome: Outcome,
     /// The source offered for review, when the run produced one.
     pub proposal: Option<Offer>,
+    /// The workspace deliberately left for the machine's owner.
+    pub workspace: Option<PathBuf>,
 }
 
 impl Completed {
@@ -340,108 +536,16 @@ impl Completed {
         Self {
             outcome,
             proposal: None,
+            workspace: None,
         }
     }
-}
 
-const PROPOSAL_START: &str = "stemma: proposal";
-const PROPOSAL_END: &str = "stemma: end proposal";
-const LEAN_START: &str = "stemma: lean";
-const LEAN_END: &str = "stemma: end lean";
-const LIBRARY_START: &str = "stemma: library";
-const LIBRARY_END: &str = "stemma: end library";
-const MODEL: &str = "stemma: model ";
-
-fn proposal(agent: &str, output: &str) -> Option<Offer> {
-    let start = output.find(PROPOSAL_START)? + PROPOSAL_START.len();
-    let rest = &output[start..];
-    let end = rest.find(PROPOSAL_END)?;
-    let source = rest[..end].trim_matches('\n').to_owned();
-    let model = output
-        .lines()
-        .rev()
-        .find_map(|line| line.trim().strip_prefix(MODEL))?
-        .trim();
-    if source.is_empty() || model.is_empty() {
-        return None;
-    }
-    let vendor = stemma_core::machine::known(agent)?.vendor.to_owned();
-    Some(Offer {
-        source,
-        lean_source: section(output, LEAN_START, LEAN_END),
-        library_change: section(output, LIBRARY_START, LIBRARY_END)
-            .and_then(|change| serde_json::from_str(&change).ok()),
-        formal_review: None,
-        vendor,
-        model: model.to_owned(),
-        prompt_revision: PROMPT_REVISION.to_owned(),
-    })
-}
-
-fn section(output: &str, start: &str, end: &str) -> Option<String> {
-    let rest = &output[output.find(start)? + start.len()..];
-    let text = rest[..rest.find(end)?].trim_matches('\n').to_owned();
-    (!text.is_empty()).then_some(text)
-}
-
-/// What a run of an agent came to.
-fn became_of(task: &Task, agent: &str, ran: &Ran) -> Outcome {
-    let named = match stemma_core::id::Slug::parse(agent) {
-        Ok(agent) => agent,
-        Err(problem) => return Outcome::out_of_reach(problem.to_string()),
-    };
-
-    if let Some(failure) = agents::trouble(&named, ran) {
-        return Outcome::from_failure(&failure);
-    }
-
-    let Ran::Finished(finished) = ran else {
-        return Outcome::out_of_reach("the agent did not run");
-    };
-
-    // Tried and the mathematics did not work is an ordinary outcome of
-    // research: the box goes back to its hatch, and nothing is owed.
-    match found_nothing(&finished.output) {
-        true => Outcome::NothingFound {
-            said: nothing_found(task).to_owned(),
-        },
-        false => Outcome::Produced {
-            said: "there is an answer, on the machine that produced it".to_owned(),
-        },
-    }
-}
-
-/// The word an agent ends with when it did not find anything.
-const NOTHING: &str = "stemma: nothing";
-
-/// Whether the agent said it found nothing.
-fn found_nothing(output: &str) -> bool {
-    output
-        .lines()
-        .rev()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .take(3)
-        .any(|line| line.eq_ignore_ascii_case(NOTHING))
-}
-
-/// What "it found nothing" means for this task, in the group's words.
-fn nothing_found(task: &Task) -> &'static str {
-    match task {
-        Task::Fill { .. } => "no argument was found",
-        // Never "the statement holds". An absence of a refutation is
-        // evidence of nothing, and the words have to say so.
-        Task::Refute { .. } => "no counterexample was found, which settles nothing",
-        Task::Formalize { .. } => "no formalization was found",
-        Task::FollowRoute { .. } => "the agent could not formalize the author's route",
-        Task::Verify { .. } => "no Lean argument was found",
-        Task::Promote { .. } => "no justified promotion was found",
-        Task::Prove { .. } => "no proof was found",
-        Task::Rewrite { .. } => "no better statement was found",
-        Task::Develop { .. } => "nothing was developed",
-        Task::Explore => "nothing to suggest",
-        Task::Reconcile => "no reconciliation was found",
-        Task::Build => "nothing was built",
+    fn at(outcome: Outcome, workspace: PathBuf) -> Self {
+        Self {
+            outcome,
+            proposal: None,
+            workspace: Some(workspace),
+        }
     }
 }
 
@@ -502,201 +606,6 @@ fn build(home: &Home, instance: &Instance, handed: &Handed) -> Completed {
     })
 }
 
-/// What the agent is asked.
-///
-/// The rules come first because they are the point: what the line rests
-/// on is frozen, the interior of a box is the agent's, and an absence of
-/// a refutation is evidence of nothing.
-fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option<&str>) -> String {
-    let mut asked = String::new();
-
-    let _ = writeln!(
-        asked,
-        "You are working on one line of mathematical work. It belongs to the \
-         group `{}`, and this is its state at revision {}.",
-        handed.group, handed.revision
-    );
-    let _ = writeln!(asked);
-    let _ = writeln!(asked, "{FORMAT}");
-    let _ = writeln!(asked);
-    let _ = writeln!(
-        asked,
-        "Three rules hold, whatever you are asked to do:\n\
-         \n\
-         1. A definition or theorem with `\"central\": true` is what the line rests on. \
-            Do not change its text, its title, its siglum or what it says it uses, \
-            and do not delete it. Its proof is yours to write.\n\
-         2. Everything between two central statements is yours to write, \
-            repair or rewrite.\n\
-         3. Say what you lean on. A statement that uses another lists it in `uses` \
-            or cites it with `@siglum`, and an argument that quietly assumes \
-            something undeclared is not an argument."
-    );
-    let _ = writeln!(asked);
-    let _ = writeln!(asked, "The line as it stands:");
-    let _ = writeln!(asked, "----------------------------------------");
-    let _ = writeln!(asked, "{}", source.trim());
-    let _ = writeln!(asked, "----------------------------------------");
-    let _ = writeln!(asked);
-    let _ = writeln!(asked, "{}", asked_of(task, line, &handed.line, other));
-    let _ = writeln!(asked);
-    let _ = writeln!(
-        asked,
-        "When you have a change to offer, print `stemma: proposal` on its own, \
-         then the complete proposed line.json, then `stemma: end proposal`. \
-         If Lean changes, then print `stemma: lean`, the complete `Main.lean` module, \
-         and `stemma: end lean`. A group-library change is instead printed between \
-         `stemma: library` and `stemma: end library` as JSON with a `base` commit, a `files` \
-         array of path, before and after, and a `readings` object mapping every central block \
-         you mark to your plain-language reading of its Lean-printed statement. After it print \
-         `stemma: model MODEL-ID` with the concrete model you used, \
-         and finally `stemma: produced`. If you found nothing, end with `{NOTHING}`. \
-         Finding nothing is an ordinary answer and a useful one."
-    );
-
-    asked
-}
-
-/// How a line is written, for an agent that has never seen one.
-const FORMAT: &str = "The line is a JSON document, `line.json`, and it is the whole of the \
-line: a Typst document is built from it. It has `format` (always 1), `title`, an optional \
-`description`, and `blocks`, an ordered list. Every block has an `id` of the form \
-`blk:` followed by a ULID, which never changes; a new block needs a new, unique one. \
-Each block has a `kind`:\n\
-\n\
-- `prose`: `content` only. Intuition, intentions, how one idea leads to the next.\n\
-- `definition` and `theorem`: `environment` (what it is called on the page: Definition, \
-Theorem, Lemma, Proposition, Corollary…), optional `siglum` (`def:name` for a definition, \
-`thm:`, `lem:`, `prop:` or `cor:` followed by lowercase letters, digits and hyphens for a \
-theorem), optional `title`, `central`, `proof` (whether it carries a proof), `uses` (the \
-`id`s of the statements it leans on) and `content`.\n\
-- `proof`: `of` (the `id` of the statement it proves) and `content`. A statement with \
-`\"proof\": true` has exactly one proof block, possibly empty, anywhere in the line.\n\
-\n\
-Every `content` is Typst markup: `$x^2$` for mathematics, `@siglum` to cite a statement. \
-Brackets in it must be balanced or escaped as `\\[` and `\\]`.";
-
-/// The one thing this job asks for.
-fn asked_of(task: &Task, line: &Line, line_name: &str, other: Option<&str>) -> String {
-    match task {
-        Task::Fill { after } => {
-            let between = line
-                .boxes()
-                .into_iter()
-                .find(|black_box| &black_box.after == after);
-
-            match between {
-                Some(black_box) => format!("Fill the black box {}.", bounded(line, &black_box)),
-                None => "Fill the black box that box refers to, which is no longer there. \
-                         Say so rather than guessing."
-                    .to_owned(),
-            }
-        }
-        Task::Refute { block } => format!(
-            "Look for a counterexample to `{}`. If you do not find one, \
-             that settles nothing and you must not say it does: say only that you \
-             did not find one.",
-            named(line, block)
-        ),
-        Task::Formalize { block } => format!(
-            "Formalize `{}` in Lean. Keep its prose fixed. Mark every declaration that backs it \
-             with `@[stemma \"{line_name}/{block}\"]`. If Lean reaches this central result by a \
-             different route, revise only non-central blocks so the narrative honestly follows \
-             that route, and explain the realignment in your answer.",
-            named(line, block)
-        ),
-        Task::FollowRoute { block } => format!(
-            "Your proposed route to `{}` was declined. Keep the author's prose route and every \
-             central statement fixed, and try to formalize that route in Lean. Mark the backing \
-             declaration with `@[stemma \"{line_name}/{block}\"]`. If the route cannot be made \
-             formal, explain exactly where it fails and finish with `stemma: nothing`; do not \
-             silently substitute another route.",
-            named(line, block)
-        ),
-        Task::Verify { after } => {
-            let between = line
-                .boxes()
-                .into_iter()
-                .find(|black_box| &black_box.after == after);
-            match between {
-                Some(black_box) => format!(
-                    "Write a Lean argument verifying every statement in the black box {}. \
-                     Mark each declaration with `@[stemma \"{line_name}/BLOCK-ID\"]`, using the \
-                     stable block identifier it establishes.",
-                    bounded(line, &black_box),
-                ),
-                None => "The black box to verify is no longer there. Say so rather than guessing."
-                    .to_owned(),
-            }
-        }
-        Task::Promote { block } => format!(
-            "Promote `{}` out of its black box by setting `\"central\": true`. \
-             Do not change its claim. Explain why it deserves a stable name; promotion freezes \
-             it, splits the surrounding box, and reserves a human correspondence audit.",
-            named(line, block)
-        ),
-        Task::Prove { block } => format!(
-            "Write the proof of `{}` in its proof block, or finish the one there. \
-             Do not change the statement. Add the lemmas the proof needs as new blocks \
-             before it, each with its own proof. If you find no proof, say so rather than \
-             offering an incomplete one as complete.",
-            named(line, block)
-        ),
-        Task::Rewrite { block } => format!(
-            "Rewrite `{}` so that it is correct and precise, keeping what it means. \
-             Keep its block identifier. Adjust what uses it only where the new statement \
-             requires it, and explain every change of meaning.",
-            named(line, block)
-        ),
-        Task::Develop { block } => format!(
-            "The prose block `{block}` describes mathematics informally. Develop it: replace \
-             or follow it with the definitions, statements and proofs it describes, so that \
-             it bridges what comes before it and what comes after. Keep the intuition as \
-             prose where it helps a reader."
-        ),
-        Task::Explore => "Say where this line could go next: what is worth stating, \
-                          and why it follows from what is already here."
-            .to_owned(),
-        Task::Reconcile => format!(
-            "Two of this person's machines wrote this line, and the versions have parted. \
-             Merge them into one line that keeps everything either version \
-             established and chooses, for every block they write differently, the version \
-             that is right. Central statements stay exactly as they are in both. You are \
-             offering a proposal, not settling it: a person decides.\n\
-             \n\
-             The other version:\n\
-             ----------------------------------------\n\
-             {}\n\
-             ----------------------------------------",
-            other.unwrap_or("it is missing").trim()
-        ),
-        Task::Build => "Nothing: a build takes no agent.".to_owned(),
-    }
-}
-
-/// A box, said by its two ends.
-fn bounded(line: &Line, black_box: &BlackBox) -> String {
-    let boundary = |block: &Option<BlockId>| match block {
-        Some(block) => format!("`{}`", named(line, block)),
-        None => "the start of the line".to_owned(),
-    };
-
-    match (&black_box.after, &black_box.before) {
-        (after, Some(before)) => {
-            format!("between {} and `{}`", boundary(after), named(line, before))
-        }
-        // The end of a line is open, and that is the ordinary state of
-        // work in progress rather than something missing.
-        (after, None) => format!("that begins after {} and is still open", boundary(after)),
-    }
-}
-
-fn named(line: &Line, block: &BlockId) -> String {
-    line.node_at(block)
-        .map(|node| node.siglum.to_string())
-        .unwrap_or_else(|| block.to_string())
-}
-
 /// Where the raw output of a job is, for the person whose machine it is.
 pub fn output_of(home: &Home, job: &str) -> PathBuf {
     agents::output_path(home, job)
@@ -733,8 +642,6 @@ mod tests {
             }
         ));
     }
-    use crate::agents::Finished;
-
     use stemma_core::document::{Block, Document};
 
     fn source() -> String {
@@ -756,61 +663,12 @@ mod tests {
             .to_text()
     }
 
-    fn handed(task: &str) -> Handed {
-        Handed {
-            job: "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned(),
-            group: "algebra".to_owned(),
-            side: "shared".to_owned(),
-            line: "quotient-groups".to_owned(),
-            line_id: Some("lin:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned()),
-            revision: 3,
-            against: None,
-            task: task.to_owned(),
-            agent: "claude".to_owned(),
-            launched_by: "usr:ana".to_owned(),
-        }
-    }
-
     fn line() -> Line {
         Line::read(&source()).unwrap()
     }
 
     fn block(line: &Line, named: &str) -> BlockId {
         line.node(&named.parse().unwrap()).unwrap().block
-    }
-
-    #[test]
-    fn a_box_is_asked_for_by_both_its_ends() {
-        let line = line();
-        let task = Task::Fill {
-            after: Some(block(&line, "thm:first")),
-        };
-        let asked = asked_of(&task, &line, "quotient-groups", None);
-
-        assert!(
-            asked.contains("between `thm:first` and `thm:second`"),
-            "{asked}"
-        );
-
-        let first: Task = "fill".parse().unwrap();
-        assert!(
-            asked_of(&first, &line, "quotient-groups", None)
-                .contains("between the start of the line")
-        );
-    }
-
-    #[test]
-    fn the_prompt_says_what_an_agent_may_not_touch() {
-        let line = line();
-        let task = Task::Fill {
-            after: Some(block(&line, "thm:first")),
-        };
-        let asked = prompt(&handed(&task.to_string()), &task, &line, &source(), None);
-
-        assert!(asked.contains("Do not change its text"));
-        assert!(asked.contains("\"kind\""), "the format is described");
-        assert!(asked.contains("thm:second"));
-        assert!(asked.contains("stemma: nothing"));
     }
 
     #[test]
@@ -835,88 +693,5 @@ mod tests {
 
         assert!(check_library_offer(&offered, &task, &line, "quotient-groups").is_ok());
         assert!(check_library_offer(&offered, &task, &line, "another-line").is_err());
-    }
-
-    #[test]
-    fn an_agent_looking_for_a_counterexample_is_told_what_not_finding_one_means() {
-        let line = line();
-        let task = Task::Refute {
-            block: block(&line, "thm:first"),
-        };
-        let asked = asked_of(&task, &line, "quotient-groups", None);
-
-        assert!(asked.contains("settles nothing"));
-    }
-
-    #[test]
-    fn finding_no_counterexample_is_never_reported_as_the_statement_holding() {
-        let line = line();
-        let task = Task::Refute {
-            block: block(&line, "thm:first"),
-        };
-        let ran = Ran::Finished(Finished {
-            status: Some(0),
-            output: "I looked and found nothing.\nstemma: nothing\n".to_owned(),
-            gave_up: false,
-        });
-
-        let outcome = became_of(&task, "claude", &ran);
-
-        assert!(matches!(outcome, Outcome::NothingFound { .. }));
-        assert_eq!(
-            outcome.said(),
-            "no counterexample was found, which settles nothing"
-        );
-        assert!(outcome.taught_anything());
-        assert!(!outcome.is_the_machines());
-    }
-
-    #[test]
-    fn an_agent_that_said_nothing_in_particular_produced_something_to_look_at() {
-        let task: Task = "fill".parse().unwrap();
-        let ran = Ran::Finished(Finished {
-            status: Some(0),
-            output: "Here is an argument.\nstemma: produced\n".to_owned(),
-            gave_up: false,
-        });
-
-        assert!(matches!(
-            became_of(&task, "claude", &ran),
-            Outcome::Produced { .. }
-        ));
-    }
-
-    #[test]
-    fn a_proposal_carries_complete_source_and_concrete_attribution() {
-        let written = source();
-        let output = format!(
-            "notes\nstemma: proposal\n{written}stemma: end proposal\nstemma: model claude-opus-5\nstemma: produced\n"
-        );
-        let offered = proposal("claude", &output).unwrap();
-        assert_eq!(offered.source, written.trim_end());
-        assert_eq!(offered.vendor, "Anthropic");
-        assert_eq!(offered.model, "claude-opus-5");
-    }
-
-    #[test]
-    fn a_missing_agent_never_becomes_a_statement_about_the_mathematics() {
-        let task: Task = "fill".parse().unwrap();
-        let outcome = became_of(&task, "claude", &Ran::Missing);
-
-        assert!(outcome.is_the_machines());
-        assert!(outcome.is_the_owners_to_fix());
-        assert!(!outcome.taught_anything());
-    }
-
-    #[test]
-    fn the_marker_is_only_read_at_the_end() {
-        assert!(found_nothing("nothing yet\nstemma: nothing"));
-        assert!(found_nothing("stemma: nothing\n\n"));
-        assert!(!found_nothing(
-            "stemma: nothing\nand then an argument\nand more\nand more"
-        ));
-        assert!(!found_nothing(
-            "an argument that mentions stemma: nothing in passing here"
-        ));
     }
 }

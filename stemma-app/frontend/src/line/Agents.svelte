@@ -8,9 +8,14 @@
   import { common, tasksFor } from "../lib/tasks";
   import type { Block } from "../lib/types";
 
-  let { line, onask }: { line: LineSession; onask: (tasks: string[]) => void } = $props();
+  let { line, onask }: {
+    line: LineSession;
+    onask: (tasks: string[], custom?: { request: string; blocks: string[]; library: boolean }) => void;
+  } = $props();
 
   let choosing = $state(false);
+  let custom = $state("");
+  let customLibrary = $state(false);
 
   /** Every agent on every machine that works for this group. */
   const choices = $derived(
@@ -20,6 +25,8 @@
         agent: agent.called,
         machine: machine.label,
         reason: agent.reason,
+        models: agent.models,
+        efforts: agent.efforts,
       })),
     ),
   );
@@ -61,7 +68,7 @@
           role="menuitemcheckbox"
           aria-checked={choice.value === line.agent}
           disabled={!!choice.reason}
-          onclick={() => { line.agent = choice.value; choosing = false; }}
+          onclick={() => { line.agent = choice.value; line.chooseDefaults(); choosing = false; }}
         >
           <span>{choice.agent}</span>
           <span class="menu__description">on {choice.machine}{choice.reason ? ` · ${choice.reason}` : ""}</span>
@@ -69,6 +76,17 @@
       {/each}
     </Bubble>
   </div>
+
+  {#if chosenAgent}
+    <div class="selection__tasks">
+      {#if chosenAgent.models.length}
+        <label>Model <select class="input" bind:value={line.model}>{#each chosenAgent.models as model}<option value={model}>{model}</option>{/each}</select></label>
+      {/if}
+      {#if chosenAgent.efforts.length}
+        <label>Effort <select class="input" bind:value={line.effort}>{#each chosenAgent.efforts as effort}<option value={effort}>{effort}</option>{/each}</select></label>
+      {/if}
+    </div>
+  {/if}
 
   {#if chosen.length}
     <div class="selection">
@@ -92,6 +110,16 @@
       {:else}
         <p class="selection__note">No task applies to every selected block.</p>
       {/if}
+      <div class="selection__tasks">
+        <textarea class="input" bind:value={custom} placeholder="Custom request"></textarea>
+        <label><input type="checkbox" bind:checked={customLibrary} /> Allow Lean library changes</label>
+        <button
+          type="button"
+          class="button button--small"
+          disabled={!custom.trim()}
+          onclick={() => onask(["custom"], { request: custom, blocks: chosen.map((block) => block.id), library: customLibrary })}
+        ><Glyph name="sparkle" small />Run custom task</button>
+      </div>
     </div>
   {:else}
     <p class="panel__text">Select blocks to ask an agent about several at once, or use <Glyph name="sparkles" small /> on a block.</p>

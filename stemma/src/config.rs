@@ -23,6 +23,9 @@ pub struct Config {
     /// What to run for an agent this machine keeps somewhere unusual.
     #[serde(default)]
     pub agents: BTreeMap<String, AgentConfig>,
+    /// Defaults for agent jobs on this machine.
+    #[serde(default)]
+    pub jobs: JobConfig,
 }
 
 /// How this machine invokes one agent, where the ordinary way is wrong.
@@ -34,6 +37,79 @@ pub struct Config {
 pub struct AgentConfig {
     /// The program to run.
     pub command: Option<String>,
+    /// Models this installed agent accepts.
+    #[serde(default)]
+    pub models: Vec<String>,
+    /// Effort levels this installed agent accepts.
+    #[serde(default)]
+    pub efforts: Vec<String>,
+    /// Default model when a job does not override it.
+    pub model: Option<String>,
+    /// Default effort when a job does not override it.
+    pub effort: Option<String>,
+    /// Task-specific defaults, keyed by task verb.
+    #[serde(default)]
+    pub tasks: BTreeMap<String, AgentDefaults>,
+}
+
+/// Machine-wide job settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct JobConfig {
+    /// Maximum running time for an agent job.
+    pub timeout_minutes: u64,
+}
+
+impl Default for JobConfig {
+    fn default() -> Self {
+        Self {
+            timeout_minutes: 20,
+        }
+    }
+}
+
+/// A model and effort default for one task kind.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentDefaults {
+    /// Default model for this task kind.
+    pub model: Option<String>,
+    /// Default reasoning effort for this task kind.
+    pub effort: Option<String>,
+}
+
+impl AgentConfig {
+    /// Selects and validates the concrete model and effort for a job.
+    pub fn selection(
+        &self,
+        task: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Result<(String, Option<String>)> {
+        let defaults = self.tasks.get(task);
+        let model = model
+            .map(str::to_owned)
+            .or_else(|| defaults.and_then(|one| one.model.clone()))
+            .or_else(|| self.model.clone())
+            .or_else(|| self.models.first().cloned())
+            .context("no model is configured for this agent")?;
+        let effort = effort
+            .map(str::to_owned)
+            .or_else(|| defaults.and_then(|one| one.effort.clone()))
+            .or_else(|| self.effort.clone())
+            .or_else(|| self.efforts.first().cloned());
+
+        if !self.models.is_empty() && !self.models.contains(&model) {
+            anyhow::bail!("model `{model}` is not offered by this agent");
+        }
+        if let Some(effort) = &effort
+            && !self.efforts.is_empty()
+            && !self.efforts.contains(effort)
+        {
+            anyhow::bail!("effort `{effort}` is not offered by this agent");
+        }
+        Ok((model, effort))
+    }
 }
 
 impl Config {
@@ -135,5 +211,39 @@ mod tests {
         assert_eq!(Config::read(&path).unwrap(), config);
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn task_defaults_can_be_overridden_only_with_declared_choices() {
+        let configured = AgentConfig {
+            models: vec!["model-a".to_owned(), "model-b".to_owned()],
+            efforts: vec!["low".to_owned(), "high".to_owned()],
+            model: Some("model-a".to_owned()),
+            effort: Some("low".to_owned()),
+            tasks: BTreeMap::from([(
+                "prove".to_owned(),
+                AgentDefaults {
+                    model: Some("model-b".to_owned()),
+                    effort: Some("high".to_owned()),
+                },
+            )]),
+            ..AgentConfig::default()
+        };
+
+        assert_eq!(
+            configured.selection("prove", None, None).unwrap(),
+            ("model-b".to_owned(), Some("high".to_owned()))
+        );
+        assert_eq!(
+            configured
+                .selection("prove", Some("model-a"), Some("low"))
+                .unwrap(),
+            ("model-a".to_owned(), Some("low".to_owned()))
+        );
+        assert!(
+            configured
+                .selection("prove", Some("unknown"), None)
+                .is_err()
+        );
     }
 }

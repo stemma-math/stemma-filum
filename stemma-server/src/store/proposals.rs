@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use stemma_core::id::{JobId, ProposalId, UserId};
-use stemma_core::proposal::{FormalReview, LibraryChange, Offer};
+use stemma_core::proposal::{FormalReview, LibraryChange, Offer, Operation};
 
 use super::jobs::Job;
 
@@ -30,6 +30,12 @@ pub struct Proposal {
     pub model: String,
     /// Prompt contract revision.
     pub prompt_revision: String,
+    /// Narrow operations submitted through the job API.
+    pub operations: Vec<Operation>,
+    /// The agent's summary for the reviewer.
+    pub explanation: String,
+    /// Selected reasoning effort.
+    pub effort: Option<String>,
     /// Current review state.
     pub state: String,
     /// The person who decided, once decided.
@@ -51,10 +57,11 @@ pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<Propo
         .as_ref()
         .map(serde_json::to_string)
         .transpose()?;
+    let operations = serde_json::to_string(&offer.operations)?;
     connection
         .execute(
-            "INSERT INTO proposals (id, job_id, source, lean_source, library_change, formal_review, vendor, model, prompt_revision)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO proposals (id, job_id, source, lean_source, library_change, formal_review, vendor, model, prompt_revision, operations, explanation, effort)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 id.to_string(),
                 job.id.to_string(),
@@ -64,7 +71,10 @@ pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<Propo
                 formal_review,
                 offer.vendor,
                 offer.model,
-                offer.prompt_revision
+                offer.prompt_revision,
+                operations,
+                offer.explanation,
+                offer.effort,
             ],
         )
         .context("cannot keep the proposal")?;
@@ -96,23 +106,26 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
     let row = connection
         .query_row(
             "SELECT job_id, source, lean_source, library_change, formal_review, library_commit, vendor, model,
-                prompt_revision, state, decided_by, applied_revision
+                prompt_revision, operations, explanation, effort, state, decided_by, applied_revision
          FROM proposals WHERE id = ?1",
             params![id.to_string()],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
-                    row.get(1)?,
+                    row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, Option<String>>(3)?,
                     row.get::<_, Option<String>>(4)?,
                     row.get::<_, Option<String>>(5)?,
-                    row.get(6)?,
-                    row.get(7)?,
-                    row.get(8)?,
-                    row.get(9)?,
-                    row.get::<_, Option<String>>(10)?,
-                    row.get::<_, Option<i64>>(11)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, String>(9)?,
+                    row.get::<_, String>(10)?,
+                    row.get::<_, Option<String>>(11)?,
+                    row.get::<_, String>(12)?,
+                    row.get::<_, Option<String>>(13)?,
+                    row.get::<_, Option<i64>>(14)?,
                 ))
             },
         )
@@ -127,6 +140,9 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         vendor,
         model,
         prompt_revision,
+        operations,
+        explanation,
+        effort,
         state,
         decided_by,
         applied_revision,
@@ -157,6 +173,10 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         vendor,
         model,
         prompt_revision,
+        operations: serde_json::from_str(&operations)
+            .context("cannot read the proposal operations")?,
+        explanation,
+        effort,
         state,
         decided_by: decided_by.and_then(|id| id.parse().ok()),
         applied_revision: applied_revision.map(|revision| revision.max(0) as u64),
@@ -306,6 +326,10 @@ mod tests {
                 against: None,
                 task: Task::Explore,
                 agent: Slug::parse("claude").unwrap(),
+                model: None,
+                effort: None,
+                request: None,
+                grants: None,
                 choice: Choice::Anyone,
                 by: ana.id.clone(),
             },
@@ -322,6 +346,9 @@ mod tests {
                 vendor: "Anthropic".to_owned(),
                 model: "claude-opus-5".to_owned(),
                 prompt_revision: "1".to_owned(),
+                operations: Vec::new(),
+                explanation: String::new(),
+                effort: None,
             },
         )
         .unwrap();

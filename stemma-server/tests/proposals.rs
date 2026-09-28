@@ -127,6 +127,10 @@ async fn awaiting(harness: &mut Harness) -> String {
                     against: None,
                     task: Task::Fill { after: None },
                     agent: Slug::parse("claude").unwrap(),
+                    model: None,
+                    effort: None,
+                    request: None,
+                    grants: None,
                     choice: Choice::Anyone,
                     by: user.id.clone(),
                 },
@@ -143,6 +147,9 @@ async fn awaiting(harness: &mut Harness) -> String {
                     vendor: "Anthropic".to_owned(),
                     model: "claude-opus-4".to_owned(),
                     prompt_revision: "1".to_owned(),
+                    operations: Vec::new(),
+                    explanation: String::new(),
+                    effort: None,
                 },
             )?;
 
@@ -396,7 +403,7 @@ async fn asking_again_after_a_formal_realignment_asks_for_the_authors_route() {
         })
         .await
         .unwrap();
-    assert_eq!(task, format!("follow@{}", main_block()));
+    assert_eq!(task, format!("realign@{}", main_block()));
 }
 
 #[tokio::test]

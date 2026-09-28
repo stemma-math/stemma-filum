@@ -358,6 +358,8 @@ fn api() -> Router<Instance> {
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/jobs/{id}/finish", post(jobs::finish))
+        .route("/api/jobs/{id}/progress", post(jobs::progress))
+        .route("/api/jobs/{id}/cancel", post(jobs::cancel))
         .route("/api/proposals", get(proposals::listing))
         .route("/api/proposals/accepted", get(proposals::to_apply))
         .route("/api/proposals/{id}", get(proposals::accepted))

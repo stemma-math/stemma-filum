@@ -60,6 +60,42 @@ writing ended, the server queues a `build` job for another machine of the
 group. `stemma export GROUP` makes a read-only git clone of a repository, for
 anyone who can read it.
 
+## Agent jobs
+
+Each requested agent job runs in its own directory below the operating
+system's temporary directory. The directory contains the group's repository,
+the target `line.json` at the requested revision, versioned `AGENTS.md` and
+`TASK.md` instructions, and `scratch/`. It is deliberately left in place for
+the machine owner to inspect and is reported with the job.
+
+Agents submit only scoped block and library-file operations through the
+`stemma-job` command placed on their `PATH`. The command validates each action,
+builds proposed Lean changes on request, records an explanation or a negative
+result, and submits with `stemma-job done`. Raw vendor output stays on the
+machine. Accepted line operations are merged block by block, and library
+operations file by file, against the revision from which they were made.
+
+Models, effort levels, defaults, and the time limit are machine-owned settings
+in the client configuration. For example:
+
+```toml
+[jobs]
+timeout_minutes = 45
+
+[agents.codex]
+models = ["gpt-5-codex"]
+efforts = ["medium", "high"]
+model = "gpt-5-codex"
+effort = "medium"
+
+[agents.codex.tasks.prove]
+effort = "high"
+```
+
+Only declared models and effort levels are offered by the launcher. A launch
+may override the defaults among those choices. Queued and running jobs can be
+cancelled from the application or with `stemma job cancel JOB`.
+
 ## Requirements
 
 - macOS 12 or newer to build the macOS application

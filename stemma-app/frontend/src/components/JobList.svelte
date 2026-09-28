@@ -15,6 +15,16 @@
     try { outputs[job] = await api.jobOutput(job); } catch (error) { outputs[job] = said(error); }
   }
 
+  async function cancel(job: Job) {
+    try {
+      await api.cancelJob(job.id);
+      job.cancel_requested = true;
+      if (job.state === "queued") job.state = "withdrawn";
+    } catch (error) {
+      outputs[job.id] = said(error);
+    }
+  }
+
   /** `prove@thm:main` → the task's words and what it is about. */
   function asked(task: string): { words: string; about: string | null } {
     const [verb, about] = task.split("@");
@@ -46,6 +56,13 @@
           {#if task.about}<span class="identifier">{task.about}</span> · {/if}{job.agent}
         </span>
         {#if job.said}<span class="job__said">{job.said}</span>{/if}
+        {#if job.progress}<span class="job__said">{job.progress}</span>{/if}
+        {#if job.workspace}<span class="identifier">{job.workspace}</span>{/if}
+        {#if (job.state === "queued" || job.state === "running") && !job.cancel_requested}
+          <button type="button" class="button button--link job__output" onclick={() => cancel(job)}>Cancel</button>
+        {:else if job.cancel_requested && job.state === "running"}
+          <span class="job__said">Cancellation requested</span>
+        {/if}
         {#if job.raw_output}
           <button type="button" class="button button--link job__output" aria-expanded={outputs[job.id] !== undefined} onclick={() => show(job.id)}>
             {outputs[job.id] === undefined ? "View output" : "Hide output"}

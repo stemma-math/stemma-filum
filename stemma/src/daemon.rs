@@ -220,14 +220,36 @@ fn do_one(
     )?;
     out.flush()?;
 
+    let workspace = std::env::temp_dir()
+        .join("stemma-jobs")
+        .join(handed.job.replace(':', "-"));
+    let workspace_text = workspace.display().to_string();
+    let cancelled = std::sync::atomic::AtomicBool::new(handed.cancel_requested);
+    if server.job_progress(
+        &credentials.token,
+        &handed.job,
+        Some(&workspace_text),
+        "preparing the workspace",
+    )? {
+        cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     let completed = std::thread::scope(|scope| -> Result<work::Completed> {
         let (finished, waiting) = std::sync::mpsc::sync_channel(1);
+        let cancelled_for_worker = &cancelled;
         scope.spawn(move || {
             let completed = match crate::mirror::Instance::connect(home) {
-                Ok(instance) => work::carry_out(home, config, &instance, handed),
+                Ok(instance) => work::carry_out_controlled(
+                    home,
+                    config,
+                    &instance,
+                    handed,
+                    cancelled_for_worker,
+                ),
                 Err(error) => work::Completed {
                     outcome: stemma_core::job::Outcome::out_of_reach(format!("{error:#}")),
                     proposal: None,
+                    workspace: None,
                 },
             };
             let _ = finished.send(completed);
@@ -238,12 +260,28 @@ fn do_one(
                 writeln!(out, "{}: {error:#}", credentials.server)?;
                 out.flush()?;
             }
+            match server.job_progress(
+                &credentials.token,
+                &handed.job,
+                Some(&workspace_text),
+                "the agent is working",
+            ) {
+                Ok(true) => cancelled.store(true, std::sync::atomic::Ordering::Relaxed),
+                Ok(false) => {}
+                Err(error) => {
+                    writeln!(out, "{}: {error:#}", credentials.server)?;
+                    out.flush()?;
+                }
+            }
             Ok(())
         })
     })?;
     let outcome = &completed.outcome;
 
     writeln!(out, "  {}", outcome.said())?;
+    if let Some(workspace) = &completed.workspace {
+        writeln!(out, "  workspace at {}", workspace.display())?;
+    }
 
     // Raw output carries this machine's account, quota and plan, so it
     // is named here and goes nowhere.

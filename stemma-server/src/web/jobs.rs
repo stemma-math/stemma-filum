@@ -26,7 +26,7 @@ use stemma_core::proposal::{self, Completion};
 /// A completion report, including the phase-five form without a proposal.
 pub enum Report {
     /// Current atomic report.
-    Complete(Completion),
+    Complete(Box<Completion>),
     /// Compatible report from a client that predates proposals.
     Outcome(Outcome),
 }
@@ -34,7 +34,7 @@ pub enum Report {
 impl Report {
     fn complete(self) -> Completion {
         match self {
-            Self::Complete(completion) => completion,
+            Self::Complete(completion) => *completion,
             Self::Outcome(outcome) => Completion {
                 outcome,
                 proposal: None,
@@ -152,6 +152,13 @@ fn handed_over(job: &Job) -> serde_json::Value {
         "against": job.against,
         "task": job.task.to_string(),
         "agent": job.agent.as_str(),
+        "model": job.model,
+        "effort": job.effort,
+        "request": job.request,
+        "grants": job.grants,
+        "workspace": job.workspace,
+        "progress": job.progress,
+        "cancel_requested": job.cancel_requested_at.is_some(),
         "launched_by": job.launched_by.to_string(),
     })
 }
@@ -191,6 +198,46 @@ pub async fn finish(
             })?;
         proposal::preserves_central_statements(&base.source, &offer.source)
             .map_err(|error| WebError::BadRequest(error.to_string()))?;
+        if offer.operations.is_empty() {
+            return Err(WebError::BadRequest(
+                "A proposal must contain scoped operations.".to_owned(),
+            ));
+        }
+        let grants = found.grants.clone().unwrap_or_else(|| {
+            use stemma_core::proposal::{Grants, LineGrant, Operation};
+            Grants {
+                line: offer
+                    .operations
+                    .iter()
+                    .filter_map(|operation| match operation {
+                        Operation::EditBlock { block, .. } => {
+                            Some(LineGrant::Edit { block: *block })
+                        }
+                        Operation::AddBlocks { after, .. } => {
+                            Some(LineGrant::Add { after: *after })
+                        }
+                        Operation::RemoveBlock { block } => {
+                            Some(LineGrant::Remove { block: *block })
+                        }
+                        Operation::WriteLibraryFile { .. } => None,
+                    })
+                    .collect(),
+                library: offer.operations.iter().any(|operation| {
+                    matches!(
+                        operation,
+                        stemma_core::proposal::Operation::WriteLibraryFile { .. }
+                    )
+                }),
+                add_only: false,
+            }
+        });
+        let rebuilt = proposal::apply_line_operations(&base.source, &grants, &offer.operations)
+            .map_err(WebError::BadRequest)?;
+        if rebuilt != offer.source {
+            return Err(WebError::BadRequest(
+                "The proposal source does not match its operations.".to_owned(),
+            ));
+        }
     }
 
     let of = machine.id;
@@ -216,6 +263,68 @@ pub async fn finish(
     }
 }
 
+#[derive(Debug, Deserialize)]
+/// Progress reported by the machine currently holding a job.
+pub struct Progress {
+    /// Inspectable workspace path on that machine.
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// One short account of the current step.
+    pub progress: String,
+}
+
+/// Records progress and returns whether the launcher asked this job to stop.
+pub async fn progress(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(id): Path<String>,
+    Json(report): Json<Progress>,
+) -> Result<Response, WebError> {
+    let machine = super::machines::registered(&instance, &credential).await?;
+    let id: JobId = id.parse().map_err(|_| WebError::NotFound)?;
+    let lookup = id;
+    let found = instance
+        .read(move |connection| jobs::by_id(connection, &lookup))
+        .await?
+        .ok_or(WebError::NotFound)?;
+    if found.taken_by.as_ref() != Some(&machine.id) {
+        return Err(WebError::NotFound);
+    }
+    let cancelled = found.cancel_requested_at.is_some();
+    let of = machine.id;
+    instance
+        .write(move |connection| {
+            jobs::progress(
+                connection,
+                &id,
+                &of,
+                report.workspace.as_deref(),
+                &report.progress,
+            )
+        })
+        .await?;
+    Ok(Json(json!({ "cancel_requested": cancelled })).into_response())
+}
+
+/// Cancels a queued job or requests cancellation from the machine running it.
+pub async fn cancel(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(id): Path<String>,
+) -> Result<Response, WebError> {
+    let id: JobId = id.parse().map_err(|_| WebError::NotFound)?;
+    let by = credential.user.id;
+    let cancelled = instance
+        .write(move |connection| jobs::cancel(connection, &id, &by))
+        .await?;
+    if !cancelled {
+        return Err(WebError::BadRequest(
+            "This job cannot be cancelled.".to_owned(),
+        ));
+    }
+    Ok(Json(json!({ "cancelled": true })).into_response())
+}
+
 /// What a program on a machine sends to launch a job.
 #[derive(Debug, Deserialize)]
 pub struct Asking {
@@ -237,6 +346,18 @@ pub struct Asking {
     /// Which machine, where one was chosen.
     #[serde(default)]
     pub machine: Option<String>,
+    /// Concrete model override.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Reasoning effort override.
+    #[serde(default)]
+    pub effort: Option<String>,
+    /// The request for a custom task.
+    #[serde(default)]
+    pub request: Option<String>,
+    /// Capabilities selected for a custom task.
+    #[serde(default)]
+    pub grants: Option<stemma_core::proposal::Grants>,
 }
 
 /// Launches a job from a machine.
@@ -331,12 +452,33 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
     let asker = by.clone();
     let revision = asking.revision;
     let against = asking.against;
+    let model = asking
+        .model
+        .clone()
+        .filter(|value| !value.trim().is_empty());
+    let effort = asking
+        .effort
+        .clone()
+        .filter(|value| !value.trim().is_empty());
+    let request = asking
+        .request
+        .clone()
+        .filter(|value| !value.trim().is_empty());
+    let grants = asking.grants.clone();
 
     if task == Task::Build {
         return Err(refuse("Builds are asked for by the server itself."));
     }
     if task == Task::Reconcile && against.is_none() {
         return Err(refuse("A merge job needs the other version's revision."));
+    }
+    if task == Task::Custom && (request.is_none() || grants.is_none()) {
+        return Err(refuse("A custom task needs a request and explicit grants."));
+    }
+    if task != Task::Custom && (request.is_some() || grants.is_some()) {
+        return Err(refuse(
+            "Only a custom task carries a request and explicit grants.",
+        ));
     }
 
     instance
@@ -370,6 +512,23 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                 if !serves {
                     anyhow::bail!("that machine does not work for this group");
                 }
+                if let Some(offered) = machines::agents(connection, machine)?
+                    .into_iter()
+                    .find(|offered| offered.agent == agent)
+                {
+                    if let Some(model) = &model
+                        && !offered.models.is_empty()
+                        && !offered.models.contains(model)
+                    {
+                        anyhow::bail!("that model is not offered by the chosen machine");
+                    }
+                    if let Some(effort) = &effort
+                        && !offered.efforts.is_empty()
+                        && !offered.efforts.contains(effort)
+                    {
+                        anyhow::bail!("that effort is not offered by the chosen machine");
+                    }
+                }
 
                 // A private line exists only on its author's machines,
                 // so choosing anybody else's would be choosing a machine
@@ -395,6 +554,10 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                     against,
                     task: task.clone(),
                     agent: agent.clone(),
+                    model: model.clone(),
+                    effort: effort.clone(),
+                    request: request.clone(),
+                    grants: grants.clone(),
                     choice: match chosen {
                         Some(machine) => Choice::Machine { machine },
                         None => Choice::Anyone,
@@ -461,6 +624,10 @@ pub async fn launch(
             against: None,
             task: form.task.clone(),
             agent: agent.to_owned(),
+            model: None,
+            effort: None,
+            request: None,
+            grants: None,
             machine: match machine {
                 "anyone" => None,
                 given => Some(given.to_owned()),

@@ -12,7 +12,7 @@ use crate::actor::{AgentRun, Attribution};
 use crate::artefact::BlockCheck;
 use crate::document::{Block, Document};
 use crate::fact::{Fact, FactKind};
-use crate::id::{JobId, ProposalId, UserId};
+use crate::id::{BlockId, JobId, ProposalId, UserId};
 use crate::job::Outcome;
 use crate::line::{Line, Siglum};
 
@@ -45,6 +45,199 @@ pub struct Offer {
     pub model: String,
     /// Which prompt contract produced it.
     pub prompt_revision: String,
+    /// The narrow actions the agent took against the job's base revision.
+    #[serde(default)]
+    pub operations: Vec<Operation>,
+    /// The agent's own summary for the reviewer.
+    #[serde(default)]
+    pub explanation: String,
+    /// The reasoning effort selected for the run, when the vendor supports it.
+    #[serde(default)]
+    pub effort: Option<String>,
+}
+
+/// One reviewable action produced through the job API.
+///
+/// Line actions name stable blocks and library actions name individual files,
+/// so a proposal never needs to claim the whole workspace as its answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum Operation {
+    /// Replace one existing block, preserving its stable identifier.
+    EditBlock {
+        /// The block being edited.
+        block: BlockId,
+        /// Its proposed value.
+        with: Block,
+    },
+    /// Insert blocks after an existing block, or at the beginning.
+    AddBlocks {
+        /// The block after which they belong. `None` means the beginning.
+        after: Option<BlockId>,
+        /// The blocks, in order.
+        blocks: Vec<Block>,
+    },
+    /// Remove one block.
+    RemoveBlock {
+        /// The block being removed.
+        block: BlockId,
+    },
+    /// Replace, create, or remove one file in the group's Lean library.
+    WriteLibraryFile {
+        /// A relative path below the package root.
+        path: String,
+        /// Its contents at the job's base, or absence for a new file.
+        before: Option<String>,
+        /// Its proposed contents, or absence to remove it.
+        after: Option<String>,
+    },
+}
+
+/// The capabilities granted to one job.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Grants {
+    /// Line actions the job API will admit.
+    #[serde(default)]
+    pub line: Vec<LineGrant>,
+    /// Whether files in the Lean library may be changed.
+    #[serde(default)]
+    pub library: bool,
+    /// Whether the task may only add content.
+    #[serde(default)]
+    pub add_only: bool,
+}
+
+/// One line capability granted to a job.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "grant", rename_all = "snake_case")]
+pub enum LineGrant {
+    /// Edit this block.
+    Edit {
+        /// The block that may be edited.
+        block: BlockId,
+    },
+    /// Add blocks after this block, or at the beginning.
+    Add {
+        /// The position after which blocks may be added.
+        after: Option<BlockId>,
+    },
+    /// Remove this non-central block.
+    Remove {
+        /// The block that may be removed.
+        block: BlockId,
+    },
+}
+
+impl Grants {
+    /// Whether an operation is inside these grants.
+    pub fn admits(&self, operation: &Operation) -> bool {
+        if self.add_only && !matches!(operation, Operation::AddBlocks { .. }) {
+            return false;
+        }
+
+        match operation {
+            Operation::EditBlock { block, .. } => self.line.iter().any(
+                |grant| matches!(grant, LineGrant::Edit { block: allowed } if allowed == block),
+            ),
+            Operation::AddBlocks { after, .. } => self.line.iter().any(
+                |grant| matches!(grant, LineGrant::Add { after: allowed } if allowed == after),
+            ),
+            Operation::RemoveBlock { block } => self.line.iter().any(
+                |grant| matches!(grant, LineGrant::Remove { block: allowed } if allowed == block),
+            ),
+            Operation::WriteLibraryFile { .. } => self.library && !self.add_only,
+        }
+    }
+}
+
+/// Applies line operations one at a time, validating scope and the line after
+/// every action so an agent receives the error while it can still correct it.
+pub fn apply_line_operations(
+    base: &str,
+    grants: &Grants,
+    operations: &[Operation],
+) -> Result<String, String> {
+    let mut document = Document::parse(base).map_err(|error| error.to_string())?;
+
+    for operation in operations {
+        if !grants.admits(operation) {
+            return Err("that action is outside this job's grants".to_owned());
+        }
+
+        match operation {
+            Operation::EditBlock { block, with } => {
+                if with.id() != block {
+                    return Err("an edited block must keep its identifier".to_owned());
+                }
+                let at = document
+                    .position(block)
+                    .ok_or_else(|| format!("block `{block}` is not in the line"))?;
+                document.blocks[at] = with.clone();
+            }
+            Operation::AddBlocks { after, blocks } => {
+                if blocks.is_empty() {
+                    return Err("an add action must contain at least one block".to_owned());
+                }
+                let mut known: BTreeSet<BlockId> =
+                    document.blocks.iter().map(|block| *block.id()).collect();
+                for block in blocks {
+                    if !known.insert(*block.id()) {
+                        return Err(format!("block `{}` already exists", block.id()));
+                    }
+                }
+                let at = match after {
+                    Some(block) => document
+                        .position(block)
+                        .map(|position| position + 1)
+                        .ok_or_else(|| format!("block `{block}` is not in the line"))?,
+                    None => 0,
+                };
+                document.blocks.splice(at..at, blocks.iter().cloned());
+            }
+            Operation::RemoveBlock { block } => {
+                let at = document
+                    .position(block)
+                    .ok_or_else(|| format!("block `{block}` is not in the line"))?;
+                if document.blocks[at]
+                    .statement()
+                    .is_some_and(|statement| statement.central)
+                {
+                    return Err(format!("central block `{block}` cannot be removed"));
+                }
+                document.blocks.remove(at);
+            }
+            Operation::WriteLibraryFile { path, .. } => {
+                if !safe_library_path(path) {
+                    return Err(format!("`{path}` is not a safe library path"));
+                }
+                continue;
+            }
+        }
+
+        let proposed = document.to_text();
+        preserves_central_statements(base, &proposed).map_err(|error| error.to_string())?;
+        Line::read(&proposed).map_err(|faults| {
+            faults
+                .first()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "the proposed line is invalid".to_owned())
+        })?;
+    }
+
+    Ok(document.to_text())
+}
+
+/// Whether a library path stays below the package root.
+pub fn safe_library_path(path: &str) -> bool {
+    let path = std::path::Path::new(path);
+    !path.as_os_str().is_empty()
+        && !path.is_absolute()
+        && path.components().all(|part| {
+            matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
 }
 
 /// Machine-checked evidence attached to a proposed Lean library change.
@@ -485,5 +678,67 @@ mod tests {
     #[test]
     fn a_proposal_state_is_a_condition_not_an_endorsement_record() {
         assert_eq!(ProposalState::KIND, FactKind::Condition);
+    }
+
+    #[test]
+    fn operations_are_checked_against_scope_and_central_statements_as_they_arrive() {
+        let original = base();
+        let ordinary = *original.blocks[4].id();
+        let central = *original.blocks[2].id();
+        let mut changed = original.blocks[4].clone();
+        changed.statement_mut().unwrap().content = "A corrected argument.".to_owned();
+        let grants = Grants {
+            line: vec![LineGrant::Edit { block: ordinary }],
+            library: false,
+            add_only: false,
+        };
+        let source = apply_line_operations(
+            &original.to_text(),
+            &grants,
+            &[Operation::EditBlock {
+                block: ordinary,
+                with: changed,
+            }],
+        )
+        .unwrap();
+        assert!(source.contains("A corrected argument."));
+
+        let mut changed = original.blocks[2].clone();
+        changed.statement_mut().unwrap().content = "A different central claim.".to_owned();
+        let central_grant = Grants {
+            line: vec![LineGrant::Edit { block: central }],
+            ..Grants::default()
+        };
+        assert!(
+            apply_line_operations(
+                &original.to_text(),
+                &central_grant,
+                &[Operation::EditBlock {
+                    block: central,
+                    with: changed,
+                }],
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn an_add_only_grant_refuses_every_other_kind_of_action() {
+        let original = base();
+        let ordinary = *original.blocks[4].id();
+        let grants = Grants {
+            line: vec![LineGrant::Edit { block: ordinary }],
+            add_only: true,
+            library: true,
+        };
+        assert!(!grants.admits(&Operation::EditBlock {
+            block: ordinary,
+            with: original.blocks[4].clone(),
+        }));
+        assert!(!grants.admits(&Operation::WriteLibraryFile {
+            path: "Stemma/Next.lean".to_owned(),
+            before: None,
+            after: Some("theorem next : True := by trivial\n".to_owned()),
+        }));
     }
 }
