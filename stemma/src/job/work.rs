@@ -88,6 +88,7 @@ pub fn carry_out_controlled(
 
     let repository = repository_of(home, handed);
     let workspace = match crate::job::workspace::prepare(
+        home,
         handed,
         &task,
         &source,

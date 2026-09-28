@@ -62,8 +62,8 @@ anyone who can read it.
 
 ## Agent jobs
 
-Each requested agent job runs in its own directory below the operating
-system's temporary directory. The directory contains the group's repository,
+Each requested agent job runs in its own directory below `jobs/` in the
+client's state directory, which only the machine's owner can enter. The directory contains the group's repository,
 the target `line.json` at the requested revision, versioned `AGENTS.md` and
 `TASK.md` instructions, and `scratch/`. It is deliberately left in place for
 the machine owner to inspect and is reported with the job.

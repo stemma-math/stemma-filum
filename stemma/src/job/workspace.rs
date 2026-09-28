@@ -11,6 +11,7 @@ use stemma_core::proposal::{Grants, LineGrant};
 use stemma_core::repository;
 
 use crate::api::Handed;
+use crate::home::Home;
 use crate::job::answer::{self, State};
 
 /// The versioned instruction contract shipped by this build.
@@ -28,17 +29,22 @@ pub struct Workspace {
     pub grants: Grants,
 }
 
-/// Where the workspace of a job is: in the operating system's temporary
-/// directory, one directory per job.
-pub fn root_of(job: &str) -> PathBuf {
-    std::env::temp_dir()
-        .join("stemma-jobs")
-        .join(crate::storage::file_name(job))
+/// Where the workspaces of this machine's jobs are kept: in the client's
+/// state directory, which only its owner can enter.
+pub fn jobs_dir(home: &Home) -> PathBuf {
+    home.state_dir().join("jobs")
 }
 
-/// Creates a workspace in the operating system's temporary directory and
-/// deliberately leaves it there for its owner to inspect.
+/// Where the workspace of a job is: one directory per job, in
+/// [`jobs_dir`].
+pub fn root_of(home: &Home, job: &str) -> PathBuf {
+    jobs_dir(home).join(crate::storage::file_name(job))
+}
+
+/// Creates a workspace for a job and deliberately leaves it there for its
+/// owner to inspect.
 pub fn prepare(
+    home: &Home,
     handed: &Handed,
     task: &Task,
     base_source: &str,
@@ -48,12 +54,17 @@ pub fn prepare(
     // The line's name becomes a directory, so it has to be one.
     let line = Name::parse(&handed.line)
         .map_err(|_| anyhow!("the job names a line that cannot be a directory here"))?;
-    let root = root_of(&handed.job);
-    let parent = root
-        .parent()
-        .context("a job workspace needs somewhere to go")?;
-    std::fs::create_dir_all(parent)
-        .with_context(|| format!("cannot create {}", parent.display()))?;
+    let jobs = jobs_dir(home);
+    std::fs::create_dir_all(&jobs).with_context(|| format!("cannot create {}", jobs.display()))?;
+    // A workspace holds the group's repository and what agents write, so
+    // nobody else on the machine may read it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&jobs, std::fs::Permissions::from_mode(0o700))
+            .with_context(|| format!("cannot restrict {}", jobs.display()))?;
+    }
+    let root = root_of(home, &handed.job);
     match std::fs::create_dir(&root) {
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
             bail!("the job workspace already exists at {}", root.display());
@@ -295,6 +306,7 @@ fn link_command(command: &Path, linked: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::home::{Environment, HOME_VARIABLE};
     use stemma_core::document::Block;
 
     #[test]
@@ -309,11 +321,14 @@ mod tests {
 
     #[test]
     fn a_job_is_kept_in_a_directory_of_its_own_and_never_elsewhere() {
-        let root = root_of("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T");
-        assert!(root.ends_with("stemma-jobs/job-01K5YQ4TQ2VZ8H3M9N0P1R2S3T"));
-        assert!(
-            root_of("job:../../elsewhere").starts_with(std::env::temp_dir().join("stemma-jobs"))
-        );
+        let home = Home::locate(&Environment::from_pairs([(
+            HOME_VARIABLE,
+            std::env::temp_dir().join("stemma-job-root-test"),
+        )]));
+        let root = root_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T");
+        assert!(root.ends_with("jobs/job-01K5YQ4TQ2VZ8H3M9N0P1R2S3T"));
+        assert!(root_of(&home, "job:../../elsewhere").starts_with(jobs_dir(&home)));
+        assert!(jobs_dir(&home).starts_with(home.state_dir()));
     }
 
     #[test]
@@ -330,7 +345,11 @@ mod tests {
         }))
         .unwrap();
 
-        let error = prepare(&handed, &Task::Explore, "", None, None)
+        let home = Home::locate(&Environment::from_pairs([(
+            HOME_VARIABLE,
+            std::env::temp_dir().join("stemma-job-refusal-test"),
+        )]));
+        let error = prepare(&home, &handed, &Task::Explore, "", None, None)
             .err()
             .unwrap();
 

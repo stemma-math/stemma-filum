@@ -260,7 +260,7 @@ impl Job<'_> {
         )?;
         out.flush()?;
 
-        let workspace = crate::job::workspace::root_of(&handed.job);
+        let workspace = crate::job::workspace::root_of(home, &handed.job);
         let workspace_text = workspace.display().to_string();
         let cancelled = AtomicBool::new(handed.cancel_requested);
         self.progress(&workspace_text, "preparing the workspace", &cancelled, out)?;
