@@ -325,6 +325,11 @@
     white-space: nowrap;
 }
 
+.sidebar__line-state {
+    font-size: 12px;
+    color: #f0b35b;
+}
+
 .sidebar__empty {
     padding: 4px 12px;
     font-size: 13px;

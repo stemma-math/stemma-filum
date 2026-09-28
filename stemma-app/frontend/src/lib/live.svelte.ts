@@ -2,13 +2,15 @@
 //
 // The native side keeps one stream open and passes every notice here.
 // A notice names what changed; what is shown is read again from the
-// source, never taken from the notice. Coming back to the window or to
-// the network looks at everything once, in case the stream missed it.
+// source, never taken from the notice. Lines are the engine's: it takes
+// in what changed and says so after every round. Coming back to the
+// window or to the network looks at everything once, in case the stream
+// missed it.
 
 import { jobs } from "../line/jobs.svelte";
 import { api } from "./api";
 import { app } from "./app.svelte";
-import type { ServerEvent } from "./types";
+import type { Mirrored, ServerEvent } from "./types";
 
 type Said =
   | { heard: "connected" }
@@ -34,6 +36,9 @@ class Live {
     const stopHearing = listen
       ? await listen<Said>("stemma:heard", (event) => this.#hear(event.payload))
       : () => {};
+    const stopMirroring = listen
+      ? await listen<Mirrored>("stemma:mirror", (event) => void app.mirror(event.payload))
+      : () => {};
 
     const everything = () => this.#soon("everything");
     const seen = () => {
@@ -45,6 +50,7 @@ class Live {
 
     return () => {
       stopHearing();
+      stopMirroring();
       window.removeEventListener("focus", everything);
       window.removeEventListener("online", everything);
       document.removeEventListener("visibilitychange", seen);
@@ -70,7 +76,6 @@ class Live {
 
   #changed(event: ServerEvent) {
     switch (event.kind) {
-      case "line":
       case "group":
         this.#soon("lines");
         break;

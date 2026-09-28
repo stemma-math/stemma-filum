@@ -4,14 +4,9 @@ export type Signed = { server: string; user: string };
 
 export type Beginning = { code: string; url: string; url_complete: string; interval: number };
 
-export type Stepped = {
-  group: string;
-  side: string;
-  outcome: string;
-  parted: boolean;
-  dirty: boolean;
-  recorded: string[];
-};
+/** Where a line stands: everything sent, something here not sent yet, or
+ * a block changed here and elsewhere that needs a decision. */
+export type LineState = "sent" | "not_sent" | "needs_decision";
 
 export type Known = {
   group: string;
@@ -20,6 +15,40 @@ export type Known = {
   title: string | null;
   description: string | null;
   path: string;
+  state: LineState;
+};
+
+/** One line that is not simply sent. */
+export type Standing = {
+  id: string;
+  group: string;
+  side: string;
+  name: string;
+  state: LineState;
+  /** Why it was not sent, the last time that was tried. */
+  trouble: string | null;
+};
+
+/** What the engine did in its last round. */
+export type Round = {
+  arrived: string[];
+  sent: string[];
+  merged: string[];
+  deciding: string[];
+  gone: string[];
+  aside: { line: string; path: string; why: string }[];
+  waiting: { line: string; why: string }[];
+  stopped: string | null;
+};
+
+/** Where synchronisation stands, as the engine says after every round. */
+export type Mirrored = {
+  /** Whether the last round reached the server. */
+  connected: boolean;
+  reason: string | null;
+  /** Every line not sent yet or needing a decision. */
+  lines: Standing[];
+  report: Round;
 };
 
 export type Entry = { group: string; side: string; name: string; path: string };

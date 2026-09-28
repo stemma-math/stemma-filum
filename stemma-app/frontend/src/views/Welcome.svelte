@@ -15,8 +15,7 @@
   {:else}
     <div class="welcome welcome--empty">
       <h1 class="welcome__title">No groups yet</h1>
-      <p class="welcome__text">Sync this machine to bring your groups here.</p>
-      <button type="button" class="button button--primary" disabled={app.synced.running} onclick={() => app.sync()}><Glyph name="sync" small />Sync now</button>
+      <p class="welcome__text">Your groups arrive here as soon as this machine reaches the server.</p>
     </div>
   {/if}
 </div>

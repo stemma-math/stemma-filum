@@ -11,13 +11,12 @@
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use stemma_core::claim::Held;
 
 use crate::api::{About, Claimed, Server};
-use crate::build;
-use crate::git;
 use crate::home::Home;
+use crate::mirror::{self, Instance, Mirror, Which};
 use crate::session;
 
 /// Takes the line, if nothing else has it.
@@ -37,21 +36,17 @@ pub fn take(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) ->
     Ok(())
 }
 
-/// Lets the line go, having written what was written.
+/// Lets the line go, having sent what was written.
 ///
-/// In that order: a line let go still holding uncommitted work is work
-/// nobody else can see on a line this machine no longer claims. If the
-/// writing cannot be recorded it is said and the claim is let go all
-/// the same — a claim nobody can release is worse than one released
-/// with the work still on the machine, and synchronising will offer to
-/// record it again.
+/// In that order: a line let go with writing still here is writing the
+/// next machine to take it does not see. If it cannot be sent it is
+/// said, and the line is let go all the same — a claim nobody can
+/// release is worse than writing that leaves on the next round.
 pub fn release(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
     let (server, token, about) = addressed(home, at, line)?;
 
-    match crate::writing::record(at) {
-        Ok(Some(recorded)) => writeln!(out, "{recorded}")?,
-        Ok(None) => {}
-        Err(error) => writeln!(out, "  it is not committed yet: {error:#}")?,
+    if let Some(waiting) = send_before_release(home, &about)? {
+        writeln!(out, "  not sent yet: {waiting}")?;
     }
 
     server.release_claim(&token, &about)?;
@@ -59,6 +54,26 @@ pub fn release(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write)
     writeln!(out, "{}  released", about.line)?;
 
     Ok(())
+}
+
+/// Sends whatever this machine has of a line, before it is let go; why
+/// it could not be, when it could not.
+pub fn send_before_release(home: &Home, about: &About) -> Result<Option<String>> {
+    let mirror = Mirror::at(home)?;
+    let side = about.side.parse()?;
+    let Some(record) = mirror.find(&about.group, side, &about.line)? else {
+        return Ok(None);
+    };
+
+    if !record.pending() {
+        return Ok(None);
+    }
+
+    let report = mirror.send(&Instance::connect(home)?, &Which::Line(record.id));
+
+    Ok(report
+        .stopped
+        .or_else(|| report.waiting.into_iter().next().map(|waiting| waiting.why)))
 }
 
 /// Asks whichever machine has the line to hand it back.
@@ -137,18 +152,14 @@ fn lapsing(left: u64) -> String {
 /// The instance, the credential, and which line the command is about.
 fn addressed(home: &Home, at: &Path, line: Option<&str>) -> Result<(Server, String, About)> {
     let (credentials, server) = session::connect(home)?;
-
-    let clone = git::containing(at)
-        .context("this is not inside a clone: run it from a group's repository")?;
-    let manifest = build::read_manifest(&clone)?;
-    let name = crate::jobs::line_of(&clone, at, line)?;
+    let (group, side, name) = mirror::line_at(at, line)?;
 
     Ok((
         server,
         credentials.token,
         About {
-            group: manifest.group.slug().as_str().to_owned(),
-            side: manifest.side.as_str().to_owned(),
+            group,
+            side: side.as_str().to_owned(),
             line: name.as_str().to_owned(),
         },
     ))

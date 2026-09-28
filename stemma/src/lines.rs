@@ -7,10 +7,11 @@
 use std::io::Write;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::api::{Sharing, Starting};
 use crate::home::Home;
+use crate::mirror::{Instance, Mirror, Which};
 use crate::session;
 
 /// Starts a line, and says where it landed.
@@ -46,31 +47,20 @@ pub fn start(
             _ => "only you can see it",
         }
     )?;
-    writeln!(out, "  run `stemma sync` to get it on this machine")?;
-
-    Ok(())
+    bring_here(home, out)
 }
 
 /// Takes a line of one's own out of the repository.
 pub fn delete(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
     let (credentials, server) = session::connect(home)?;
+    let (group, _, name) = crate::mirror::line_at(at, line)?;
 
-    let clone = crate::git::containing(at)
-        .context("this is not inside a clone: run it from a group's repository")?;
-    let manifest = crate::build::read_manifest(&clone)?;
-    let name = crate::jobs::line_of(&clone, at, line)?;
-
-    server.delete_line(
-        &credentials.token,
-        manifest.group.slug().as_str(),
-        name.as_str(),
-    )?;
+    server.delete_line(&credentials.token, &group, name.as_str())?;
 
     writeln!(out, "{name}  deleted")?;
     writeln!(out, "  its history is kept")?;
-    writeln!(out, "  run `stemma sync` to remove it from this machine")?;
 
-    Ok(())
+    bring_here(home, out)
 }
 
 /// Moves a line to the group.
@@ -83,15 +73,11 @@ pub fn share(
     out: &mut impl Write,
 ) -> Result<()> {
     let (credentials, server) = session::connect(home)?;
-
-    let clone = crate::git::containing(at)
-        .context("this is not inside a clone: run it from a group's repository")?;
-    let manifest = crate::build::read_manifest(&clone)?;
-    let name = crate::jobs::line_of(&clone, at, line)?;
+    let (group, _, name) = crate::mirror::line_at(at, line)?;
 
     let placed = server.share_line(
         &credentials.token,
-        manifest.group.slug().as_str(),
+        &group,
         name.as_str(),
         &Sharing {
             travels: match history {
@@ -122,7 +108,29 @@ pub fn share(
             false => "anyone in the group can edit it, one at a time",
         }
     )?;
-    writeln!(out, "  run `stemma sync` to update this machine")?;
+    bring_here(home, out)
+}
+
+/// Brings what the instance just did to this machine, and says what
+/// could not be.
+fn bring_here(home: &Home, out: &mut impl Write) -> Result<()> {
+    let report = Mirror::at(home)?.step(&Instance::connect(home)?, true, &Which::All);
+
+    if let Some(stopped) = &report.stopped {
+        writeln!(
+            out,
+            "  it reaches this machine on the next round: {stopped}"
+        )?;
+    }
+    for aside in &report.aside {
+        writeln!(
+            out,
+            "  a version of {} was kept at {}, because {}",
+            aside.line,
+            aside.path.display(),
+            aside.why
+        )?;
+    }
 
     Ok(())
 }

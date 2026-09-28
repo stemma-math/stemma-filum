@@ -18,7 +18,7 @@ pub fn list(home: &Home, at: &Path, group: Option<&str>, out: &mut impl Write) -
     let group = match group {
         Some(named) => named.to_owned(),
         None => {
-            let clone = crate::git::containing(at).context(
+            let clone = crate::mirror::repository_of(at).context(
                 "say which group with --group, or run this inside one of its repositories",
             )?;
 

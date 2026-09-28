@@ -13,6 +13,7 @@ mod account;
 mod claims;
 mod compose;
 mod editing;
+mod engine;
 mod live;
 mod machine;
 #[cfg(target_os = "macos")]
@@ -33,6 +34,7 @@ pub fn run() {
     builder
         .manage(account::SigningIn::default())
         .setup(|app| {
+            engine::start(app.handle());
             live::start(app.handle());
             Ok(())
         })
@@ -42,7 +44,8 @@ pub fn run() {
             account::sign_in_poll,
             account::sign_out,
             account::open_link,
-            workspace::sync,
+            workspace::standing,
+            workspace::send_now,
             workspace::groups,
             workspace::lines,
             workspace::new_line,
@@ -50,7 +53,6 @@ pub fn run() {
             workspace::share_line,
             editing::open_line,
             editing::save_line,
-            editing::record_line,
             compose::preview,
             claims::claim,
             claims::claim_status,

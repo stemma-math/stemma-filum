@@ -14,8 +14,8 @@ use stemma::cli::{
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
 use stemma::{
-    build, claims, conflicts, daemon, git_credential, jobs, lines, machines, node, proposals,
-    session, sync, vault,
+    build, claims, conflicts, daemon, git_credential, jobs, lines, machines, mirror, node,
+    proposals, session, vault,
 };
 use stemma_core::proposal::Verdict;
 
@@ -59,10 +59,10 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Whoami => return session::whoami(home, out),
         Command::Logout => session::log_out(home, out)?,
         Command::Sync => {
-            sync::run(home, out)?;
+            mirror::run(home, out)?;
         }
         Command::Status => {
-            sync::status(home, out)?;
+            mirror::status(home, out)?;
         }
         Command::Build => {
             build::run(home, &here(), out)?;
@@ -95,9 +95,6 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Conflict { command } => match command {
             ConflictCommand::List => conflicts::list(home, &here(), out)?,
             ConflictCommand::Resolve { keep } => conflicts::resolve(home, &here(), keep, out)?,
-            ConflictCommand::Reconcile { agent } => {
-                conflicts::reconcile(home, &here(), &agent, out)?
-            }
         },
 
         Command::Node { command } => match command {

@@ -1,14 +1,16 @@
 //! Hearing the instance, and passing it on to the window.
 //!
 //! One thread for as long as the application runs, following the stream
-//! the `stemma` library opens and handing every notice to the webview,
-//! which decides what to look at again.
+//! the `stemma` library opens and handing every notice to the engine,
+//! which keeps the lines in step, and to the webview, which decides what
+//! else to look at again.
 
 use serde::Serialize;
 use stemma::events::Heard;
 use stemma_core::event::Event;
 use tauri::{AppHandle, Emitter, Runtime};
 
+use crate::engine::{self, Nudge};
 use crate::home;
 
 /// The name the window listens for.
@@ -52,6 +54,11 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
             let stop = std::sync::atomic::AtomicBool::new(false);
 
             stemma::events::follow(&home(), &stop, |heard| {
+                match &heard {
+                    Heard::Connected => engine::nudge(Nudge::Connected),
+                    Heard::Changed(event) => engine::nudge(Nudge::Heard(event.clone())),
+                    Heard::Lost(_) => {}
+                }
                 let _ = app.emit(EVENT, Said::from(heard));
             });
         })

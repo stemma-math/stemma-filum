@@ -1,12 +1,15 @@
-//! Opening, saving and recording a line's source.
+//! Opening and saving a line's source.
 
 use serde::Serialize;
 use stemma_core::artefact::LeanDigest;
 use stemma_core::document::Document;
 use stemma_core::line::{Fault, Line, Name};
 
-use crate::said;
+use stemma::mirror::Mirror;
+
+use crate::engine::{self, Nudge};
 use crate::workspace::{LineAt, LineEntry};
+use crate::{failed, home, said};
 
 /// A line as the editor holds it: its blocks and what can be read out of them.
 #[derive(Serialize)]
@@ -50,23 +53,16 @@ pub fn open_line(path: String) -> Result<OpenLine, String> {
     OpenLine::of(&line, source)
 }
 
-/// Writes the line to disk. Called whenever the writer pauses.
+/// Saves the line through the engine, which sends it after a pause.
+/// Called whenever the writer pauses.
 #[tauri::command(async)]
 pub fn save_line(path: String, document: Document) -> Result<OpenLine, String> {
     let line = LineAt::admit(&path)?;
-    let source = document.to_text();
-    stemma::storage::replace(&line.path, &source).map_err(said)?;
-    OpenLine::of(&line, source)
-}
-
-/// Commits the line into its clone's history, returning the commit when one
-/// was made. Called when a stretch of writing ends, not on every save.
-#[tauri::command(async)]
-pub fn record_line(path: String) -> Result<Option<String>, String> {
-    let line = LineAt::admit(&path)?;
-    Ok(stemma::writing::record(&line.path)
-        .map_err(said)?
-        .map(|recorded| recorded.to_string()))
+    Mirror::at(&home())
+        .and_then(|mirror| mirror.save(&line.group, line.side()?, &line.name, &document))
+        .map_err(failed)?;
+    engine::nudge(Nudge::Saved);
+    OpenLine::of(&line, document.to_text())
 }
 
 /// Reads the line out of its source, collecting every fault.
