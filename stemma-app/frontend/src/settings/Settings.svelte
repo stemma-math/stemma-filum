@@ -2,10 +2,16 @@
   import Dialog from "../components/Dialog.svelte";
   import { app, type Panel } from "../lib/app.svelte";
   import Account from "./Account.svelte";
+  import Appearance from "./Appearance.svelte";
   import Machine from "./Machine.svelte";
   import Reviews from "./Reviews.svelte";
 
-  const pages: [Panel, string][] = [["machine", "This machine"], ["reviews", "Reviews"], ["account", "Account"]];
+  const pages: [Panel, string][] = [
+    ["machine", "This machine"],
+    ["reviews", "Reviews"],
+    ["account", "Account"],
+    ["appearance", "Appearance"],
+  ];
 
   let open = $state(false);
   $effect(() => { open = app.panel !== null; });
@@ -28,6 +34,8 @@
         <Reviews />
       {:else if app.panel === "account"}
         <Account />
+      {:else if app.panel === "appearance"}
+        <Appearance />
       {/if}
     </div>
   </div>

@@ -6,6 +6,7 @@
 
 pub mod admin;
 pub mod api;
+pub mod appearance;
 pub mod artefacts;
 pub mod assets;
 pub mod auth;
@@ -20,6 +21,8 @@ pub mod jobs;
 pub mod layout;
 pub mod lines;
 pub mod machines;
+pub mod pictures;
+pub mod profile;
 pub mod proposals;
 pub mod reset;
 pub mod starting;
@@ -173,6 +176,7 @@ pub fn router() -> Router<Instance> {
         .merge(assets())
         .fallback(get(not_found))
         .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))
+        .layer(axum::middleware::from_fn(appearance::remember))
 }
 
 /// Server-rendered pages and the forms they post.
@@ -182,6 +186,7 @@ fn pages() -> Router<Instance> {
         .route("/login", get(auth::login_form).post(auth::log_in))
         .route("/register", get(auth::register_form).post(auth::register))
         .route("/logout", post(auth::log_out))
+        .route("/appearance", post(appearance::choose))
         .route("/forgotten", get(reset::asking).post(reset::forgotten))
         .route("/reset/{secret}", get(reset::form).post(reset::set))
         .route("/device", get(device::form).post(device::answer))
@@ -192,7 +197,17 @@ fn pages() -> Router<Instance> {
             "/groups/new",
             get(groups::request_form).post(groups::request),
         )
+        .route("/profile", get(profile::view))
+        .route("/profile/details", post(profile::details))
+        .route("/profile/password", post(profile::password))
+        .route("/profile/picture", post(profile::picture))
+        .route("/profile/picture/remove", post(profile::remove_picture))
+        .route("/pictures/users/{slug}", get(pictures::user))
+        .route("/pictures/groups/{slug}", get(pictures::group))
         .route("/g/{slug}", get(groups::space))
+        .route("/g/{slug}/edit", get(groups::edit_form).post(groups::edit))
+        .route("/g/{slug}/picture", post(groups::picture))
+        .route("/g/{slug}/picture/remove", post(groups::remove_picture))
         .route("/g/{slug}/invitations", post(groups::invite))
         .route(
             "/g/{slug}/invitations/{id}/withdraw",

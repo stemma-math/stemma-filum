@@ -160,6 +160,29 @@ pub fn groups() -> Result<Vec<String>, String> {
     Ok(found)
 }
 
+/// The groups whose details this person may change, as the instance says.
+///
+/// Asked of the server rather than read from the machine, because a role
+/// changes there and nowhere else.
+#[tauri::command(async)]
+pub fn managed_groups() -> Result<Vec<String>, String> {
+    let session = crate::Session::open()?;
+    let workspace = session.server.workspace(&session.token).map_err(said)?;
+
+    Ok(workspace
+        .groups
+        .into_iter()
+        .filter(|group| manages(&group.role))
+        .map(|group| group.slug)
+        .collect())
+}
+
+/// Whether a role, as the instance spells it, may change a group's details.
+fn manages(role: &str) -> bool {
+    role.parse::<stemma_core::access::GroupRole>()
+        .is_ok_and(stemma_core::access::GroupRole::may_manage)
+}
+
 /// Every line in the workspace, with the title and description its source
 /// declares.
 #[tauri::command(async)]
@@ -243,7 +266,7 @@ pub fn share_line(path: String, history: bool, mine_to_write: bool) -> Result<St
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{LineAt, is_line_path};
+    use super::{LineAt, is_line_path, manages};
 
     #[test]
     fn only_actual_workspace_lines_are_admitted() {
@@ -279,5 +302,13 @@ mod tests {
             Path::new("/workspace/algebra/private/lines/quotients")
         );
         assert_eq!(line.clone_root(), Path::new("/workspace/algebra/private"));
+    }
+
+    #[test]
+    fn only_admins_and_owners_manage_a_group() {
+        assert!(manages("owner"));
+        assert!(manages("admin"));
+        assert!(!manages("member"));
+        assert!(!manages("anything else"));
     }
 }

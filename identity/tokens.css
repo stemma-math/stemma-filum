@@ -1,6 +1,7 @@
 /* Generated from tokens.json by build.mjs. Do not edit. */
 
 :root {
+    color-scheme: light;
     /* Brand navy ramp, for dark surfaces. The front page and the theme colour. */
     --navy-950: #030e29;
     /* Top of the sidebar gradient. */
@@ -26,6 +27,8 @@
     --accent-soft-fg: #244a9e;
     /* A 2px outline, 2px offset, on every focusable element. */
     --focus-ring: #6f9cff;
+    /* Links and link buttons. */
+    --link-fg: var(--accent);
     /* Light surfaces, where the work is. */
     --surface-page: #f3f5fa;
     --surface-card: #ffffff;
@@ -77,6 +80,9 @@
     --danger-fg: #b42318;
     --danger-bg: #fff7f7;
     --danger-border: #d64545;
+    /* A destructive primary button. White on it is 6.6:1. */
+    --danger-solid: #b42318;
+    --danger-solid-hover: #8f1c13;
     --warning-fg: #8a4a06;
     --warning-bg: #fcefdc;
     /* Block kinds in the editor. A label always goes with the colour. */
@@ -171,6 +177,102 @@
     --ease-out: cubic-bezier(.22, 1, .36, 1);
     /* The front page giving way to the sign-in; 500ms with reduced motion. */
     --dur-landing: 1600ms;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        /* White on it is 4.8:1. */
+        --accent: #3d6ce0;
+        --accent-hover: #2f5bc7;
+        --accent-soft-bg: #1c2b4f;
+        /* On accent-soft-bg. */
+        --accent-soft-fg: #a9c3ff;
+        --focus-ring: #6f9cff;
+        /* Links and link buttons, where the accent alone is too dark to read. */
+        --link-fg: #8cb0ff;
+        --surface-page: #0a1120;
+        --surface-card: #111a2c;
+        --surface-subtle: #151f33;
+        --surface-field: #0d1526;
+        --fill-muted: #1b263d;
+        --fill-muted-strong: #233049;
+        --border: #222e46;
+        --border-strong: #2d3a56;
+        --border-dashed: #3a4866;
+        --divider: #1b263d;
+        --ink-1: #e8eef9;
+        --ink-2: #c3cde0;
+        --ink-3: #9ba7be;
+        --ink-4: #6f7c96;
+        --ink-placeholder: #8591a9;
+        --ink-disabled: #56627a;
+        --success-fg: #72d3a2;
+        --success-bg: #0f2a1f;
+        --success-icon: #4cc38a;
+        --success-dot: #4cc38a;
+        --danger-fg: #ff8f86;
+        --danger-bg: #2a1519;
+        --danger-border: #e0605a;
+        /* White on it is 5.4:1. */
+        --danger-solid: #c4362b;
+        --danger-solid-hover: #a82d23;
+        --warning-fg: #f2b86a;
+        --warning-bg: #2c2011;
+        --block-prose-fg: #c3cde0;
+        --block-prose-bg: #1b263d;
+        --block-definition-fg: #bdb6ff;
+        --block-definition-bg: #231f47;
+        --block-result-fg: #f2b86a;
+        --block-result-bg: #2c2011;
+    }
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    /* White on it is 4.8:1. */
+    --accent: #3d6ce0;
+    --accent-hover: #2f5bc7;
+    --accent-soft-bg: #1c2b4f;
+    /* On accent-soft-bg. */
+    --accent-soft-fg: #a9c3ff;
+    --focus-ring: #6f9cff;
+    /* Links and link buttons, where the accent alone is too dark to read. */
+    --link-fg: #8cb0ff;
+    --surface-page: #0a1120;
+    --surface-card: #111a2c;
+    --surface-subtle: #151f33;
+    --surface-field: #0d1526;
+    --fill-muted: #1b263d;
+    --fill-muted-strong: #233049;
+    --border: #222e46;
+    --border-strong: #2d3a56;
+    --border-dashed: #3a4866;
+    --divider: #1b263d;
+    --ink-1: #e8eef9;
+    --ink-2: #c3cde0;
+    --ink-3: #9ba7be;
+    --ink-4: #6f7c96;
+    --ink-placeholder: #8591a9;
+    --ink-disabled: #56627a;
+    --success-fg: #72d3a2;
+    --success-bg: #0f2a1f;
+    --success-icon: #4cc38a;
+    --success-dot: #4cc38a;
+    --danger-fg: #ff8f86;
+    --danger-bg: #2a1519;
+    --danger-border: #e0605a;
+    /* White on it is 5.4:1. */
+    --danger-solid: #c4362b;
+    --danger-solid-hover: #a82d23;
+    --warning-fg: #f2b86a;
+    --warning-bg: #2c2011;
+    --block-prose-fg: #c3cde0;
+    --block-prose-bg: #1b263d;
+    --block-definition-fg: #bdb6ff;
+    --block-definition-bg: #231f47;
+    --block-result-fg: #f2b86a;
+    --block-result-bg: #2c2011;
 }
 
 :root,

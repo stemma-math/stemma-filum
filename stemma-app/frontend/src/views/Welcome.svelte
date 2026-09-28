@@ -10,7 +10,17 @@
       <span class="badge badge--large" aria-hidden="true">{initials(app.group)}</span>
       <h1 class="welcome__title identifier">{app.group}</h1>
       <p class="welcome__text">Choose a line on the left, or start a new one.</p>
-      <button type="button" class="button button--primary" onclick={() => app.goTo("new-line")}><Glyph name="add" small />New line</button>
+      <div class="welcome__actions">
+        <button type="button" class="button button--primary" onclick={() => app.goTo("new-line")}><Glyph name="add" small />New line</button>
+        {#if app.managed.includes(app.group)}
+          <button
+            type="button"
+            class="button"
+            data-tip="Opens in your browser"
+            onclick={() => app.openOnWeb(`/g/${encodeURIComponent(app.group!)}/edit`)}
+          ><Glyph name="edit" small />Edit group</button>
+        {/if}
+      </div>
     </div>
   {:else}
     <div class="welcome welcome--empty">

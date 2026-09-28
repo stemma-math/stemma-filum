@@ -51,6 +51,7 @@ export const api = {
 
   sync: () => call<Stepped[]>("sync"),
   groups: () => call<string[]>("groups"),
+  managedGroups: () => call<string[]>("managed_groups"),
   lines: () => call<Known[]>("lines"),
 
   newLine: (group: string, title: string, description: string | null, shared: boolean) =>

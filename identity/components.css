@@ -11,10 +11,6 @@
 @layer stemma.base, stemma.components;
 
 @layer stemma.base {
-    :root {
-        color-scheme: light;
-    }
-
     /* Focus is never removed. */
     :focus-visible {
         outline: 2px solid var(--focus-ring);
@@ -156,34 +152,36 @@
         border-color: transparent;
     }
 
+    /* Outlined like the secondary action, in red, so it keeps its shape
+     * at rest without competing with `--primary`. */
     .button--danger {
         color: var(--danger-fg);
-        background: transparent;
-        border-color: transparent;
+        background: var(--surface-card);
+        border-color: color-mix(in srgb, var(--danger-border) 55%, var(--surface-card));
     }
 
     .button--danger:hover {
         color: var(--danger-fg);
         background: var(--danger-bg);
-        border-color: transparent;
+        border-color: var(--danger-border);
     }
 
     /* A destructive action that is the one a dialog is for. */
     .button--primary.button--danger {
         color: #fff;
-        background: var(--danger-fg);
-        border-color: var(--danger-fg);
+        background: var(--danger-solid);
+        border-color: var(--danger-solid);
     }
 
     .button--primary.button--danger:hover {
-        background: #8f1c13;
-        border-color: #8f1c13;
+        background: var(--danger-solid-hover);
+        border-color: var(--danger-solid-hover);
     }
 
     .button--link {
         min-height: 0;
         padding: 0;
-        color: var(--accent);
+        color: var(--link-fg);
         background: transparent;
         border: 0;
         text-decoration: underline;
@@ -192,7 +190,6 @@
     }
 
     .button--link:hover {
-        color: var(--accent-hover);
         background: transparent;
         text-decoration-color: currentColor;
     }
@@ -235,7 +232,6 @@
 
     .button--quiet:disabled,
     .button--icon:disabled,
-    .button--danger:not(.button--primary):disabled,
     .button--link:disabled {
         background: transparent;
         border-color: transparent;
@@ -348,9 +344,12 @@
         cursor: pointer;
     }
 
-    /* The box sits on the first line of the words, however many there are. */
-    .choice input {
-        margin: 2px 0 0;
+    /* The box sits on the first line of the words, however many there are,
+     * centred on the letters rather than on the line box: the face sets
+     * its glyphs low in the line, so the middle of the line box reads a
+     * little above the middle of the words. */
+    .choice input[type] {
+        margin: 0.2em 0 0;
     }
 
     .choice:has(input:disabled) {
@@ -358,7 +357,9 @@
     }
 
     /* Drawn rather than native, so the box is the same size, colour and
-     * alignment in every browser and in the desktop window. */
+     * alignment in every browser and in the desktop window. At rest it is
+     * a field; chosen, it takes the accent with white on it, as the
+     * primary button does. The edge is 3:1 against a card. */
     input[type="checkbox"],
     input[type="radio"] {
         box-sizing: border-box;
@@ -367,36 +368,51 @@
         height: 16px;
         margin: 0;
         vertical-align: -3px;
-        background: var(--surface-card) center / 12px no-repeat;
-        border: 1.5px solid var(--border-dashed);
-        border-radius: 4px;
+        background: var(--surface-field) center / 0 no-repeat;
+        border: 1.5px solid var(--ink-4);
+        border-radius: 5px;
         appearance: none;
         cursor: pointer;
         transition:
-            background-color 120ms var(--ease-out),
-            border-color 120ms var(--ease-out),
-            box-shadow 120ms var(--ease-out);
+            background-color var(--dur-press) var(--ease-out),
+            background-size var(--dur-ui) var(--ease-out),
+            border-color var(--dur-press) var(--ease-out),
+            box-shadow var(--dur-press) var(--ease-out);
+    }
+
+    input[type="checkbox"] {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     }
 
     input[type="radio"] {
+        background-image: radial-gradient(circle, #fff 0 2.5px, transparent 3px);
         border-radius: 50%;
     }
 
     input[type="checkbox"]:hover:not(:disabled),
     input[type="radio"]:hover:not(:disabled) {
         border-color: var(--accent);
+        box-shadow: var(--ring-selected);
+    }
+
+    input[type="checkbox"]:checked,
+    input[type="radio"]:checked {
+        background-color: var(--accent);
+        border-color: var(--accent);
     }
 
     input[type="checkbox"]:checked {
-        background-color: var(--accent);
-        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2 5 8.6l4.5-5' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-        border-color: var(--accent);
+        background-size: 12px;
     }
 
     input[type="radio"]:checked {
-        background-color: var(--surface-card);
-        border-color: var(--accent);
-        box-shadow: inset 0 0 0 3px var(--surface-card), inset 0 0 0 8px var(--accent);
+        background-size: 100%;
+    }
+
+    input[type="checkbox"]:checked:hover:not(:disabled),
+    input[type="radio"]:checked:hover:not(:disabled) {
+        background-color: var(--accent-hover);
+        border-color: var(--accent-hover);
     }
 
     input[type="checkbox"]:disabled,
@@ -496,7 +512,7 @@
     /* ── Avatar and badge ──────────────────────────────────────────────
      *
      * A person is a circle with an initial; a group is a rounded square
-     * with its initials. */
+     * with its initials. Either may hold an `img` instead. */
 
     .avatar {
         display: inline-flex;
@@ -522,6 +538,17 @@
         color: #e3eeff;
         background: radial-gradient(120% 90% at 50% 120%, var(--blue-400) 0%, var(--navy-700) 55%, var(--navy-850) 100%);
         border-radius: var(--radius-md);
+    }
+
+    /* A picture, where there is one, fills the shape in place of the
+     * initials. */
+    .avatar > img,
+    .badge > img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: inherit;
     }
 
     /* ── Card ──────────────────────────────────────────────────────────
@@ -697,6 +724,19 @@
         margin: 0;
         padding: 8px 10px 4px;
         font: var(--text-label);
+        color: var(--ink-3);
+    }
+
+    /* A menu with nothing in it says so in the place of its items, as
+     * tall as one of them. */
+    .menu__empty {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        min-height: 36px;
+        margin: 0;
+        padding: 0 10px;
+        font: 400 13px / 1.3 var(--font-ui);
         color: var(--ink-3);
     }
 

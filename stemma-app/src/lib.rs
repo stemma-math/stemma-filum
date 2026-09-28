@@ -39,6 +39,7 @@ pub fn run() {
             account::open_link,
             workspace::sync,
             workspace::groups,
+            workspace::managed_groups,
             workspace::lines,
             workspace::new_line,
             workspace::delete_line,

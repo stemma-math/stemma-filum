@@ -55,7 +55,7 @@
     }
 
     a {
-        color: var(--accent);
+        color: var(--link-fg);
     }
 
     code {
@@ -500,6 +500,27 @@
     border-radius: var(--radius-lg);
 }
 
+/* Who is signed in, and the way to their profile on the web. */
+.user-card__me {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+    margin: -4px;
+    padding: 4px;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+.user-card__me:hover {
+    background: var(--on-dark-fill);
+}
+
 .user-card__who {
     display: flex;
     flex: 1;
@@ -882,13 +903,13 @@
 }
 
 .block--selected {
-    border-color: #cfd9f2;
+    border-color: color-mix(in srgb, var(--accent) 22%, var(--surface-card));
     box-shadow: var(--ring-selected), var(--shadow-card);
 }
 
 /* The statement or proof this one belongs with is being worked on. */
 .block--partnered {
-    border-color: #cfd9f2;
+    border-color: color-mix(in srgb, var(--accent) 22%, var(--surface-card));
     border-style: dashed;
 }
 
@@ -1147,7 +1168,7 @@ button.block__label:disabled {
 
 .block__central.chip--dashed:hover:not(:disabled) {
     color: var(--accent-soft-fg);
-    border-color: #b9c9ee;
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--surface-card));
 }
 
 .block__content {
@@ -1215,7 +1236,7 @@ button.block__label:disabled {
 .tt-call,
 .tt-keyword,
 .tt-marker {
-    color: var(--accent);
+    color: var(--link-fg);
 }
 
 .tt-argument,
@@ -1307,7 +1328,7 @@ button.block__label:disabled {
     margin-top: auto;
     padding: 36px 0 24px;
     pointer-events: none;
-    background: linear-gradient(180deg, rgb(243 245 250 / 0%) 0%, var(--surface-page) 55%);
+    background: linear-gradient(180deg, transparent 0%, var(--surface-page) 55%);
 }
 
 .floating-bar__inner {
@@ -1378,7 +1399,7 @@ button.block__label:disabled {
     flex: 1;
     flex-direction: column;
     min-width: 0;
-    background: #e6eaf1;
+    background: var(--fill-muted-strong);
 }
 
 .preview__bar {
@@ -1543,7 +1564,7 @@ button.block__label:disabled {
     width: 30px;
     height: 30px;
     color: var(--accent-soft-fg);
-    background: #eef3fc;
+    background: var(--accent-soft-bg);
     border-radius: var(--radius-sm);
 }
 
@@ -1584,8 +1605,8 @@ button.block__label:disabled {
     flex-direction: column;
     gap: 10px;
     padding: 14px;
-    background: #f5f8fe;
-    border: 1px solid #e3eaf8;
+    background: color-mix(in srgb, var(--accent-soft-bg) 55%, var(--surface-card));
+    border: 1px solid color-mix(in srgb, var(--accent-soft-bg) 60%, var(--border));
     border-radius: 12px;
 }
 
@@ -1753,7 +1774,16 @@ button.block__label:disabled {
 /* ── Dialogs and settings ──────────────────────────────────────────── */
 
 .dialog--wide {
-    width: min(820px, calc(100vw - 48px));
+    --dialog-width: min(820px, calc(100vw - 48px));
+    width: var(--dialog-width);
+}
+
+/* Beside the sidebar a dialog is centred on the stage, as the toasts are,
+ * rather than on the window. In a narrow window the stage is narrower than
+ * the dialog, so it moves only as far as keeps 24px clear on the right.
+ * The fallback is the identity's own dialog width. */
+.app-shell .dialog {
+    translate: min(var(--sidebar-desktop) / 2, max(0px, (100vw - var(--dialog-width, min(520px, 100vw - 32px))) / 2 - 24px)) 0;
 }
 
 .dialog__form {
@@ -2099,6 +2129,13 @@ button.block__label:disabled {
     font-size: 22px;
 }
 
+.welcome__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
 .welcome__text {
     margin-bottom: 8px;
     font-size: 15px;
@@ -2132,8 +2169,8 @@ button.block__label:disabled {
     height: 100%;
     padding: 32px 16px;
     background:
-        radial-gradient(110% 95% at -8% 112%, rgb(219 232 249) 0%, rgb(219 232 249 / 0%) 70%),
-        #f5f7fc;
+        radial-gradient(110% 95% at -8% 112%, var(--accent-soft-bg) 0%, transparent 70%),
+        var(--surface-page);
 }
 
 .entrance__card {
