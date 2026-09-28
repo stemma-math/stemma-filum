@@ -150,7 +150,8 @@ impl Held {
     pub fn lapses_in(&self) -> String {
         match self.left {
             0 => "it lapses now".to_owned(),
-            1..=90 => format!("it lapses in {} seconds", self.left),
+            1 => "it lapses in 1 second".to_owned(),
+            2..=90 => format!("it lapses in {} seconds", self.left),
             left => format!("it lapses in {} minutes", left.div_ceil(60)),
         }
     }
@@ -225,6 +226,9 @@ mod tests {
         };
 
         assert_eq!(left(0).lapses_in(), "it lapses now");
+        assert_eq!(left(1).lapses_in(), "it lapses in 1 second");
+        assert_eq!(left(90).lapses_in(), "it lapses in 90 seconds");
+        assert_eq!(left(91).lapses_in(), "it lapses in 2 minutes");
         assert_eq!(left(45).lapses_in(), "it lapses in 45 seconds");
         assert_eq!(left(600).lapses_in(), "it lapses in 10 minutes");
         assert_eq!(left(601).lapses_in(), "it lapses in 11 minutes");
