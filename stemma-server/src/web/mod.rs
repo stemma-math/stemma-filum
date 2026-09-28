@@ -305,7 +305,6 @@ fn pages() -> Router<Instance> {
             post(claims::hand_back),
         )
         .route("/proposals/{id}", get(proposals::review))
-        .route("/proposals/{id}/decide", post(proposals::decide))
         .route("/machines/{id}", get(machines::panel))
         .route("/machines/{id}/serve", post(machines::serve))
         .route("/machines/{id}/retire", post(machines::retire))
@@ -362,12 +361,17 @@ fn api() -> Router<Instance> {
         .route("/api/jobs/{id}/progress", post(jobs::progress))
         .route("/api/jobs/{id}/cancel", post(jobs::cancel))
         .route("/api/proposals", get(proposals::listing))
+        .route(
+            "/api/proposals/history/{group}/{side}/{line}",
+            get(proposals::history),
+        )
         .route("/api/proposals/accepted", get(proposals::to_apply))
         .route("/api/proposals/{id}", get(proposals::accepted))
         .route("/api/proposals/{id}/applied", post(proposals::applied))
         .route("/api/proposals/{id}/outdated", post(proposals::outdated))
         .route("/api/proposals/{id}/review", get(proposals::offered))
         .route("/api/proposals/{id}/decide", post(proposals::api_decide))
+        .route("/api/proposals/{id}/handoff", post(proposals::api_handoff))
         .route("/api/groups/{group}/machines", get(jobs::machine_choices))
         .route("/api/groups/{group}/pins", post(groups::change_pins))
         .route("/api/groups/{group}/vault", get(vault::api_view))

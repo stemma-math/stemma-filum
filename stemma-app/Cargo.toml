@@ -23,6 +23,7 @@ serde_json.workspace = true
 stemma = { path = "../stemma" }
 stemma-core.workspace = true
 tauri = { version = "2.11", features = [] }
+tauri-plugin-deep-link = "2.0"
 
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }

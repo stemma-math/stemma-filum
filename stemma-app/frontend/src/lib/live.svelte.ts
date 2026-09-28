@@ -29,6 +29,7 @@ class Live {
   reason = $state<string | null>(null);
 
   #pending = new Set<string>();
+  #newProposals = new Set<string>();
   #timer = 0;
 
   /** Starts listening; returns how to stop. */
@@ -91,6 +92,9 @@ class Live {
         this.#soon("jobs");
         break;
       case "proposal":
+        if (event.state === "awaiting_review" && !app.waiting.some((one) => one.proposal === event.proposal)) {
+          this.#newProposals.add(event.proposal);
+        }
         this.#soon("proposals");
         break;
       case "formal_audit": {
@@ -124,13 +128,22 @@ class Live {
   async #look() {
     const wanted = new Set(this.#pending);
     this.#pending.clear();
+    const newProposals = new Set(this.#newProposals);
+    this.#newProposals.clear();
     const all = wanted.has("everything");
     const looks: Promise<unknown>[] = [];
 
     if (all || wanted.has("lines")) looks.push(app.lookAgain());
     if (all || wanted.has("claim")) looks.push(app.line?.lookAtClaim() ?? Promise.resolve());
     if (all || wanted.has("jobs")) looks.push(jobs.refresh());
-    if (all || wanted.has("proposals")) looks.push(app.refreshWaiting().catch(() => {}));
+    if (all || wanted.has("proposals")) looks.push((async () => {
+      await app.refreshWaiting();
+      for (const proposal of newProposals) {
+        const waiting = app.waiting.find((one) => one.proposal === proposal);
+        if (waiting) tell(`New proposal for ${waiting.line}.`);
+      }
+      if (app.review) app.review = await api.proposal(app.review.proposal, app.line?.opened.source ?? null);
+    })().catch(() => {}));
     if (all || wanted.has("offers")) {
       const line = app.line;
       if (line) looks.push(api.offers(line.opened.entry.group).then((offers) => line.offersChanged(offers)).catch(() => {}));

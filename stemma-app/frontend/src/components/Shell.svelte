@@ -3,6 +3,7 @@
   import LineEditor from "../line/LineEditor.svelte";
   import Settings from "../settings/Settings.svelte";
   import NewLine from "../views/NewLine.svelte";
+  import Reviews from "../views/Reviews.svelte";
   import Vault from "../views/Vault.svelte";
   import Welcome from "../views/Welcome.svelte";
   import Sidebar from "./Sidebar.svelte";
@@ -19,6 +20,8 @@
       <NewLine />
     {:else if app.stage === "vault"}
       <Vault />
+    {:else if app.stage === "reviews"}
+      <Reviews />
     {:else}
       <Welcome />
     {/if}

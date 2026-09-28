@@ -131,9 +131,20 @@ pub fn show(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
 
 /// Records a decision. Accepting makes the words the accepter's own.
 pub fn decide(home: &Home, proposal: &str, verdict: Verdict, out: &mut impl Write) -> Result<()> {
+    decide_with_note(home, proposal, verdict, None, out)
+}
+
+/// Records the decision and any reviewer note for the next attempt.
+pub fn decide_with_note(
+    home: &Home,
+    proposal: &str,
+    verdict: Verdict,
+    note: Option<&str>,
+    out: &mut impl Write,
+) -> Result<()> {
     let (credentials, server) = session::connect(home)?;
 
-    server.decide_proposal(&credentials.token, proposal, verdict)?;
+    server.decide_proposal_with_note(&credentials.token, proposal, verdict, note)?;
 
     match verdict {
         Verdict::Accept => {

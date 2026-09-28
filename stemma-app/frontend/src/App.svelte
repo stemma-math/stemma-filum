@@ -6,7 +6,7 @@
   import Shell from "./components/Shell.svelte";
   import Toasts from "./components/Toasts.svelte";
   import Tooltips from "./components/Tooltips.svelte";
-  import { onViewChosen, said } from "./lib/api";
+  import { api, onViewChosen, said } from "./lib/api";
   import { app } from "./lib/app.svelte";
   import { live } from "./lib/live.svelte";
   import { fail } from "./lib/status.svelte";
@@ -45,11 +45,21 @@
     let unlisten: (() => void) | undefined;
     void live.start().then((stop) => (unlisten = stop));
 
-    void app.boot();
+    let stopReviews: (() => void) | undefined;
+    void window.__TAURI__?.event?.listen<string>("stemma:open-review", (event) => {
+      if (app.ready && app.signed) void app.openReview(event.payload);
+    }).then((stop) => (stopReviews = stop));
+
+    void app.boot().then(async () => {
+      if (!app.signed) return;
+      const proposal = await api.takeOpenReview().catch(() => null);
+      if (proposal) await app.openReview(proposal);
+    });
     return () => {
       stop?.();
       unhear?.();
       unlisten?.();
+      stopReviews?.();
     };
   });
 </script>

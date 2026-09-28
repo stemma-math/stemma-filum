@@ -1,6 +1,7 @@
 <script lang="ts">
   import { flip } from "svelte/animate";
   import { isStatement, move, moveTo, remove } from "../lib/blocks";
+  import { app } from "../lib/app.svelte";
   import type { LineSession } from "../lib/line.svelte";
   import type { Block, LineDocument } from "../lib/types";
   import BlockCard from "./BlockCard.svelte";
@@ -131,7 +132,7 @@
   {:else}
     {#each document.blocks as block, at (block.id)}
       {@const partner = partners.get(block.id)}
-      <div class="blocks__slot" animate:flip={{ duration: 180 }}>
+      <div class="blocks__slot" class:blocks__slot--proposed={app.proposalBlocks.includes(block.id)} animate:flip={{ duration: 180 }}>
         <BlockCard
           {line}
           {block}

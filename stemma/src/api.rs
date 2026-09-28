@@ -390,6 +390,52 @@ pub struct Waiting {
     pub model: String,
     /// Where review has got to.
     pub state: String,
+    /// Decision, when this is a recent review rather than a pending one.
+    #[serde(default)]
+    pub decision: Option<String>,
+    /// The reviewer's reason or instruction.
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// Pending and recently decided proposals for a reviewer.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Reviews {
+    /// Proposals still waiting.
+    pub proposals: Vec<Waiting>,
+    /// The last decisions made by this person.
+    pub recent: Vec<Waiting>,
+}
+
+/// One proposal in a line's lasting review history.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LineProposal {
+    /// Its identifier.
+    pub proposal: String,
+    /// The task that produced it.
+    pub task: String,
+    /// Agent and model attribution.
+    pub agent: String,
+    /// Vendor attribution.
+    pub vendor: String,
+    /// Concrete model.
+    pub model: String,
+    /// Version of the instructions given to the agent.
+    pub instructions_version: String,
+    /// Agent explanation.
+    pub explanation: String,
+    /// Review state.
+    pub state: String,
+    /// The reviewer's choice.
+    pub decision: Option<String>,
+    /// Reviewer's reason or next-attempt note.
+    pub note: Option<String>,
+    /// The member the review was assigned to.
+    pub reviewer: String,
+    /// The member who made the decision.
+    pub decided_by: Option<String>,
+    /// The line revision it became.
+    pub applied_revision: Option<u64>,
 }
 
 /// One proposal, with the version it would replace.
@@ -426,8 +472,26 @@ pub struct Offered {
     pub effort: Option<String>,
     /// Where review has got to.
     pub state: String,
+    /// The decision if this proposal was reviewed.
+    #[serde(default)]
+    pub decision: Option<String>,
+    /// The reviewer's note, if one was given.
+    #[serde(default)]
+    pub note: Option<String>,
+    /// The member currently responsible for this review.
+    #[serde(default)]
+    pub reviewer: Option<String>,
+    /// The member who made the decision, when decided.
+    #[serde(default)]
+    pub decided_by: Option<String>,
+    /// Members the launcher may hand a shared review to.
+    #[serde(default)]
+    pub members: Vec<ReviewMember>,
     /// The source it would replace, when the instance still has it.
     pub stands: Option<String>,
+    /// The line's latest server revision.
+    #[serde(default)]
+    pub current: Option<String>,
     /// The source it offers.
     pub source: String,
     /// The Lean module beside it, when formal work changed.
@@ -440,6 +504,15 @@ pub struct Offered {
     pub formal_review: Option<stemma_core::proposal::FormalReview>,
     /// What the instance checked before a person was asked.
     pub findings: Vec<String>,
+}
+
+/// A member who may review a shared proposal.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ReviewMember {
+    /// Their user identifier.
+    pub id: String,
+    /// Their display name.
+    pub name: String,
 }
 
 /// What starting a line asks for.
@@ -943,6 +1016,27 @@ impl Server {
             .context("the server sent an answer this build does not understand")
     }
 
+    /// Pending and recently decided reviews.
+    pub fn reviews(&self, token: &str) -> Result<Reviews> {
+        self.read(token, "/api/proposals")
+    }
+
+    /// The review history of one line.
+    pub fn line_proposals(
+        &self,
+        token: &str,
+        group: &str,
+        side: &str,
+        line: &str,
+    ) -> Result<Vec<LineProposal>> {
+        let answer: serde_json::Value = self.read(
+            token,
+            &format!("/api/proposals/history/{group}/{side}/{line}"),
+        )?;
+        serde_json::from_value(answer["proposals"].clone())
+            .context("the server sent an answer this build does not understand")
+    }
+
     /// One proposal, with the version it would replace.
     pub fn proposal(&self, token: &str, proposal: &str) -> Result<Offered> {
         self.read(token, &format!("/api/proposals/{proposal}/review"))
@@ -955,12 +1049,33 @@ impl Server {
         proposal: &str,
         decision: stemma_core::proposal::Verdict,
     ) -> Result<()> {
+        self.decide_proposal_with_note(token, proposal, decision, None)
+    }
+
+    /// Records a decision and optional reviewer note.
+    pub fn decide_proposal_with_note(
+        &self,
+        token: &str,
+        proposal: &str,
+        decision: stemma_core::proposal::Verdict,
+        note: Option<&str>,
+    ) -> Result<()> {
         let _: serde_json::Value = self.ask(
             token,
             &format!("/api/proposals/{proposal}/decide"),
-            &serde_json::json!({ "decision": decision.as_str() }),
+            &serde_json::json!({ "decision": decision.as_str(), "note": note }),
         )?;
 
+        Ok(())
+    }
+
+    /// Assigns a pending shared-line review to a group member.
+    pub fn handoff_proposal(&self, token: &str, proposal: &str, reviewer: &str) -> Result<()> {
+        let _: serde_json::Value = self.ask(
+            token,
+            &format!("/api/proposals/{proposal}/handoff"),
+            &serde_json::json!({ "reviewer": reviewer }),
+        )?;
         Ok(())
     }
 

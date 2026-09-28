@@ -10,7 +10,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 /// The version this build speaks.
-pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::new(3, 0);
+pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::new(3, 1);
 
 /// The header both sides send it in.
 pub const PROTOCOL_HEADER: &str = "x-stemma-protocol";

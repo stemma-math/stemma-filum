@@ -1,8 +1,8 @@
 // Typed wrappers over the desktop shell's commands.
 
 import type {
-  AuditAction, AuditTarget, Beginning, Claim, Conflict, Decision, Known, LineDocument, Machine,
-  Mirrored, Offer, OpenLine, Preview, Review, Signed, Vault, Verdict, Waiting,
+  AuditAction, AuditTarget, Beginning, Claim, Conflict, Decision, Known, LineDocument, LineProposal, Machine,
+  Mirrored, Offer, OpenLine, Preview, Review, Reviews, Signed, Vault, Verdict,
 } from "./types";
 
 type Bridge = { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } };
@@ -64,6 +64,7 @@ export const api = {
   openLine: (path: string) => call<OpenLine>("open_line", { path }),
   saveLine: (path: string, document: LineDocument) => call<OpenLine>("save_line", { path, document }),
   preview: (path: string, document: LineDocument) => call<Preview>("preview", { path, document }),
+  reviewPage: (path: string, document: LineDocument) => call<string>("review_page", { path, document }),
 
   claim: (path: string) => call<Claim>("claim", { path }),
   claimStatus: (path: string) => call<Claim>("claim_status", { path }),
@@ -93,11 +94,14 @@ export const api = {
   daemonInstall: () => call<string>("daemon_install"),
   installCli: () => call<string>("install_cli"),
 
-  proposals: () => call<Waiting[]>("proposals"),
-  proposal: (proposal: string) => call<Review>("proposal", { proposal }),
-  decideProposal: (proposal: string, decision: Verdict) =>
-    call<string>("decide_proposal", { proposal, decision }),
+  proposals: () => call<Reviews>("proposals"),
+  proposal: (proposal: string, current: string | null = null) => call<Review>("proposal", { proposal, current }),
+  decideProposal: (proposal: string, decision: Verdict, note: string | null = null) =>
+    call<string>("decide_proposal", { proposal, decision, note }),
   applyProposal: (proposal: string) => call<string>("apply_proposal", { proposal }),
+  takeOpenReview: () => call<string | null>("take_open_review"),
+  handoffProposal: (proposal: string, reviewer: string) => call<void>("handoff_proposal", { proposal, reviewer }),
+  lineHistory: (path: string) => call<LineProposal[]>("line_history", { path }),
 
   vault: (group: string) => call<Vault>("vault", { group }),
   vaultAdmit: (group: string, siglum: string, name: string, prose: string, lean: string) =>

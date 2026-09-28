@@ -95,6 +95,15 @@
   {/if}
 
   <div class="sidebar__foot">
+    <button
+      type="button"
+      class="sidebar__item"
+      aria-current={app.stage === "reviews" ? "page" : undefined}
+      onclick={() => app.goTo("reviews")}
+    >
+      <Glyph name="check" />Reviews
+      {#if app.waiting.length}<span class="count">{app.waiting.length}</span>{/if}
+    </button>
     {#if app.group}
       <button
         type="button"
@@ -125,12 +134,11 @@
       <button
         type="button"
         class="user-card__settings"
-        aria-label={app.waiting.length ? `Settings, ${app.waiting.length} to review` : "Settings"}
+        aria-label="Settings"
         data-tip="Settings"
-        onclick={() => (app.panel = app.waiting.length ? "reviews" : "machine")}
+        onclick={() => (app.panel = "machine")}
       >
         <Glyph name="settings" />
-        {#if app.waiting.length}<span class="user-card__count">{app.waiting.length}</span>{/if}
       </button>
     </div>
   </div>

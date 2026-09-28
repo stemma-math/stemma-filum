@@ -22,18 +22,46 @@ mod reviews;
 mod vault;
 mod workspace;
 
+use std::sync::Mutex;
+use tauri::{Emitter, Manager};
+use tauri_plugin_deep_link::DeepLinkExt;
+
 use stemma::home::{Environment, Home};
 
 /// Starts the desktop application.
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = tauri::Builder::default().plugin(tauri_plugin_deep_link::init());
 
     #[cfg(target_os = "macos")]
     let builder = builder.menu(menu::build).on_menu_event(menu::chosen);
 
     builder
         .manage(account::SigningIn::default())
+        .manage(PendingReview::default())
         .setup(|app| {
+            if let Some(urls) = app.deep_link().get_current()?
+                && let Some(proposal) = urls.iter().find_map(|url| proposal_link(url.as_str()))
+            {
+                *app.state::<PendingReview>()
+                    .0
+                    .lock()
+                    .expect("pending review lock") = Some(proposal);
+            }
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                if let Some(proposal) = event
+                    .urls()
+                    .iter()
+                    .find_map(|url| proposal_link(url.as_str()))
+                {
+                    *handle
+                        .state::<PendingReview>()
+                        .0
+                        .lock()
+                        .expect("pending review lock") = Some(proposal.clone());
+                    let _ = handle.emit("stemma:open-review", proposal);
+                }
+            });
             engine::start(app.handle());
             live::start(app.handle());
             Ok(())
@@ -55,6 +83,7 @@ pub fn run() {
             editing::open_line,
             editing::save_line,
             compose::preview,
+            compose::review_page,
             claims::claim,
             claims::claim_status,
             claims::release,
@@ -73,6 +102,9 @@ pub fn run() {
             reviews::proposal,
             reviews::decide_proposal,
             reviews::apply_proposal,
+            reviews::handoff_proposal,
+            reviews::line_history,
+            take_open_review,
             vault::vault,
             vault::vault_admit,
             vault::vault_bridge,
@@ -80,6 +112,24 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("the Stemma application could not start");
+}
+
+#[derive(Default)]
+struct PendingReview(Mutex<Option<String>>);
+
+/// A pending link opened before the webview began listening.
+#[tauri::command]
+fn take_open_review(state: tauri::State<'_, PendingReview>) -> Option<String> {
+    state.0.lock().expect("pending review lock").take()
+}
+
+fn proposal_link(url: &str) -> Option<String> {
+    let id = url
+        .strip_prefix("stemma://proposal/")?
+        .trim_end_matches('/');
+    id.parse::<stemma_core::id::ProposalId>()
+        .ok()
+        .map(|id| id.to_string())
 }
 
 /// The client's home, as the command line would locate it.
@@ -119,5 +169,21 @@ impl Session {
             server: stemma::api::Server::at(&credentials.server).map_err(said)?,
             token: credentials.token,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::proposal_link;
+
+    #[test]
+    fn only_proposal_links_open_a_review() {
+        let id = "prp:01K5YQ4TQ2VZ8H3M9N0P1R2S3T";
+        assert_eq!(
+            proposal_link(&format!("stemma://proposal/{id}")),
+            Some(id.to_owned())
+        );
+        assert!(proposal_link("stemma://settings").is_none());
+        assert!(proposal_link("stemma://proposal/anything").is_none());
     }
 }

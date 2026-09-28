@@ -180,12 +180,20 @@ fn run(cli: Cli) -> Result<bool> {
             ProposalCommand::Accept { proposal } => {
                 proposals::decide(home, &proposal, Verdict::Accept, out)?
             }
-            ProposalCommand::Reject { proposal } => {
-                proposals::decide(home, &proposal, Verdict::Reject, out)?
-            }
-            ProposalCommand::AskAgain { proposal } => {
-                proposals::decide(home, &proposal, Verdict::AskAgain, out)?
-            }
+            ProposalCommand::Reject { proposal, reason } => proposals::decide_with_note(
+                home,
+                &proposal,
+                Verdict::Reject,
+                reason.as_deref(),
+                out,
+            )?,
+            ProposalCommand::AskAgain { proposal, note } => proposals::decide_with_note(
+                home,
+                &proposal,
+                Verdict::AskAgain,
+                note.as_deref(),
+                out,
+            )?,
             ProposalCommand::Apply { proposal } => proposals::apply(home, &proposal, out)?,
         },
 

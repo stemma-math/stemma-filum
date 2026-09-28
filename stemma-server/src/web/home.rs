@@ -319,6 +319,7 @@ fn reviews(proposals: &[Proposal]) -> Markup {
                                 a href={ "/proposals/" (proposal.id) } { (proposal.job.task.asked_for()) }
                             }
                             span class="quiet identifier" { (proposal.job.line) " · " (proposal.model) }
+                            a href={ "stemma://proposal/" (proposal.id) } { "Open in Stemma" }
                         }
                     }
                 }

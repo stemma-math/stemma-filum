@@ -196,11 +196,33 @@ export type Decision = { block: string; keep: Keep };
 export type Waiting = {
   proposal: string;
   group: string;
+  side: string;
   line: string;
   task: string;
   agent: string;
   vendor: string;
   model: string;
+  state: string;
+  decision: string | null;
+  note: string | null;
+};
+
+export type Reviews = { waiting: Waiting[]; recent: Waiting[] };
+
+export type LineProposal = {
+  proposal: string;
+  task: string;
+  agent: string;
+  vendor: string;
+  model: string;
+  instructions_version: string;
+  explanation: string;
+  state: string;
+  decision: string | null;
+  note: string | null;
+  reviewer: string;
+  decided_by: string | null;
+  applied_revision: number | null;
 };
 
 export type Moved = {
@@ -228,6 +250,15 @@ export type Review = {
   extent: string;
   rows: Moved[];
   source: string;
+  stands: string | null;
+  current: string | null;
+  merged: LineDocument | null;
+  outdated: string[];
+  decision: string | null;
+  note: string | null;
+  reviewer: string | null;
+  decided_by: string | null;
+  members: { id: string; name: string }[];
   lean_source: string | null;
   formal_review: FormalReview | null;
   library_files: { path: string; rows: Moved[] }[];
