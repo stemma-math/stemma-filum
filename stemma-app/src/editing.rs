@@ -107,7 +107,7 @@ fn lean_status(line: &LineAt) -> anyhow::Result<Option<LeanDigest>> {
     let clone = line.clone_root();
     let manifest = stemma::repository::read_manifest(clone)?;
     let pins = stemma::repository::group_pins(clone, &manifest);
-    stemma::lean::check(clone, &Name::parse(&line.name)?, &pins)
+    stemma::lean::check_reusing(clone, &Name::parse(&line.name)?, &pins)
 }
 
 #[cfg(test)]
