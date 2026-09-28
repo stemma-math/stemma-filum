@@ -77,6 +77,17 @@ impl Fact for Verification {
     const KIND: FactKind = FactKind::Condition;
 }
 
+impl Verification {
+    /// The stable word used for this condition in interfaces and records.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unverified => "unverified",
+            Self::Verified => "verified",
+            Self::Refuted => "refuted",
+        }
+    }
+}
+
 /// Whether anybody vouches that the formal statement says what the prose
 /// says.
 ///

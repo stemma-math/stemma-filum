@@ -334,6 +334,26 @@ pub fn write(
         Some(machine),
         Some(&session),
     )?;
+    let withdrawn = super::formal_audits::withdraw_changed_prose(
+        &transaction,
+        &found.id,
+        &offered.content.source,
+    )?;
+    for block in withdrawn {
+        super::events::publish(
+            &transaction,
+            match found.side {
+                Side::Shared => super::events::Audience::Group(&found.group),
+                Side::Private => super::events::Audience::Person(&found.group, writer),
+            },
+            &stemma_core::event::Event::FormalAudit {
+                group: found.group.slug().as_str().to_owned(),
+                line: found.name.as_str().to_owned(),
+                block,
+                state: "audit_withdrawn".to_owned(),
+            },
+        )?;
+    }
 
     let written = lines::by_id(&transaction, &found.id)?.context("the line cannot be read back")?;
     lines::tell(&transaction, &written, LineChange::Written)?;

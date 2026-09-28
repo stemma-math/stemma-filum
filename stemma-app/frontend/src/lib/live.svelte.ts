@@ -10,6 +10,7 @@
 import { jobs } from "../line/jobs.svelte";
 import { api } from "./api";
 import { app } from "./app.svelte";
+import { tell } from "./status.svelte";
 import type { Mirrored, ServerEvent } from "./types";
 
 type Said =
@@ -92,6 +93,17 @@ class Live {
       case "proposal":
         this.#soon("proposals");
         break;
+      case "formal_audit": {
+        const open = app.line?.opened.entry;
+        if (open && open.group === event.group && open.name === event.line) {
+          tell(
+            event.state === "audit_withdrawn"
+              ? `The formal audit for ${event.block} was withdrawn; dependent work should be checked.`
+              : `The formal statement for ${event.block} was audited.`,
+          );
+        }
+        break;
+      }
       case "machine":
         this.#soon("jobs");
         this.#soon("offers");

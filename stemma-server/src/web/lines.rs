@@ -14,7 +14,7 @@ use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use maud::{Markup, html};
 use stemma_core::artefact::{Kind, LineDigest, Nodes, Scope};
-use stemma_core::id::{GroupId, Slug};
+use stemma_core::id::{GroupId, LineId, Slug};
 use stemma_core::job::Task;
 use stemma_core::line::{Element, Name};
 use stemma_core::model::BoxState;
@@ -72,6 +72,15 @@ pub async fn view(
     };
 
     let offers = super::jobs::offers(&instance, &group.id).await?;
+    let audits = match &written {
+        Some(written) => {
+            let line = written.line;
+            instance
+                .read(move |connection| crate::store::formal_audits::for_line(connection, &line))
+                .await?
+        }
+        None => Vec::new(),
+    };
     let writing = {
         let owner = signed.user.id.clone();
         let id = group.id.clone();
@@ -105,6 +114,7 @@ pub async fn view(
             writing: writing.as_ref(),
             signed: &signed,
             written: written.as_ref(),
+            audits: &audits,
         }),
     )
     .into_response())
@@ -152,6 +162,8 @@ async fn unbuilt(
 
 /// A line's source, exactly as it stands at its current revision.
 struct Written {
+    /// The stable line whose revision this is.
+    line: LineId,
     /// The revision it was read from.
     revision: u64,
     /// What the line says there.
@@ -178,6 +190,7 @@ async fn written(
 
             Ok(
                 crate::store::revisions::current(connection, &line)?.map(|revision| Written {
+                    line: line.id,
                     revision: revision.number,
                     source: revision.source,
                 }),
@@ -336,6 +349,8 @@ struct Viewing<'a> {
     signed: &'a SignedIn,
     /// What is written, where the repository still has it.
     written: Option<&'a Written>,
+    /// Human correspondence records for its central formal statements.
+    audits: &'a [crate::store::formal_audits::FormalAudit],
 }
 
 /// The line itself.
@@ -349,6 +364,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
         writing,
         signed,
         written,
+        audits,
     } = *viewing;
     let boxes = digest.line.boxes();
     let central = digest.line.central();
@@ -416,7 +432,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                     @match element {
                         Element::Node(siglum) => {
                             @if let Some(node) = digest.line.node(&siglum) {
-                                (drawn(node, digest.lean.as_ref(), checking, launchers))
+                                (drawn(node, digest.lean.as_ref(), audits, checking, launchers))
                             }
                         }
                         Element::Box(black_box) => (drawn_box(&black_box, digest.lean.as_ref(), checking, launchers)),
@@ -486,13 +502,18 @@ fn body(viewing: &Viewing<'_>) -> Markup {
 fn drawn(
     node: &stemma_core::line::Node,
     lean: Option<&stemma_core::artefact::LeanDigest>,
+    audits: &[crate::store::formal_audits::FormalAudit],
     checking: bool,
     launchers: &Anchored<'_>,
 ) -> Markup {
     let central = node.is_central();
-    let verified = lean.is_some_and(|result| {
-        result.verification_of(&node.block) == stemma_core::model::Verification::Verified
-    });
+    let formal =
+        lean.and_then(|result| result.blocks.iter().find(|check| check.block == node.block));
+    let verified =
+        formal.is_some_and(|result| result.state == stemma_core::model::Verification::Verified);
+    let audit = audits.iter().find(|audit| audit.block == node.block);
+    let audited = audit.is_some_and(|audit| audit.state == "audited");
+    let backed = verified && (!central || audited);
 
     html! {
         div class=@if central { "node node--central" } @else { "node" } {
@@ -507,7 +528,9 @@ fn drawn(
                 @if node.proved {
                     span { "proved here" }
                 }
-                @if verified { span { "Lean verified" } }
+                @if backed { span { "backed" } }
+                @else if verified && central { span { "audit missing" } }
+                @else { span { "formal work missing" } }
                 @if checking { span { "Checking" } }
             }
 
@@ -529,13 +552,35 @@ fn drawn(
                     }
                 }
 
-                // A central statement is frozen against agents, so the
-                // one thing that may be asked about it is whether it is
-                // false.
-                @if central {
-                    (launchers.at(Task::Formalize {
-                        block: node.block,
-                    }))
+                @if let Some(formal) = formal {
+                    div class="formal-review" {
+                        p class="label" { "Formal statement · " (formal.state.as_str()) }
+                        @for declaration in &formal.declarations {
+                            p class="identifier" { (declaration.name) " · " (declaration.module) }
+                            pre class="source__text" { (declaration.statement) }
+                            @if !declaration.reaches.is_empty() {
+                                p class="quiet" { "Reaches " (declaration.reaches.join(", ")) }
+                            }
+                        }
+                        @if formal.declarations.is_empty() {
+                            p class="quiet" { (formal.diagnostic) }
+                        }
+                    }
+                }
+                @if let Some(audit) = audit {
+                    div class="formal-review" {
+                        p class="label" { "Correspondence · " (audit.state.replace('_', " ")) }
+                        p { strong { "Agent reading: " } (audit.reading) }
+                        @if let Some(reason) = &audit.reason { p class="quiet" { (reason) } }
+                    }
+                }
+
+                (launchers.at(Task::Formalize {
+                    block: node.block,
+                }))
+                // A central statement is frozen against agents; beyond
+                // formalizing it, the one attack allowed is refutation.
+                @if central && node.siglum.kind.is_statement() {
                     (launchers.at(Task::Refute {
                         block: node.block,
                     }))

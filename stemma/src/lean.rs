@@ -5,7 +5,7 @@
 //! output remains local, just like an agent's raw output.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result};
@@ -14,6 +14,7 @@ use stemma_core::artefact::{BlockCheck, FormalDeclaration, LeanDigest};
 use stemma_core::id::BlockId;
 use stemma_core::line::{Name, Siglum};
 use stemma_core::model::Verification;
+use stemma_core::proposal::{FormalReview, LibraryChange};
 use stemma_core::repository::{self, Pins};
 
 const MARKER: &str = "-- stemma: verifies ";
@@ -123,6 +124,147 @@ pub fn check(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<LeanDigest
         blocks,
         diagnostic: broken_for(&report, &prefix),
     }))
+}
+
+/// Checks an agent's library change in detached worktrees and returns the
+/// before/after evidence a reviewer needs. The person's working tree is never
+/// touched, and the temporary trees are removed even when Lean rejects one.
+pub fn review_change(
+    clone: &Path,
+    line: &Name,
+    pins: &Pins,
+    change: &LibraryChange,
+    proposed_source: &str,
+    scratch: &Path,
+    targets: &[BlockId],
+) -> Result<FormalReview> {
+    let base = scratch.join("base");
+    let proposed = scratch.join("proposed");
+    std::fs::create_dir_all(scratch)
+        .with_context(|| format!("cannot create {}", scratch.display()))?;
+
+    crate::git::detached_worktree(clone, &change.base, &base)?;
+    let checked = (|| {
+        crate::git::detached_worktree(clone, &change.base, &proposed)?;
+        apply_change(&proposed, change)?;
+        let line_entry = repository::line_entry(&proposed, line);
+        std::fs::write(&line_entry, proposed_source)
+            .with_context(|| format!("cannot stage {}", line_entry.display()))?;
+        let before = check(&base, line, pins)?.unwrap_or_else(|| empty_digest(pins));
+        let after = check(&proposed, line, pins)?.unwrap_or_else(|| empty_digest(pins));
+        if !after.compiled {
+            anyhow::bail!(after.diagnostic.clone());
+        }
+        Ok(FormalReview::between(
+            &before.blocks,
+            &after.blocks,
+            targets.iter().copied(),
+            &change.readings,
+        ))
+    })();
+
+    crate::git::remove_worktree(clone, &proposed);
+    crate::git::remove_worktree(clone, &base);
+    let _ = std::fs::remove_dir_all(scratch);
+    checked
+}
+
+fn empty_digest(pins: &Pins) -> LeanDigest {
+    LeanDigest {
+        lean: pins.lean.clone().unwrap_or_default(),
+        mathlib: pins.mathlib.clone().unwrap_or_default(),
+        compiled: true,
+        blocks: Vec::new(),
+        diagnostic: String::new(),
+    }
+}
+
+fn apply_change(worktree: &Path, change: &LibraryChange) -> Result<()> {
+    for change in &change.files {
+        let relative = safe_library_path(&change.path)?;
+        let path = worktree.join(&relative);
+        let before = std::fs::read_to_string(&path).ok();
+        if before != change.before {
+            anyhow::bail!(
+                "the proposed change does not match its base for {}",
+                change.path
+            );
+        }
+        match &change.after {
+            Some(source) => {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, source)?;
+            }
+            None if path.exists() => std::fs::remove_file(&path)?,
+            None => {}
+        }
+    }
+    update_root_imports(worktree, change)
+}
+
+fn safe_library_path(written: &str) -> Result<PathBuf> {
+    let path = Path::new(written);
+    let reserved = path.starts_with(repository::LINES)
+        || matches!(
+            written,
+            repository::MANIFEST
+                | repository::LAKEFILE
+                | repository::LEAN_TOOLCHAIN
+                | "GroupLibrary.lean"
+                | "PrivateLibrary.lean"
+        );
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
+        || path.components().any(|part| part.as_os_str() == ".git")
+        || reserved
+    {
+        anyhow::bail!("`{written}` is not an agent-writable Lean library path");
+    }
+    Ok(path.to_owned())
+}
+
+fn update_root_imports(worktree: &Path, change: &LibraryChange) -> Result<()> {
+    let manifest = crate::build::read_manifest(worktree)?;
+    let root = match manifest.side {
+        repository::Side::Shared => "GroupLibrary.lean",
+        repository::Side::Private => "PrivateLibrary.lean",
+    };
+    let root_path = worktree.join(root);
+    let before = std::fs::read_to_string(&root_path).unwrap_or_default();
+    let mut imports: BTreeSet<String> = before
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("import ").map(str::to_owned))
+        .collect();
+    imports.insert(match manifest.side {
+        repository::Side::Shared => "Stemma".to_owned(),
+        repository::Side::Private => "GroupLibrary".to_owned(),
+    });
+    for file in change
+        .files
+        .iter()
+        .filter(|file| file.path.ends_with(".lean"))
+    {
+        let module = file
+            .path
+            .trim_end_matches(".lean")
+            .replace(['/', '\\'], ".");
+        if file.after.is_some() {
+            imports.insert(module);
+        } else {
+            imports.remove(&module);
+        }
+    }
+    let source = imports
+        .into_iter()
+        .map(|module| format!("import {module}\n"))
+        .collect::<String>();
+    std::fs::write(root_path, source)?;
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]

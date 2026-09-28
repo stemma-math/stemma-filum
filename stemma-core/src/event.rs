@@ -102,6 +102,17 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         diagnostic: String,
     },
+    /// A central statement's prose/formal correspondence audit changed.
+    FormalAudit {
+        /// The group's short name.
+        group: String,
+        /// The line containing the central statement.
+        line: String,
+        /// The stable block whose dependents should reread their backing.
+        block: BlockId,
+        /// `audited` or `audit_withdrawn`.
+        state: String,
+    },
     /// The reader was away too long for the events it missed to be kept:
     /// everything should be asked for again.
     Reset,
@@ -167,6 +178,7 @@ impl Event {
             Self::Machine { .. } => "machine",
             Self::Library { .. } => "library",
             Self::Check { .. } => "check",
+            Self::FormalAudit { .. } => "formal_audit",
             Self::Reset => "reset",
         }
     }

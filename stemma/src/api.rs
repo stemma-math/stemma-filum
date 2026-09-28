@@ -362,8 +362,8 @@ pub struct Offered {
     pub side: String,
     /// Which line of work.
     pub line: String,
-    /// The commit it was written against.
-    pub commit: String,
+    /// The line revision it was written against.
+    pub revision: u64,
     /// What was asked for.
     pub task: String,
     /// Which agent did it.
@@ -385,6 +385,9 @@ pub struct Offered {
     /// Per-file change to the group's Lake package, when formal work changed it.
     #[serde(default)]
     pub library_change: Option<stemma_core::proposal::LibraryChange>,
+    /// Lean-produced evidence for reviewing the library change.
+    #[serde(default)]
+    pub formal_review: Option<stemma_core::proposal::FormalReview>,
     /// What the instance checked before a person was asked.
     pub findings: Vec<String>,
 }

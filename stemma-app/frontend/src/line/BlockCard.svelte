@@ -86,6 +86,12 @@
   const selected = $derived(line.selected.has(block.id));
   const offered = $derived(line.document ? tasksFor(line.document, block, (id) => line.nodeOf(id)) : []);
   const verified = $derived(statement ? line.verified.has(block.id) : false);
+  const formal = $derived(statement ? line.formalOf(block.id) : undefined);
+  const backed = $derived(
+    formal?.state === "verified" &&
+      formal.declarations.length > 0 &&
+      formal.declarations.every((declaration) => declaration.sorry_free),
+  );
   const count = $derived(line.document?.blocks.length ?? 0);
 
   let asking = $state(false);
@@ -393,15 +399,30 @@
       {:else}
         <span class="chip">Proof to write</span>
       {/if}
-      {#if verified}
-        <span class="chip chip--success"><Glyph name="check" small />Lean verified</span>
+      {#if backed}
+        <span class="chip chip--success"><Glyph name="check" small />Backed in Lean</span>
+      {:else if verified}
+        <span class="chip"><Glyph name="warning" small />Verified with missing backing</span>
       {:else}
-        <span class="chip chip--dashed">Not formalized</span>
+        <span class="chip chip--dashed">Missing formal statement</span>
       {/if}
     </div>
   {/if}
 
   <div class="block__content" class:block__content--proof={block.kind === "proof"} {@attach mount}></div>
+
+  {#if statement && formal}
+    <details class="block__formal">
+      <summary>Formal statement · {formal.state}</summary>
+      {#each formal.declarations as declaration (declaration.name)}
+        <p class="identifier">{declaration.name} · {declaration.module}</p>
+        <pre>{declaration.statement}</pre>
+        {#if declaration.reaches.length}<p class="quiet">Reaches {declaration.reaches.join(", ")}</p>{/if}
+      {:else}
+        <p class="quiet">{formal.diagnostic || "No marked Lean declaration reaches this block."}</p>
+      {/each}
+    </details>
+  {/if}
 
   {#if faults.length || diagnostics.length}
     <ul class="block__problems">

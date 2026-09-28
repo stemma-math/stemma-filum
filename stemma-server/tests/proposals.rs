@@ -4,11 +4,15 @@ mod support;
 
 use axum::http::StatusCode;
 use serde_json::Value;
+use stemma_core::artefact::{BlockCheck, FormalDeclaration};
 use stemma_core::document::{Block, Document};
 use stemma_core::id::{BlockId, Slug};
 use stemma_core::job::{Choice, Task};
 use stemma_core::line::Name;
-use stemma_core::proposal::Offer;
+use stemma_core::model::Verification;
+use stemma_core::proposal::{
+    FormalImpact, FormalReview, LibraryChange, LibraryFileChange, Offer, ReviewedBlock,
+};
 use stemma_core::repository::{self, Side};
 use stemma_server::store::{groups, jobs, proposals, users};
 use support::{Harness, Page};
@@ -135,6 +139,7 @@ async fn awaiting(harness: &mut Harness) -> String {
                     source: proposed(),
                     lean_source: None,
                     library_change: None,
+                    formal_review: None,
                     vendor: "Anthropic".to_owned(),
                     model: "claude-opus-4".to_owned(),
                     prompt_revision: "1".to_owned(),
@@ -145,6 +150,57 @@ async fn awaiting(harness: &mut Harness) -> String {
         })
         .await
         .unwrap()
+}
+
+fn main_block() -> BlockId {
+    format!("blk:{:026}", 1).parse().unwrap()
+}
+
+fn checked(closure: &str) -> BlockCheck {
+    BlockCheck {
+        block: main_block(),
+        state: Verification::Verified,
+        diagnostic: String::new(),
+        declarations: vec![FormalDeclaration {
+            name: "Algebra.main".to_owned(),
+            module: "Algebra.Quotients".to_owned(),
+            statement: "∀ G, Finite G → Finite G".to_owned(),
+            sorry_free: true,
+            axioms: Vec::new(),
+            reaches: vec!["Algebra.helper".to_owned()],
+            statement_closure: closure.to_owned(),
+        }],
+    }
+}
+
+async fn with_formal_review(harness: &Harness, proposal: &str) {
+    let proposal = proposal.to_owned();
+    harness
+        .instance
+        .write(move |connection| {
+            let review = FormalReview {
+                blocks: vec![ReviewedBlock {
+                    check: checked("closure-one"),
+                    reading: "Every finite group is finite.".to_owned(),
+                }],
+                impact: FormalImpact {
+                    proofs_only: false,
+                    statement_closures: vec![main_block()],
+                    line_links: vec![main_block()],
+                },
+            };
+            connection.execute(
+                "UPDATE proposals SET formal_review = ?2 WHERE id = ?1",
+                rusqlite::params![proposal, serde_json::to_string(&review)?],
+            )?;
+            connection.execute(
+                "UPDATE jobs SET task = ?1 WHERE id = (SELECT job_id FROM proposals WHERE id = ?2)",
+                rusqlite::params![format!("formalize@{}", main_block()), proposal],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -171,6 +227,176 @@ async fn the_review_screen_shows_what_moved_and_what_may_not_be_touched() {
     // And what was checked is checked, not asserted.
     assert!(screen.says("the proposed source reads as a line"));
     assert!(screen.says("are untouched"));
+}
+
+#[tokio::test]
+async fn a_library_change_is_shown_file_by_file_before_a_decision() {
+    let mut harness = Harness::new();
+    let proposal = awaiting(&mut harness).await;
+    let id = proposal.clone();
+    harness
+        .instance
+        .write(move |connection| {
+            let change = LibraryChange {
+                base: "0123456789012345678901234567890123456789".to_owned(),
+                files: vec![LibraryFileChange {
+                    path: "Algebra/Quotients.lean".to_owned(),
+                    before: Some("theorem old : True := by trivial\n".to_owned()),
+                    after: Some("theorem new : True := by trivial\n".to_owned()),
+                }],
+                readings: Default::default(),
+            };
+            connection.execute(
+                "UPDATE proposals SET library_change = ?2 WHERE id = ?1",
+                rusqlite::params![id, serde_json::to_string(&change)?],
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let screen = harness.get(&format!("/proposals/{proposal}")).await;
+    assert!(screen.says("Lean library changes"));
+    assert!(screen.says("Algebra/Quotients.lean"));
+    assert!(screen.says("theorem old"));
+    assert!(screen.says("theorem new"));
+}
+
+#[tokio::test]
+async fn formal_review_shows_reach_and_acceptance_records_a_withdrawable_audit() {
+    let mut harness = Harness::new();
+    let proposal = awaiting(&mut harness).await;
+    with_formal_review(&harness, &proposal).await;
+
+    let screen = harness.get(&format!("/proposals/{proposal}")).await;
+    assert!(screen.says("Formal reach"));
+    assert!(screen.says("∀ G, Finite G → Finite G"));
+    assert!(screen.says("Agent reading:"));
+    assert!(screen.says("Links of the line changed"));
+
+    let token = harness.credential("ana").await;
+    let decided = harness
+        .post_json_with_token(
+            &format!("/api/proposals/{proposal}/decide"),
+            &token,
+            r#"{"decision":"accept"}"#,
+        )
+        .await;
+    assert_eq!(decided.status, StatusCode::OK);
+
+    let (line, audit) = harness
+        .instance
+        .read(|connection| {
+            let line: String =
+                connection.query_row("SELECT line_id FROM formal_audits LIMIT 1", [], |row| {
+                    row.get(0)
+                })?;
+            let line = line.parse()?;
+            let audit = stemma_server::store::formal_audits::for_line(connection, &line)?
+                .pop()
+                .expect("the accepted audit");
+            Ok((line, audit))
+        })
+        .await
+        .unwrap();
+    assert_eq!(audit.state, "audited");
+    assert_eq!(audit.reading, "Every finite group is finite.");
+
+    harness
+        .instance
+        .read(move |connection| {
+            assert!(stemma_server::store::formal_audits::reconcile_check(
+                connection,
+                &line,
+                &checked("closure-two"),
+            )?);
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let withdrawn = harness
+        .instance
+        .read(|connection| {
+            Ok(connection.query_row(
+                "SELECT state, withdrawn_reason FROM formal_audits LIMIT 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )?)
+        })
+        .await
+        .unwrap();
+    assert_eq!(withdrawn.0, "audit_withdrawn");
+    assert!(withdrawn.1.contains("statement closure"));
+}
+
+#[tokio::test]
+async fn changing_a_central_blocks_prose_withdraws_its_formal_audit() {
+    let mut harness = Harness::new();
+    let proposal = awaiting(&mut harness).await;
+    with_formal_review(&harness, &proposal).await;
+    let token = harness.credential("ana").await;
+    harness
+        .post_json_with_token(
+            &format!("/api/proposals/{proposal}/decide"),
+            &token,
+            r#"{"decision":"accept"}"#,
+        )
+        .await;
+
+    harness
+        .instance
+        .read(|connection| {
+            let line: String =
+                connection.query_row("SELECT line_id FROM formal_audits LIMIT 1", [], |row| {
+                    row.get(0)
+                })?;
+            let changed = stands().replace(
+                "Every finite group is finite.",
+                "Every finite group remains finite.",
+            );
+            let withdrawn = stemma_server::store::formal_audits::withdraw_changed_prose(
+                connection,
+                &line.parse()?,
+                &changed,
+            )?;
+            assert_eq!(withdrawn, [main_block()]);
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn asking_again_after_a_formal_realignment_asks_for_the_authors_route() {
+    let mut harness = Harness::new();
+    let proposal = awaiting(&mut harness).await;
+    with_formal_review(&harness, &proposal).await;
+
+    let screen = harness.get(&format!("/proposals/{proposal}")).await;
+    assert!(screen.says("Follow the author"));
+    harness
+        .post(
+            &format!("/proposals/{proposal}/decide"),
+            &[
+                ("form_token", &form_token(&screen)),
+                ("decision", "ask_again"),
+            ],
+        )
+        .await;
+
+    let task = harness
+        .instance
+        .read(|connection| {
+            Ok(connection.query_row(
+                "SELECT task FROM jobs ORDER BY rowid DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )?)
+        })
+        .await
+        .unwrap();
+    assert_eq!(task, format!("follow@{}", main_block()));
 }
 
 #[tokio::test]

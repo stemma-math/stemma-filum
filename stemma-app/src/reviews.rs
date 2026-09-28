@@ -44,7 +44,15 @@ pub struct Review {
     rows: Vec<Moved>,
     source: String,
     lean_source: Option<String>,
+    formal_review: Option<stemma_core::proposal::FormalReview>,
+    library_files: Vec<LibraryFileReview>,
     findings: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct LibraryFileReview {
+    path: String,
+    rows: Vec<Moved>,
 }
 
 #[tauri::command(async)]
@@ -80,6 +88,32 @@ pub fn proposal(proposal: String) -> Result<Review, String> {
     let rows = diff::between(&stands, &offered.source);
     let frozen = diff::frozen(&stands);
     let extent = diff::extent(&rows).said();
+    let library_files = offered
+        .library_change
+        .as_ref()
+        .map(|change| {
+            change
+                .files
+                .iter()
+                .map(|file| LibraryFileReview {
+                    path: file.path.clone(),
+                    rows: diff::between(
+                        file.before.as_deref().unwrap_or(""),
+                        file.after.as_deref().unwrap_or(""),
+                    )
+                    .into_iter()
+                    .map(|row| Moved {
+                        change: row.change,
+                        text: row.text,
+                        before: row.before,
+                        after: row.after,
+                        frozen: false,
+                    })
+                    .collect(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
 
     Ok(Review {
         proposal: offered.proposal,
@@ -105,6 +139,8 @@ pub fn proposal(proposal: String) -> Result<Review, String> {
             .collect(),
         source: offered.source,
         lean_source: offered.lean_source,
+        formal_review: offered.formal_review,
+        library_files,
         findings: offered.findings,
     })
 }

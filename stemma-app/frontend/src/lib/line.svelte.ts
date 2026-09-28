@@ -7,7 +7,7 @@ import { api, said } from "./api";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
 import { fail, tell } from "./status.svelte";
-import type { Claim, Diagnostic, LineDocument, Node, Offer, OpenLine, Preview } from "./types";
+import type { Claim, Diagnostic, LeanDigest, LineDocument, Node, Offer, OpenLine, Preview } from "./types";
 
 const SAVE_AFTER = 450;
 const PREVIEW_AFTER = 650;
@@ -116,6 +116,11 @@ export class LineSession {
         ? this.opened.lean.blocks.filter((result) => result.state === "verified").map((result) => result.block)
         : [],
     );
+  }
+
+  /** Lean's current printed result for one stable block. */
+  formalOf(block: string): LeanDigest["blocks"][number] | undefined {
+    return this.opened.lean?.blocks.find((result) => result.block === block);
   }
 
   /** What the line reads a block as, when it is a statement and the line reads. */
