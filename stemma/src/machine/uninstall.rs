@@ -36,7 +36,7 @@ pub fn send(home: &Home) -> Vec<Standing> {
 pub fn take_down(home: &Home) -> Result<Vec<String>> {
     let mut done = Vec::new();
 
-    if crate::machine::daemon::remove(home)? {
+    if crate::machine::service::remove(home)? {
         done.push("The background service is stopped and removed.".to_owned());
     }
     if crate::machine::setup::unlink()? {

@@ -82,7 +82,7 @@ pub fn machine() -> Result<Option<MachinePanel>, String> {
         .map_err(failed)?
         .into_iter()
         .map(|job| Job {
-            raw_output: stemma::work::output_exists(&home, &job.job),
+            raw_output: stemma::job::work::output_exists(&home, &job.job),
             id: job.job,
             state: job.state,
             task: job.task,
@@ -105,7 +105,7 @@ pub fn machine() -> Result<Option<MachinePanel>, String> {
 /// The raw agent output kept on this machine for one job.
 #[tauri::command(async)]
 pub fn job_output(job: String) -> Result<String, String> {
-    carried_out(|home, out| stemma::jobs::output(home, &job, out))
+    carried_out(|home, out| stemma::job::launch::output(home, &job, out))
 }
 
 /// Cancels a queued job or asks its running agent to stop.
@@ -152,7 +152,7 @@ pub fn launch(
     grant_library: bool,
 ) -> Result<String, String> {
     let line = LineAt::admit(&path)?;
-    let wanted = stemma::jobs::Wanted {
+    let wanted = stemma::job::launch::Wanted {
         line: None,
         task,
         agent,
@@ -166,7 +166,7 @@ pub fn launch(
             .transpose()?,
         request,
     };
-    stemma::jobs::run(&home(), line.directory(), &wanted, &mut Vec::new()).map_err(failed)
+    stemma::job::launch::run(&home(), line.directory(), &wanted, &mut Vec::new()).map_err(failed)
 }
 
 /// What a custom request may change: each block granted may be edited,

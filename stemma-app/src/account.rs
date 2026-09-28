@@ -3,7 +3,7 @@
 use std::sync::Mutex;
 
 use serde::Serialize;
-use stemma::session::Collected;
+use stemma::account::session::Collected;
 
 use crate::{carried_out, failed, home, said};
 
@@ -25,13 +25,13 @@ pub struct Beginning {
 
 /// The sign-in this window is in the middle of, if any.
 #[derive(Default)]
-pub struct SigningIn(Mutex<Option<stemma::session::Beginning>>);
+pub struct SigningIn(Mutex<Option<stemma::account::session::Beginning>>);
 
 /// Who this machine acts for, when anybody signed it in.
 #[tauri::command(async)]
 pub fn whoami() -> Result<Option<Signed>, String> {
-    let credentials =
-        stemma::credentials::Credentials::read(&home().credentials_file()).map_err(failed)?;
+    let credentials = stemma::account::credentials::Credentials::read(&home().credentials_file())
+        .map_err(failed)?;
 
     Ok(credentials.map(|credentials| Signed {
         server: credentials.server,
@@ -45,7 +45,7 @@ pub fn sign_in_start(
     server: String,
     signing_in: tauri::State<'_, SigningIn>,
 ) -> Result<Beginning, String> {
-    let beginning = stemma::session::begin(server.trim()).map_err(failed)?;
+    let beginning = stemma::account::session::begin(server.trim()).map_err(failed)?;
     let answer = Beginning {
         code: beginning.sign_in.user_code.clone(),
         url: beginning.sign_in.verification_uri.clone(),
@@ -67,7 +67,7 @@ pub fn sign_in_poll(signing_in: tauri::State<'_, SigningIn>) -> Result<&'static 
     };
 
     Ok(
-        match stemma::session::collect(&home(), &beginning).map_err(failed)? {
+        match stemma::account::session::collect(&home(), &beginning).map_err(failed)? {
             Collected::Waiting => "waiting",
             Collected::Signed(_) => {
                 *signing_in.0.lock().map_err(said)? = None;
@@ -82,7 +82,7 @@ pub fn sign_in_poll(signing_in: tauri::State<'_, SigningIn>) -> Result<&'static 
 /// Revokes the credential and forgets it.
 #[tauri::command(async)]
 pub fn sign_out() -> Result<String, String> {
-    carried_out(stemma::session::log_out)
+    carried_out(stemma::account::session::log_out)
 }
 
 /// Opens an HTTP(S) link in the system browser, where the person can see

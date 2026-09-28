@@ -29,11 +29,6 @@ use crate::home::Home;
 use crate::job::work;
 use crate::mirror::{self, Instance, Mirror, Store, Which};
 
-pub use super::service::{
-    AGENT_NAME, Service, Supervisor, UNIT_NAME, install, put_in_place, remove, restart, service,
-    service_file, service_text, start,
-};
-
 /// How often to look for agents again.
 ///
 /// Somebody installs one while the daemon is running, and the instance

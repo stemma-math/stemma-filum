@@ -148,7 +148,7 @@ struct Session {
 
 impl Session {
     fn open() -> Result<Self, String> {
-        let credentials = stemma::session::required(&home()).map_err(failed)?;
+        let credentials = stemma::account::session::required(&home()).map_err(failed)?;
         Ok(Self {
             server: stemma::api::Server::at(&credentials.server).map_err(failed)?,
             token: credentials.token,

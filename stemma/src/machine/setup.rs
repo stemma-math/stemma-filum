@@ -15,8 +15,9 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
 use crate::home::Home;
-use crate::machine::daemon::{self, Service, Started};
+use crate::machine::daemon::Started;
 use crate::machine::program;
+use crate::machine::service::{self, Service};
 
 /// The directory the command line is linked into, which needs no
 /// administrator rights.
@@ -368,7 +369,7 @@ pub fn repair(home: &Home, carried: &Path) -> Repaired {
 
 /// The service's part of [`repair`].
 fn repair_service(home: &Home, carried: &Path) -> Result<()> {
-    if daemon::service(home) == Service::NotInstalled {
+    if service::service(home) == Service::NotInstalled {
         return Ok(());
     }
 
@@ -378,19 +379,19 @@ fn repair_service(home: &Home, carried: &Path) -> Result<()> {
     }
 
     let program = stable_program()?;
-    let Some(path) = daemon::service_file(home)? else {
+    let Some(path) = service::service_file(home)? else {
         return Ok(());
     };
-    let wanted = daemon::service_text(home, &program);
+    let wanted = service::service_text(home, &program);
     let written = std::fs::read_to_string(&path).ok();
     if written != wanted {
-        daemon::put_in_place(home, &program)?;
+        service::put_in_place(home, &program)?;
         return Ok(());
     }
 
-    match daemon::service(home) {
+    match service::service(home) {
         Service::NotInstalled => Ok(()),
-        Service::Stopped => daemon::start(home),
+        Service::Stopped => service::start(home),
         Service::Running(pid) => {
             let program = program.canonicalize()?;
             let current =
@@ -398,18 +399,18 @@ fn repair_service(home: &Home, carried: &Path) -> Result<()> {
             if current {
                 return Ok(());
             }
-            daemon::restart(home)
+            service::restart(home)
         }
     }
 }
 
 /// The service, as the checklist shows it.
 pub fn service_standing(home: &Home) -> Result<Service> {
-    if daemon::service_file(home)?.is_none() {
+    if service::service_file(home)?.is_none() {
         bail!("this machine has no service manager Stemma can install into");
     }
 
-    Ok(daemon::service(home))
+    Ok(service::service(home))
 }
 
 #[cfg(test)]

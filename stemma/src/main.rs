@@ -7,16 +7,16 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::Parser;
+use stemma::account::credentials::Credentials;
+use stemma::account::{git_credential, session};
 use stemma::cli::{
     ClaimCommand, Cli, Command, ConflictCommand, DaemonCommand, JobCommand, LineCommand,
     NodeCommand, ProposalCommand, VaultCommand,
 };
-use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
-use stemma::{
-    build, claims, conflicts, daemon, export, git_credential, jobs, lines, machines, mirror, node,
-    proposals, session, uninstall, vault,
-};
+use stemma::job::launch;
+use stemma::machine::{daemon, service, uninstall};
+use stemma::{build, claims, conflicts, export, lines, machines, mirror, node, proposals, vault};
 use stemma_core::proposal::Verdict;
 
 fn main() -> ExitCode {
@@ -147,7 +147,7 @@ fn run(cli: Cli) -> Result<bool> {
 
         Command::Daemon { command } => match command {
             DaemonCommand::Run { once } => daemon::run(home, once, out)?,
-            DaemonCommand::Install => daemon::install(home, out)?,
+            DaemonCommand::Install => service::install(home, out)?,
         },
 
         Command::Job { command } => match command {
@@ -172,7 +172,7 @@ fn run(cli: Cli) -> Result<bool> {
                         library: asked.grant_library,
                         add_only: false,
                     });
-                let wanted = jobs::Wanted {
+                let wanted = launch::Wanted {
                     line: asked.line,
                     task: if asked.request.is_some() {
                         "custom".to_owned()
@@ -187,11 +187,11 @@ fn run(cli: Cli) -> Result<bool> {
                     request: asked.request,
                     grants,
                 };
-                jobs::run(home, &here(), &wanted, out)?;
+                launch::run(home, &here(), &wanted, out)?;
             }
-            JobCommand::List => jobs::list(home, out)?,
-            JobCommand::Output { job } => jobs::output(home, &job, out)?,
-            JobCommand::Cancel { job } => jobs::cancel(home, &job, out)?,
+            JobCommand::List => launch::list(home, out)?,
+            JobCommand::Output { job } => launch::output(home, &job, out)?,
+            JobCommand::Cancel { job } => launch::cancel(home, &job, out)?,
         },
 
         Command::Proposal { command } => match command {

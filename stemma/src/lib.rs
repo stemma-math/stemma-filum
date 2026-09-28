@@ -44,10 +44,3 @@ pub mod repository;
 pub mod storage;
 pub mod typeset;
 pub mod vault;
-
-// The paths the application and the binary reach these modules by.
-pub use account::{credentials, git_credential, session};
-pub use api::events;
-pub use job::{agents, launch as jobs, work};
-pub use machine::{daemon, program, setup, uninstall};
-pub use typeset::render;

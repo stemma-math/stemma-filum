@@ -105,8 +105,8 @@ fn problem(fault: &Fault) -> Problem {
 /// The Lean check of this line against the group's pinned toolchain.
 fn lean_status(line: &LineAt) -> anyhow::Result<Option<LeanDigest>> {
     let clone = line.clone_root();
-    let manifest = stemma::build::read_manifest(clone)?;
-    let pins = stemma::build::group_pins(clone, &manifest);
+    let manifest = stemma::repository::read_manifest(clone)?;
+    let pins = stemma::repository::group_pins(clone, &manifest);
     stemma::lean::check(clone, &Name::parse(&line.name)?, &pins)
 }
 

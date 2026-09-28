@@ -27,9 +27,8 @@ use crate::account::credentials::Credentials;
 use crate::api::Server;
 use crate::home::Home;
 use crate::mirror::Mirror;
+use crate::repository::{group_pins, read_manifest};
 use crate::typeset::pin;
-
-pub use crate::repository::{group_pin, group_pins, lines_in, read_manifest};
 
 /// What one repository turned out to hold.
 #[derive(Debug, Clone)]
