@@ -29,6 +29,10 @@ pub struct Workspace {
     /// How many group requests wait for a maintainer, when the reader is
     /// one.
     pub pending_requests: usize,
+    /// When the reader's picture last changed, if they have one.
+    pub face: Option<String>,
+    /// When each of their groups' pictures last changed, for those with one.
+    pub badges: std::collections::HashMap<stemma_core::id::GroupId, String>,
 }
 
 /// The shell for a page somebody is signed in to, with its tree read.
@@ -41,8 +45,21 @@ pub async fn around(
     let name = super::front::instance_name(instance, &policy);
 
     let user = signed.user.id.clone();
-    let groups = instance
-        .read(move |connection| crate::store::groups::for_user(connection, &user))
+    let (groups, face, badges) = instance
+        .read(move |connection| {
+            let groups = crate::store::groups::for_user(connection, &user)?;
+            let face = crate::store::pictures::user_changed(connection, &user)?;
+
+            let mut badges = std::collections::HashMap::new();
+            for membership in &groups {
+                let id = &membership.group.id;
+                if let Some(changed) = crate::store::pictures::group_changed(connection, id)? {
+                    badges.insert(id.clone(), changed);
+                }
+            }
+
+            Ok((groups, face, badges))
+        })
         .await?;
 
     let machines = super::machines::owned_by(instance, &signed.user.id).await?;
@@ -62,6 +79,8 @@ pub async fn around(
             machines,
             may_ask: policy.group_requests_open,
             pending_requests,
+            face,
+            badges,
         }))
 }
 
@@ -256,7 +275,12 @@ fn sidebar(chrome: &Chrome) -> Markup {
                 @for membership in &workspace.groups {
                     (item(
                         &format!("/g/{}", membership.group.slug()),
-                        html! { span class="sidebar__badge" aria-hidden="true" { (initials(&membership.group.name)) } },
+                        super::pictures::badge(
+                            &membership.group.id,
+                            &membership.group.name,
+                            workspace.badges.get(&membership.group.id).map(String::as_str),
+                            "sidebar__badge",
+                        ),
                         &membership.group.name,
                         0,
                         &chrome.current,
@@ -290,15 +314,18 @@ fn sidebar(chrome: &Chrome) -> Markup {
 
             @if let Some(user) = &chrome.visitor {
                 div class="user-card" {
-                    span class="avatar" aria-hidden="true" { (initials(&user.display_name)) }
-                    span class="user-card__who" {
-                        span class="user-card__name" {
-                            span { (user.display_name) }
-                            @if chrome.maintainer {
-                                span class="user-card__role" { "Admin" }
+                    a class="user-card__me" href="/profile" title="Your profile"
+                      aria-current=[("/profile" == chrome.current).then_some("page")] {
+                        (super::pictures::face(&user.id, &user.display_name, workspace.face.as_deref(), ""))
+                        span class="user-card__who" {
+                            span class="user-card__name" {
+                                span { (user.display_name) }
+                                @if chrome.maintainer {
+                                    span class="user-card__role" { "Admin" }
+                                }
                             }
+                            span class="identifier" { (user.id.to_string()) }
                         }
-                        span class="identifier" { (user.id.to_string()) }
                     }
                     form method="post" action="/logout" {
                         button class="user-card__out" type="submit" aria-label="Log out" title="Log out" {

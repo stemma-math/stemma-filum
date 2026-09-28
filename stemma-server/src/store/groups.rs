@@ -113,6 +113,21 @@ pub fn describe(connection: &Connection, id: &GroupId, description: &str) -> Res
     Ok(())
 }
 
+/// Changes what a group calls itself.
+///
+/// The short name stays: it is in every remote and every directory the
+/// group's repositories were cloned into.
+pub fn rename(connection: &Connection, id: &GroupId, name: &str) -> Result<()> {
+    connection
+        .execute(
+            "UPDATE groups SET name = ?2 WHERE id = ?1",
+            params![id.to_string(), name.trim()],
+        )
+        .context("cannot rename the group")?;
+
+    Ok(())
+}
+
 /// Whether a name is still free.
 pub fn is_free(connection: &Connection, slug: &Slug) -> Result<bool> {
     Ok(by_slug(connection, slug)?.is_none())
@@ -620,5 +635,26 @@ mod tests {
         assert_eq!(members.len(), 2);
         assert_eq!(members[0].role, GroupRole::Owner);
         assert_eq!(members[1].role, GroupRole::Member);
+    }
+
+    #[test]
+    fn a_renamed_group_keeps_its_short_name() {
+        let mut database = test_database();
+        let ana = account(database.connection(), "ana");
+        let group = create(
+            database.connection_mut(),
+            &slug("algebra"),
+            "Algebra",
+            &ana.id,
+        )
+        .unwrap();
+
+        rename(database.connection(), &group.id, "  Commutative algebra ").unwrap();
+
+        let renamed = by_slug(database.connection(), &slug("algebra"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(renamed.name, "Commutative algebra");
+        assert_eq!(renamed.id, group.id);
     }
 }

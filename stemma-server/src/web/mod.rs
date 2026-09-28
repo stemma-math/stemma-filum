@@ -21,6 +21,8 @@ pub mod jobs;
 pub mod layout;
 pub mod lines;
 pub mod machines;
+pub mod pictures;
+pub mod profile;
 pub mod proposals;
 pub mod reset;
 pub mod starting;
@@ -195,7 +197,17 @@ fn pages() -> Router<Instance> {
             "/groups/new",
             get(groups::request_form).post(groups::request),
         )
+        .route("/profile", get(profile::view))
+        .route("/profile/details", post(profile::details))
+        .route("/profile/password", post(profile::password))
+        .route("/profile/picture", post(profile::picture))
+        .route("/profile/picture/remove", post(profile::remove_picture))
+        .route("/pictures/users/{slug}", get(pictures::user))
+        .route("/pictures/groups/{slug}", get(pictures::group))
         .route("/g/{slug}", get(groups::space))
+        .route("/g/{slug}/edit", get(groups::edit_form).post(groups::edit))
+        .route("/g/{slug}/picture", post(groups::picture))
+        .route("/g/{slug}/picture/remove", post(groups::remove_picture))
         .route("/g/{slug}/invitations", post(groups::invite))
         .route(
             "/g/{slug}/invitations/{id}/withdraw",

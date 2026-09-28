@@ -36,6 +36,8 @@ class App {
   stage = $state<Stage>("welcome");
   panel = $state<Panel | null>(null);
   groups = $state<string[]>([]);
+  /** The groups whose details this person may change on the web. */
+  managed = $state<string[]>([]);
   /** The group the rail shows; one at a time. */
   group = $state<string | null>(null);
   lines = $state<Known[]>([]);
@@ -96,6 +98,8 @@ class App {
 
   async #loadGroups() {
     try { this.groups = await api.groups(); } catch { this.groups = []; }
+    // Offline, nothing is offered: the page it opens is on the server.
+    try { this.managed = await api.managedGroups(); } catch { this.managed = []; }
     if (this.group && !this.groups.includes(this.group)) this.group = null;
     this.group ??= this.groups[0] ?? null;
   }
@@ -179,6 +183,19 @@ class App {
       tell(await work());
       await this.sync();
       await this.goTo("welcome");
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Opens a page of the web the signed-in server serves, in the browser:
+   * the profile and a group's details are changed there. */
+  async openOnWeb(path: string) {
+    if (!this.signed) return;
+    try {
+      // Joined as the server joins its own links, so an instance under a
+      // path keeps it.
+      await api.openLink(`${this.signed.server.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`);
     } catch (error) {
       fail(error);
     }

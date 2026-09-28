@@ -512,7 +512,7 @@
     /* ── Avatar and badge ──────────────────────────────────────────────
      *
      * A person is a circle with an initial; a group is a rounded square
-     * with its initials. */
+     * with its initials. Either may hold an `img` instead. */
 
     .avatar {
         display: inline-flex;
@@ -538,6 +538,17 @@
         color: #e3eeff;
         background: radial-gradient(120% 90% at 50% 120%, var(--blue-400) 0%, var(--navy-700) 55%, var(--navy-850) 100%);
         border-radius: var(--radius-md);
+    }
+
+    /* A picture, where there is one, fills the shape in place of the
+     * initials. */
+    .avatar > img,
+    .badge > img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: inherit;
     }
 
     /* ── Card ──────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ use stemma_core::artefact::{Nodes, Scope};
 use stemma_core::id::{InvitationId, Slug};
 use stemma_core::repository::Side;
 
-use super::layout::{Chrome, glyph, initials, page, signature};
+use super::layout::{Chrome, glyph, page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::{self, Group, Member};
@@ -220,6 +220,7 @@ pub async fn space(
         .at(format!("/g/{}", group.slug()));
     let work = read_work(&instance, &group, &signed).await?;
     let (offers, queue) = read_machines(&instance, &group, &signed).await?;
+    let faces = read_faces(&instance, &group, &members).await?;
 
     Ok(page(
         &chrome,
@@ -228,6 +229,7 @@ pub async fn space(
             &group,
             role,
             &members,
+            &faces,
             &invitations,
             &work,
             &offers,
@@ -323,6 +325,7 @@ pub async fn invite(
     let (_, members, live) = read_space(&instance, &group, &signed).await?;
     let work = read_work(&instance, &group, &signed).await?;
     let (offers, queue) = read_machines(&instance, &group, &signed).await?;
+    let faces = read_faces(&instance, &group, &members).await?;
 
     let chrome = super::layout::around(&instance, &signed, group.name.clone())
         .await?
@@ -335,6 +338,7 @@ pub async fn invite(
             &group,
             role,
             &members,
+            &faces,
             &live,
             &work,
             &offers,
@@ -385,6 +389,275 @@ pub async fn withdraw(
         .await?;
 
     Ok(Redirect::to(&format!("/g/{slug}")).into_response())
+}
+
+/// What the group's details form sends.
+#[derive(Debug, Deserialize)]
+pub struct Details {
+    /// What the group calls itself.
+    pub name: String,
+    /// What it is for.
+    #[serde(default)]
+    pub description: String,
+    /// The CSRF token [`crate::web::layout::signature`] put in the form.
+    pub form_token: String,
+}
+
+/// What was just done to the group, as the page's address says it.
+#[derive(Debug, Default, Deserialize)]
+pub struct Done {
+    /// Which change went through.
+    pub done: Option<String>,
+}
+
+/// The page a group's details are changed on.
+pub async fn edit_form(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(slug): Path<String>,
+    axum::extract::Query(done): axum::extract::Query<Done>,
+) -> Result<Response, WebError> {
+    let group = manageable(&instance, &slug, &signed).await?;
+    let said = match done.done.as_deref() {
+        Some("details") => Some("The group's details have been saved."),
+        Some("picture") => Some("The group's picture has been changed."),
+        Some("picture-removed") => Some("The group's picture has been removed."),
+        _ => None,
+    };
+
+    draw_edit(
+        &instance,
+        &signed,
+        &group,
+        axum::http::StatusCode::OK,
+        said,
+        None,
+        None,
+    )
+    .await
+}
+
+/// Saves a group's name and description.
+pub async fn edit(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(slug): Path<String>,
+    axum::Form(form): axum::Form<Details>,
+) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
+    let group = manageable(&instance, &slug, &signed).await?;
+
+    let name = form.name.trim().to_owned();
+    if name.is_empty() {
+        return draw_edit(
+            &instance,
+            &signed,
+            &group,
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            None,
+            Some("The group needs a name."),
+            Some(&form),
+        )
+        .await;
+    }
+
+    let id = group.id.clone();
+    let description = form.description.clone();
+    instance
+        .read(move |connection| {
+            groups::rename(connection, &id, &name)?;
+            groups::describe(connection, &id, &description)
+        })
+        .await?;
+
+    Ok(Redirect::to(&format!("/g/{slug}/edit?done=details")).into_response())
+}
+
+/// Keeps a new picture for a group.
+pub async fn picture(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(slug): Path<String>,
+    upload: axum::extract::Multipart,
+) -> Result<Response, WebError> {
+    let (token, bytes) = super::profile::read_upload(upload).await?;
+    signed.check_form(&token)?;
+    let group = manageable(&instance, &slug, &signed).await?;
+
+    let id = group.id.clone();
+    let kept = instance
+        .read(move |connection| crate::store::pictures::set_group(connection, &id, &bytes))
+        .await?;
+
+    match kept {
+        Ok(()) => Ok(Redirect::to(&format!("/g/{slug}/edit?done=picture")).into_response()),
+        Err(refused) => {
+            draw_edit(
+                &instance,
+                &signed,
+                &group,
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                None,
+                Some(&refused.to_string()),
+                None,
+            )
+            .await
+        }
+    }
+}
+
+/// Takes a group's picture away.
+pub async fn remove_picture(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(slug): Path<String>,
+    axum::Form(form): axum::Form<Withdrawal>,
+) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
+    let group = manageable(&instance, &slug, &signed).await?;
+
+    let id = group.id.clone();
+    instance
+        .read(move |connection| crate::store::pictures::remove_group(connection, &id))
+        .await?;
+
+    Ok(Redirect::to(&format!("/g/{slug}/edit?done=picture-removed")).into_response())
+}
+
+/// The group, when the reader may manage it.
+///
+/// Somebody outside it is told there is nothing here, as its page tells
+/// them; a member is told why not.
+async fn manageable(instance: &Instance, slug: &str, signed: &SignedIn) -> Result<Group, WebError> {
+    let Some(group) = lookup(instance, slug).await? else {
+        return Err(WebError::NotFound);
+    };
+
+    let (role, _, _) = read_space(instance, &group, signed).await?;
+
+    match role {
+        None => Err(WebError::NotFound),
+        Some(role) if !role.may_manage() => Err(WebError::Forbidden(
+            "Only an admin or the owner of this group can change its details.".to_owned(),
+        )),
+        Some(_) => Ok(group),
+    }
+}
+
+/// Draws the page a group is changed on.
+async fn draw_edit(
+    instance: &Instance,
+    signed: &SignedIn,
+    group: &Group,
+    status: axum::http::StatusCode,
+    said: Option<&str>,
+    problem: Option<&str>,
+    given: Option<&Details>,
+) -> Result<Response, WebError> {
+    let chrome = super::layout::around(instance, signed, format!("Edit {}", group.name))
+        .await?
+        .at(format!("/g/{}", group.slug()));
+
+    let id = group.id.clone();
+    let changed = instance
+        .read(move |connection| crate::store::pictures::group_changed(connection, &id))
+        .await?;
+
+    Ok((
+        status,
+        page(
+            &chrome,
+            edit_body(signed, group, changed.as_deref(), said, problem, given),
+        ),
+    )
+        .into_response())
+}
+
+/// The page itself.
+fn edit_body(
+    signed: &SignedIn,
+    group: &Group,
+    changed: Option<&str>,
+    said: Option<&str>,
+    problem: Option<&str>,
+    given: Option<&Details>,
+) -> Markup {
+    let name = given.map_or(group.name.as_str(), |given| given.name.as_str());
+    let description = given.map_or(group.description.as_deref().unwrap_or_default(), |given| {
+        given.description.as_str()
+    });
+
+    html! {
+        header class="page-head" {
+            nav class="crumbs" aria-label="Breadcrumb" {
+                a href="/#groups" { "Groups" }
+                span aria-hidden="true" { "/" }
+                a href={ "/g/" (group.slug()) } { (group.name) }
+                span aria-hidden="true" { "/" }
+                span aria-current="page" { "Edit" }
+            }
+            div class="page-head__row" {
+                (super::pictures::badge(&group.id, &group.name, changed, "badge badge--large"))
+                div class="page-head__text" {
+                    h1 class="page-title" { "Edit the group" }
+                    div class="page-meta" {
+                        span class="identifier" { (group.id.to_string()) }
+                    }
+                }
+            }
+        }
+
+        div class="settings-page" {
+            @if let Some(said) = said {
+                p class="done" role="status" { (said) }
+            }
+            @if let Some(problem) = problem {
+                p class="problem" role="alert" { (problem) }
+            }
+
+            section class="block" aria-labelledby="picture-title" {
+                h2 class="block__title" id="picture-title" { "Picture" }
+                (super::profile::picture_form(
+                    &format!("/g/{}/picture", group.slug()),
+                    &format!("/g/{}/picture/remove", group.slug()),
+                    signed,
+                    changed.is_some(),
+                    "It is shown beside the group's name to its members.",
+                ))
+            }
+
+            section class="block" aria-labelledby="details-title" {
+                h2 class="block__title" id="details-title" { "Details" }
+                form method="post" action={ "/g/" (group.slug()) "/edit" } {
+                    (signature(signed))
+
+                    div class="field" {
+                        label class="field__label" for="name" { "Name" }
+                        input class="input" type="text" id="name" name="name" value=(name) required;
+                    }
+
+                    div class="field" {
+                        label class="field__label" for="description" { "Purpose" }
+                        textarea class="input" id="description" name="description" rows="3" {
+                            (description)
+                        }
+                        span class="field__hint" { "Shown under the group's name. Leave it empty to show nothing." }
+                    }
+
+                    div class="field" {
+                        span class="field__label" { "Short name" }
+                        span class="identifier" { (group.slug()) }
+                        span class="field__hint" {
+                            "It cannot be changed: it is in the address of the group's repositories "
+                            "on every machine that has them."
+                        }
+                    }
+
+                    button class="button button--primary" type="submit" { "Save details" }
+                }
+            }
+        }
+    }
 }
 
 /// The group with this short name.
@@ -476,6 +749,44 @@ async fn read_machines(
     Ok((offers, queue))
 }
 
+/// When the group's picture and each member's last changed, for those
+/// that have one.
+struct Faces {
+    /// The group's.
+    group: Option<String>,
+    /// Each member's, by identifier.
+    members: std::collections::HashMap<stemma_core::id::UserId, String>,
+}
+
+/// Reads which pictures the group's page shows.
+async fn read_faces(
+    instance: &Instance,
+    group: &Group,
+    members: &[Member],
+) -> Result<Faces, WebError> {
+    let id = group.id.clone();
+    let people: Vec<_> = members
+        .iter()
+        .map(|member| member.user.id.clone())
+        .collect();
+
+    instance
+        .read(move |connection| {
+            let mut members = std::collections::HashMap::new();
+            for person in people {
+                if let Some(changed) = crate::store::pictures::user_changed(connection, &person)? {
+                    members.insert(person, changed);
+                }
+            }
+
+            Ok(Faces {
+                group: crate::store::pictures::group_changed(connection, &id)?,
+                members,
+            })
+        })
+        .await
+}
+
 /// How a role reads beside a name.
 pub fn role_words(role: GroupRole) -> &'static str {
     match role {
@@ -492,6 +803,7 @@ fn space_body(
     group: &Group,
     role: GroupRole,
     members: &[Member],
+    faces: &Faces,
     invitations: &[Invitation],
     work: &[(Side, Nodes)],
     offers: &[super::jobs::Offer],
@@ -509,9 +821,16 @@ fn space_body(
                 span aria-current="page" { (group.name) }
             }
             div class="page-head__row" {
-                span class="badge badge--large" aria-hidden="true" { (initials(&group.name)) }
+                (super::pictures::badge(&group.id, &group.name, faces.group.as_deref(), "badge badge--large"))
                 div class="page-head__text" {
-                    h1 class="page-title" { (group.name) }
+                    div class="page-title-row" {
+                        h1 class="page-title" { (group.name) }
+                        @if role.may_manage() {
+                            a class="button button--small" href={ "/g/" (group.slug()) "/edit" } {
+                                (glyph("edit")) "Edit"
+                            }
+                        }
+                    }
                     div class="page-meta" {
                         span class="identifier" { (group.id.to_string()) }
                         span class="chip chip--accent" { (role_words(role)) }
@@ -568,7 +887,12 @@ fn space_body(
                     ul class="people" {
                         @for member in members {
                             li class="person" {
-                                span class="avatar" aria-hidden="true" { (initials(&member.user.display_name)) }
+                                (super::pictures::face(
+                                    &member.user.id,
+                                    &member.user.display_name,
+                                    faces.members.get(&member.user.id).map(String::as_str),
+                                    "",
+                                ))
                                 span class="person__who" {
                                     span class="person__name" { (member.user.display_name) }
                                     span class="identifier quiet" { (member.user.id.to_string()) }

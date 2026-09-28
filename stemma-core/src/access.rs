@@ -33,6 +33,12 @@ impl GroupRole {
     pub fn can_invite(self) -> bool {
         self.is_at_least(Self::Admin)
     }
+
+    /// Whether the role may change the group's details: its name, what it
+    /// is for and its picture.
+    pub fn may_manage(self) -> bool {
+        self.is_at_least(Self::Admin)
+    }
 }
 
 /// A permission held at the instance level rather than inside a group.
@@ -108,6 +114,13 @@ mod tests {
         assert!(!GroupRole::Member.can_invite());
         assert!(GroupRole::Admin.can_invite());
         assert!(GroupRole::Owner.can_invite());
+    }
+
+    #[test]
+    fn only_admins_and_owners_change_a_group() {
+        assert!(!GroupRole::Member.may_manage());
+        assert!(GroupRole::Admin.may_manage());
+        assert!(GroupRole::Owner.may_manage());
     }
 
     #[test]

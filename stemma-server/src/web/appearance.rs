@@ -113,9 +113,7 @@ pub async fn remember(request: Request, next: Next) -> Response {
 
 /// The appearance of the page being drawn.
 pub fn chosen() -> Appearance {
-    ASKED
-        .try_with(|asked| asked.appearance)
-        .unwrap_or_default()
+    ASKED.try_with(|asked| asked.appearance).unwrap_or_default()
 }
 
 /// Where the page being drawn is.

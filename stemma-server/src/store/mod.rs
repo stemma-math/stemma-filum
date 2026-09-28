@@ -14,6 +14,7 @@ pub mod invitations;
 pub mod jobs;
 pub mod lines;
 pub mod machines;
+pub mod pictures;
 pub mod proposals;
 pub mod resets;
 pub mod sessions;

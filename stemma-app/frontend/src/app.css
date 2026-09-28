@@ -500,6 +500,27 @@
     border-radius: var(--radius-lg);
 }
 
+/* Who is signed in, and the way to their profile on the web. */
+.user-card__me {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+    margin: -4px;
+    padding: 4px;
+    color: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+
+.user-card__me:hover {
+    background: var(--on-dark-fill);
+}
+
 .user-card__who {
     display: flex;
     flex: 1;
@@ -2106,6 +2127,13 @@ button.block__label:disabled {
 
 .welcome__title.identifier {
     font-size: 22px;
+}
+
+.welcome__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
 }
 
 .welcome__text {

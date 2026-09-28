@@ -879,6 +879,14 @@ html:has(.shell) {
     border-radius: var(--radius-xs);
 }
 
+.sidebar__badge > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+}
+
 .sidebar__count {
     padding: 1px 7px;
     font: var(--text-label);
@@ -914,6 +922,27 @@ html:has(.shell) {
 .user-card .avatar {
     width: 36px;
     height: 36px;
+}
+
+/* The reader's name is the way to their profile. */
+.user-card__me {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    margin: -6px;
+    padding: 6px;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-md);
+    transition: background var(--dur-ui) var(--ease-out);
+}
+
+.user-card__me:hover,
+.user-card__me[aria-current="page"] {
+    color: inherit;
+    background: var(--on-dark-fill);
 }
 
 .user-card__who {
@@ -1033,6 +1062,43 @@ html:has(.shell) {
 .page-title {
     font: var(--text-display);
     letter-spacing: -0.02em;
+}
+
+/* A title with the one action that changes what it names. */
+.page-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+}
+
+.avatar--large {
+    width: 64px;
+    height: 64px;
+    font-size: 22px;
+}
+
+/* A page of settings: one card for each thing that can be changed. */
+.settings-page {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 640px;
+}
+
+.picture-form__file {
+    padding-block: 8px;
+}
+
+.picture-form__file::file-selector-button {
+    margin-right: 12px;
+    padding: 4px 12px;
+    font: 500 13px / 1.4 var(--font-ui);
+    color: var(--ink-1);
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
 }
 
 .page-subtitle {
