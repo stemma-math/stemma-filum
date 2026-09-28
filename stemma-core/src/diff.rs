@@ -124,36 +124,24 @@ pub fn lines(before: &str, after: &str) -> Vec<Row> {
         );
     }
     common.extend((0..suffix).map(|at| (old.len() - suffix + at, new.len() - suffix + at)));
-    let mut rows = Vec::new();
+    let mut rows = Vec::with_capacity(old.len().max(new.len()));
     let (mut at_old, mut at_new) = (0, 0);
 
-    for (old_at, new_at) in common {
-        while at_old < old_at {
-            rows.push(gone(&old, at_old));
-            at_old += 1;
-        }
-        while at_new < new_at {
-            rows.push(arrived(&new, at_new));
-            at_new += 1;
-        }
+    // A last pair just past both ends flushes whatever neither kept.
+    for (old_at, new_at) in common.into_iter().chain([(old.len(), new.len())]) {
+        rows.extend((at_old..old_at).map(|at| gone(&old, at)));
+        rows.extend((at_new..new_at).map(|at| arrived(&new, at)));
 
-        rows.push(Row {
-            change: Change::Kept,
-            text: old[old_at].to_owned(),
-            before: Some(old_at + 1),
-            after: Some(new_at + 1),
-        });
+        if old_at < old.len() {
+            rows.push(Row {
+                change: Change::Kept,
+                text: old[old_at].to_owned(),
+                before: Some(old_at + 1),
+                after: Some(new_at + 1),
+            });
+        }
         at_old = old_at + 1;
         at_new = new_at + 1;
-    }
-
-    while at_old < old.len() {
-        rows.push(gone(&old, at_old));
-        at_old += 1;
-    }
-    while at_new < new.len() {
-        rows.push(arrived(&new, at_new));
-        at_new += 1;
     }
 
     rows
@@ -161,16 +149,15 @@ pub fn lines(before: &str, after: &str) -> Vec<Row> {
 
 /// How much the two versions differ.
 pub fn extent(rows: &[Row]) -> Extent {
-    Extent {
-        added: rows
-            .iter()
-            .filter(|row| row.change == Change::Added)
-            .count(),
-        removed: rows
-            .iter()
-            .filter(|row| row.change == Change::Removed)
-            .count(),
+    let mut extent = Extent::default();
+    for row in rows {
+        match row.change {
+            Change::Kept => {}
+            Change::Added => extent.added += 1,
+            Change::Removed => extent.removed += 1,
+        }
     }
+    extent
 }
 
 /// The lines a statement the line rests on occupies in its document.

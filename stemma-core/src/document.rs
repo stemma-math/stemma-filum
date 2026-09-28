@@ -25,7 +25,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::id::{BlockId, BridgeId, UserId};
-use crate::line::{NodeKind, Siglum};
+use crate::line::{Name, NodeKind, Siglum};
 use crate::markup::Scanner;
 
 /// The shape of a line's source this build writes and reads.
@@ -408,10 +408,7 @@ impl Statement {
         };
         let name = self.id.ulid().to_string().to_ascii_lowercase();
 
-        Siglum::new(
-            node,
-            crate::line::Name::parse(&name).expect("a ULID is a valid name"),
-        )
+        Siglum::new(node, Name::parse(&name).expect("a ULID is a valid name"))
     }
 }
 
