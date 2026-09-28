@@ -64,15 +64,10 @@ impl Slug {
             return Err(SlugError::TooLong);
         }
 
-        let mut previous_was_hyphen = false;
-        for character in input.chars() {
-            match character {
-                'a'..='z' | '0'..='9' => previous_was_hyphen = false,
-                '-' if previous_was_hyphen => return Err(SlugError::DoubleHyphen),
-                '-' => previous_was_hyphen = true,
-                other => return Err(SlugError::BadChar(other)),
-            }
-        }
+        check_word(input).map_err(|fault| match fault {
+            WordFault::Character(character) => SlugError::BadChar(character),
+            WordFault::DoubleHyphen => SlugError::DoubleHyphen,
+        })?;
 
         // Both ends are checked after the character set, so that an uppercase
         // first letter is reported as the wrong character and not as a bad
@@ -105,6 +100,36 @@ impl FromStr for Slug {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         Self::parse(input)
     }
+}
+
+serde_as_text!(Slug);
+
+/// What keeps a string from being a run of lowercase letters, digits and
+/// single hyphens.
+pub(crate) enum WordFault {
+    /// A character outside that set.
+    Character(char),
+    /// Two hyphens in a row.
+    DoubleHyphen,
+}
+
+/// Checks the characters a slug or a siglum's name may be made of.
+///
+/// Only the characters: how long the word is and how it may begin or end
+/// differ between the two, and each checks that itself.
+pub(crate) fn check_word(input: &str) -> Result<(), WordFault> {
+    let mut previous_was_hyphen = false;
+
+    for character in input.chars() {
+        match character {
+            'a'..='z' | '0'..='9' => previous_was_hyphen = false,
+            '-' if previous_was_hyphen => return Err(WordFault::DoubleHyphen),
+            '-' => previous_was_hyphen = true,
+            other => return Err(WordFault::Character(other)),
+        }
+    }
+
+    Ok(())
 }
 
 /// The kind of entity an identifier names, and the prefix that announces it.
@@ -286,19 +311,6 @@ macro_rules! impl_serde_via_string {
 
 impl_serde_via_string!(NamedId, "an identifier");
 impl_serde_via_string!(UniqueId, "a unique identifier");
-
-impl Serialize for Slug {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for Slug {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = String::deserialize(deserializer)?;
-        Self::parse(&raw).map_err(de::Error::custom)
-    }
-}
 
 /// Declares the marker types and the aliases for every kind of identifier.
 macro_rules! id_kinds {

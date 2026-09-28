@@ -23,7 +23,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::document::{self, Block, BlockKind, Document, Unreadable};
-use crate::id::{BlockId, BridgeId, UserId};
+use crate::id::{BlockId, BridgeId, UserId, WordFault, check_word};
 use crate::model::{BoxState, Centrality};
 
 /// What kind of thing a node is.
@@ -140,15 +140,10 @@ impl Name {
             return Err(BadName::TooLong);
         }
 
-        let mut previous_was_hyphen = false;
-        for character in input.chars() {
-            match character {
-                'a'..='z' | '0'..='9' => previous_was_hyphen = false,
-                '-' if previous_was_hyphen => return Err(BadName::DoubleHyphen),
-                '-' => previous_was_hyphen = true,
-                other => return Err(BadName::BadCharacter(other)),
-            }
-        }
+        check_word(input).map_err(|fault| match fault {
+            WordFault::Character(character) => BadName::BadCharacter(character),
+            WordFault::DoubleHyphen => BadName::DoubleHyphen,
+        })?;
 
         if input.starts_with('-') || input.ends_with('-') {
             return Err(BadName::Hyphenated);
@@ -232,19 +227,7 @@ impl FromStr for Name {
     }
 }
 
-impl Serialize for Name {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for Name {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = String::deserialize(deserializer)?;
-
-        Self::parse(&raw).map_err(serde::de::Error::custom)
-    }
-}
+serde_as_text!(Name);
 
 /// Why a name will not do.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -321,19 +304,7 @@ impl FromStr for Siglum {
     }
 }
 
-impl Serialize for Siglum {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> Deserialize<'de> for Siglum {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = String::deserialize(deserializer)?;
-
-        raw.parse().map_err(serde::de::Error::custom)
-    }
-}
+serde_as_text!(Siglum);
 
 /// One thing a line declares.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

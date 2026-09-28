@@ -22,8 +22,6 @@
 //! What a block's content says is Typst markup, exactly what goes
 //! between the brackets of the environment it becomes.
 
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
 
 use crate::id::{BlockId, BridgeId, UserId};
@@ -301,23 +299,12 @@ pub enum BlockKind {
     Proof,
 }
 
-impl BlockKind {
-    /// What it is called in the source.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Prose => "prose",
-            Self::Definition => "definition",
-            Self::Theorem => "theorem",
-            Self::Proof => "proof",
-        }
-    }
-}
-
-impl fmt::Display for BlockKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+spelled!(BlockKind {
+    Prose => "prose",
+    Definition => "definition",
+    Theorem => "theorem",
+    Proof => "proof",
+});
 
 /// Prose between the mathematics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

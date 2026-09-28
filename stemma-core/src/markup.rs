@@ -152,14 +152,25 @@ mod tests {
     /// Where the scanner stops after skipping whatever starts the text.
     fn skipped(text: &str) -> usize {
         let mut scanner = Scanner::new(text);
-        assert!(scanner.skip_inert(), "nothing inert at the start of {text:?}");
+        assert!(
+            scanner.skip_inert(),
+            "nothing inert at the start of {text:?}"
+        );
         scanner.at
     }
 
     #[test]
     fn a_comment_ends_where_typst_ends_it() {
-        assert_eq!(skipped("// note\nafter"), 7, "the newline is not the comment's");
-        assert_eq!(skipped("/* a /* b */ c */ after"), 17, "block comments nest");
+        assert_eq!(
+            skipped("// note\nafter"),
+            7,
+            "the newline is not the comment's"
+        );
+        assert_eq!(
+            skipped("/* a /* b */ c */ after"),
+            17,
+            "block comments nest"
+        );
         assert_eq!(skipped("/* never closed"), 15);
     }
 

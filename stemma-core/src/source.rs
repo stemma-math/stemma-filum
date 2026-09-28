@@ -119,7 +119,12 @@ mod tests {
 
     #[test]
     fn a_source_that_stops_part_way_through_is_read_without_panicking() {
-        for source in ["#import \"unterminated", "#import", "#include \"a\\", "é\\é#import"] {
+        for source in [
+            "#import \"unterminated",
+            "#import",
+            "#include \"a\\",
+            "é\\é#import",
+        ] {
             assert!(imports(source).is_empty(), "for {source:?}");
         }
     }
