@@ -2,7 +2,7 @@
 
 import type {
   AuditAction, AuditTarget, Beginning, Claim, Conflict, Decision, Known, LineDocument, Machine,
-  Mirrored, Offer, OpenLine, Preview, Review, Signed, Vault, Verdict, Waiting,
+  Mirrored, Offer, OpenLine, Preview, Review, Signed, Survey, Tried, Vault, Verdict, Waiting,
 } from "./types";
 
 type Bridge = { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } };
@@ -37,9 +37,28 @@ export function onViewChosen(handler: (view: string) => void): Promise<() => voi
   return window.__TAURI__?.event?.listen<string>("view", (event) => handler(event.payload)) ?? Promise.resolve(() => {});
 }
 
-/** An error as a sentence, without the `Error:` prefix. */
+/** Hears Set Up This Machine or Remove Stemma chosen from the application's
+ * menu, as `setup` or `remove`. */
+export function onMachineChosen(handler: (action: string) => void): Promise<() => void> {
+  return window.__TAURI__?.event?.listen<string>("machine", (event) => handler(event.payload)) ?? Promise.resolve(() => {});
+}
+
+/** Hears that repairing this machine at launch has finished. */
+export function onRepaired(handler: () => void): Promise<() => void> {
+  return window.__TAURI__?.event?.listen<null>("stemma:repaired", () => handler()) ?? Promise.resolve(() => {});
+}
+
+/** An error the shell marked with a remedy (`remedy:<name>:<sentence>`),
+ * split into the two. */
+export function remedyOf(error: unknown): { remedy: string | null; message: string } {
+  const text = String(error).replace(/^Error:\s*/, "");
+  const marked = /^remedy:([a-z-]+):/.exec(text);
+  return marked ? { remedy: marked[1], message: text.slice(marked[0].length) } : { remedy: null, message: text };
+}
+
+/** An error as a sentence, without the `Error:` prefix or a remedy mark. */
 export function said(error: unknown): string {
-  return String(error).replace(/^Error:\s*/, "");
+  return remedyOf(error).message;
 }
 
 export const api = {
@@ -86,12 +105,23 @@ export const api = {
   ) => call<string>("launch", {
     path, task, agent, here: false, machine, model, effort, request, grantBlocks, grantLibrary,
   }),
-  machine: () => call<Machine>("machine"),
+  machine: () => call<Machine | null>("machine"),
   jobOutput: (job: string) => call<string>("job_output", { job }),
   cancelJob: (job: string) => call<void>("cancel_job", { job }),
   nodeInit: (groups: string[]) => call<string>("node_init", { groups }),
-  daemonInstall: () => call<string>("daemon_install"),
-  installCli: () => call<string>("install_cli"),
+
+  setupSurvey: () => call<Survey>("setup_survey"),
+  setupService: () => call<string>("setup_service"),
+  setupLink: () => call<string>("setup_link"),
+  setupPath: () => call<string>("setup_path"),
+  tryAgent: (agent: string) => call<Tried>("try_agent", { agent }),
+  removalSend: () => call<string[]>("removal_send"),
+  removalLeave: () => call<string[]>("removal_leave"),
+  removalData: () => call<string[]>("removal_data"),
+  removalDeleteData: () => call<void>("removal_delete_data"),
+  canTrash: () => call<boolean>("can_trash"),
+  trashAndQuit: () => call<void>("trash_and_quit"),
+  quit: () => call<void>("quit"),
 
   proposals: () => call<Waiting[]>("proposals"),
   proposal: (proposal: string) => call<Review>("proposal", { proposal }),

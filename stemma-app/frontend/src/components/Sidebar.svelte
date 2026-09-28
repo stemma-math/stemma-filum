@@ -3,6 +3,7 @@
   // this machine reaches the server and who is signed in.
   import { app } from "../lib/app.svelte";
   import { initials } from "../lib/names";
+  import { setup } from "../lib/setup.svelte";
   import type { Known } from "../lib/types";
   import Bubble from "./Bubble.svelte";
   import Glyph from "./Glyph.svelte";
@@ -125,12 +126,14 @@
       <button
         type="button"
         class="user-card__settings"
-        aria-label={app.waiting.length ? `Settings, ${app.waiting.length} to review` : "Settings"}
-        data-tip="Settings"
-        onclick={() => (app.panel = app.waiting.length ? "reviews" : "machine")}
+        aria-label={app.waiting.length ? `Settings, ${app.waiting.length} to review`
+          : setup.attention ? "Settings, this machine needs attention" : "Settings"}
+        data-tip={setup.attention ? "This machine needs attention" : "Settings"}
+        onclick={() => (app.panel = app.waiting.length && !setup.attention ? "reviews" : "machine")}
       >
         <Glyph name="settings" />
-        {#if app.waiting.length}<span class="user-card__count">{app.waiting.length}</span>{/if}
+        {#if app.waiting.length}<span class="user-card__count">{app.waiting.length}</span>
+        {:else if setup.attention}<span class="user-card__mark" aria-hidden="true"></span>{/if}
       </button>
     </div>
   </div>

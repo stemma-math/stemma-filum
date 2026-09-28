@@ -13,9 +13,10 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 use stemma_core::job::Outcome;
 use stemma_core::machine::{BEAT_SECONDS, Detected};
 
@@ -43,6 +44,14 @@ const AFTER_TROUBLE: Duration = Duration::from_secs(30);
 /// job and returns, which is what a machine woken by something else wants
 /// and what a test can watch.
 pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
+    if !once {
+        // Said before anything can fail, so a daemon that keeps being
+        // restarted still says which build it is.
+        if let Err(error) = Started::record(home) {
+            writeln!(out, "{error:#}")?;
+        }
+    }
+
     let (credentials, server) = session::connect(home)?;
     let config = Config::read(&home.config_file())?;
     let node = server.node(&credentials.token)?.is_some();
@@ -391,87 +400,300 @@ pub const UNIT_NAME: &str = "stemma.service";
 /// What the launch agent is called.
 pub const AGENT_NAME: &str = "org.stemma.daemon.plist";
 
-/// Puts the daemon under whatever supervises this machine.
+/// What the launch agent is known to launchd as.
+const LABEL: &str = "org.stemma.daemon";
+
+/// Where the service stands on this machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Service {
+    /// Nothing is installed.
+    NotInstalled,
+    /// It is installed and not running.
+    Stopped,
+    /// It is running, as this process where the supervisor says which.
+    Running(Option<u32>),
+}
+
+/// What the daemon writes about itself as it starts.
+///
+/// The application reads it to tell whether the daemon running is the
+/// one it carries: after an update, the old one keeps running until
+/// something restarts it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Started {
+    /// Its process.
+    pub pid: u32,
+    /// The client version it was built as.
+    pub version: String,
+    /// When it started, in seconds since the epoch.
+    pub at: u64,
+}
+
+impl Started {
+    fn path(home: &Home) -> PathBuf {
+        home.state_dir().join("daemon.toml")
+    }
+
+    /// What the daemon last wrote, if anything.
+    pub fn read(home: &Home) -> Option<Self> {
+        toml::from_str(&std::fs::read_to_string(Self::path(home)).ok()?).ok()
+    }
+
+    /// Writes that this process is the daemon.
+    fn record(home: &Home) -> Result<()> {
+        let started = Self {
+            pid: std::process::id(),
+            version: VERSION.to_owned(),
+            at: seconds(SystemTime::now()),
+        };
+        let text = toml::to_string(&started).context("cannot describe the daemon")?;
+
+        crate::storage::replace(&Self::path(home), &text)
+    }
+
+    /// Whether this is the daemon `program` starts, running now as
+    /// `pid`: the same version, the same process, and started after
+    /// the program was last replaced.
+    pub fn is_current(&self, pid: Option<u32>, program: &Path) -> bool {
+        let replaced = std::fs::metadata(program)
+            .and_then(|about| about.modified())
+            .map(seconds)
+            .unwrap_or(0);
+
+        self.version == VERSION && pid.is_none_or(|pid| pid == self.pid) && self.at >= replaced
+    }
+}
+
+/// The version of this client.
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// A time as whole seconds since the epoch.
+fn seconds(time: SystemTime) -> u64 {
+    time.duration_since(SystemTime::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0)
+}
+
+/// Puts the daemon under whatever supervises this machine, from the
+/// command line.
 pub fn install(home: &Home, out: &mut impl Write) -> Result<()> {
-    // What is supervised is the command line, not whatever asked for it
-    // to be installed. Asked from the application, `current_exe` would
-    // put the application itself in the plist, and every login would
-    // open a window.
-    let executable = crate::program::command_line()?;
-    let moved = std::env::var(crate::home::HOME_VARIABLE).ok();
+    if Supervisor::here() == Supervisor::Unknown {
+        writeln!(
+            out,
+            "This machine is run by neither systemd nor launchd, so there is \
+             nothing here to install into."
+        )?;
+        writeln!(out, "Run `stemma daemon run` under a service manager.")?;
 
-    match Supervisor::here() {
-        Supervisor::Systemd => {
-            let path = systemd_path()?;
-            write(&path, &unit(&executable, moved.as_deref()))?;
+        return Ok(());
+    }
 
-            writeln!(out, "Wrote {}.", path.display())?;
-            enable(
-                out,
-                "systemctl",
-                &[
-                    &["--user", "daemon-reload"],
-                    &["--user", "enable", "--now", UNIT_NAME],
-                ],
-            )?;
-        }
-        Supervisor::Launchd => {
-            let path = launchd_path(home)?;
-            write(&path, &plist(&executable, home, moved.as_deref()))?;
+    let path = write_service(home, &crate::setup::stable_program()?)?;
+    writeln!(out, "Wrote {}.", path.display())?;
 
-            writeln!(out, "Wrote {}.", path.display())?;
-
-            let uid = current_uid().unwrap_or_default();
-            enable(
-                out,
-                "launchctl",
-                &[&[
-                    "bootstrap",
-                    &format!("gui/{uid}"),
-                    &path.display().to_string(),
-                ]],
-            )?;
-        }
-        Supervisor::Unknown => {
-            writeln!(
-                out,
-                "This machine is run by neither systemd nor launchd, so there is \
-                 nothing here to install into."
-            )?;
-            writeln!(out, "Run `stemma daemon run` under a service manager.")?;
-        }
+    // Failing to start it is not failing to install it: the file is
+    // written, and starting it again is one command.
+    match start(home) {
+        Ok(()) => writeln!(
+            out,
+            "The daemon is running and will start with this machine."
+        )?,
+        Err(error) => writeln!(out, "The service is installed but not started: {error:#}")?,
     }
 
     Ok(())
 }
 
-/// Runs the command that turns the service on, and says so either way.
-///
-/// Failing to enable it is not failing to install it: the file is
-/// written, and somebody can run one command.
-fn enable(out: &mut impl Write, program: &str, runs: &[&[&str]]) -> Result<()> {
-    for arguments in runs {
-        let ran = Command::new(program).args(*arguments).output();
+/// Installs the service to run `executable`, and starts it.
+pub fn put_in_place(home: &Home, executable: &Path) -> Result<PathBuf> {
+    let path = write_service(home, executable)?;
+    start(home)?;
 
-        let happy = ran
-            .as_ref()
-            .map(|output| output.status.success())
-            .unwrap_or(false);
+    Ok(path)
+}
 
-        if !happy {
-            writeln!(out, "The service is installed but not started. Run:")?;
-            writeln!(out, "  {program} {}", arguments.join(" "))?;
+/// Writes the service's file, for `executable` to be what it runs.
+fn write_service(home: &Home, executable: &Path) -> Result<PathBuf> {
+    // What is supervised is the command line, not whatever asked for it
+    // to be installed. Asked from the application, `current_exe` would
+    // put the application itself in the plist, and every login would
+    // open a window.
+    let path = service_file(home)?.context(
+        "this machine is run by neither systemd nor launchd, so the daemon cannot be \
+         installed as a service here",
+    )?;
+    let text = service_text(home, executable).expect("a supervisor with a file has a text");
+    write(&path, &text)?;
 
-            return Ok(());
-        }
+    Ok(path)
+}
+
+/// Where the service's file is, where this machine has a supervisor.
+pub fn service_file(home: &Home) -> Result<Option<PathBuf>> {
+    Ok(match Supervisor::here() {
+        Supervisor::Systemd => Some(systemd_path()?),
+        Supervisor::Launchd => Some(launchd_path(home)?),
+        Supervisor::Unknown => None,
+    })
+}
+
+/// What the service's file says when it runs `executable`.
+pub fn service_text(home: &Home, executable: &Path) -> Option<String> {
+    let moved = std::env::var(crate::home::HOME_VARIABLE).ok();
+
+    match Supervisor::here() {
+        Supervisor::Systemd => Some(unit(executable, moved.as_deref())),
+        Supervisor::Launchd => Some(plist(executable, home, moved.as_deref())),
+        Supervisor::Unknown => None,
+    }
+}
+
+/// Where the service stands.
+pub fn service(home: &Home) -> Service {
+    let installed = service_file(home)
+        .ok()
+        .flatten()
+        .is_some_and(|path| path.is_file());
+    if !installed {
+        return Service::NotInstalled;
     }
 
-    writeln!(
-        out,
-        "The daemon is running and will start with this machine."
-    )?;
+    match Supervisor::here() {
+        Supervisor::Launchd => {
+            let Ok(said) = supervise("launchctl", &["print", &launchd_target()]) else {
+                return Service::Stopped;
+            };
+            if !said.contains("state = running") {
+                return Service::Stopped;
+            }
+            Service::Running(field(&said, "pid = "))
+        }
+        Supervisor::Systemd => {
+            let Ok(said) = supervise(
+                "systemctl",
+                &[
+                    "--user",
+                    "show",
+                    "--property=ActiveState,MainPID",
+                    UNIT_NAME,
+                ],
+            ) else {
+                return Service::Stopped;
+            };
+            if !said.contains("ActiveState=active") {
+                return Service::Stopped;
+            }
+            Service::Running(field(&said, "MainPID=").filter(|pid| *pid != 0))
+        }
+        Supervisor::Unknown => Service::NotInstalled,
+    }
+}
+
+/// The number after `name` on a line of what a supervisor said.
+fn field(said: &str, name: &str) -> Option<u32> {
+    said.lines()
+        .find_map(|line| line.trim().strip_prefix(name))
+        .and_then(|value| value.trim().parse().ok())
+}
+
+/// Loads the service as its file now says, and starts it.
+pub fn start(home: &Home) -> Result<()> {
+    match Supervisor::here() {
+        Supervisor::Systemd => {
+            supervise("systemctl", &["--user", "daemon-reload"])?;
+            supervise("systemctl", &["--user", "enable", UNIT_NAME])?;
+            supervise("systemctl", &["--user", "restart", UNIT_NAME])?;
+        }
+        Supervisor::Launchd => {
+            let path = launchd_path(home)?.display().to_string();
+
+            // Whatever was loaded goes first, so the file is read again.
+            // Unloading finishes after the command returns, so loading
+            // is tried a few times.
+            let _ = supervise("launchctl", &["bootout", &launchd_target()]);
+            let mut tried = 0;
+            loop {
+                match supervise("launchctl", &["bootstrap", &launchd_domain(), &path]) {
+                    Ok(_) => break,
+                    Err(_) if tried < 10 => {
+                        tried += 1;
+                        std::thread::sleep(Duration::from_millis(200));
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        Supervisor::Unknown => bail!("this machine has no service manager to start the daemon"),
+    }
 
     Ok(())
+}
+
+/// Stops the daemon and starts it again, as its file says.
+pub fn restart(home: &Home) -> Result<()> {
+    match Supervisor::here() {
+        Supervisor::Launchd if service(home) != Service::Stopped => {
+            supervise("launchctl", &["kickstart", "-k", &launchd_target()]).map(drop)
+        }
+        _ => start(home),
+    }
+}
+
+/// Stops the service and removes it. Answers whether there was one.
+pub fn remove(home: &Home) -> Result<bool> {
+    let Some(path) = service_file(home)? else {
+        return Ok(false);
+    };
+    if !path.is_file() {
+        return Ok(false);
+    }
+
+    match Supervisor::here() {
+        Supervisor::Systemd => {
+            let _ = supervise("systemctl", &["--user", "disable", "--now", UNIT_NAME]);
+        }
+        Supervisor::Launchd => {
+            let _ = supervise("launchctl", &["bootout", &launchd_target()]);
+        }
+        Supervisor::Unknown => {}
+    }
+
+    std::fs::remove_file(&path).with_context(|| format!("cannot remove {}", path.display()))?;
+    if Supervisor::here() == Supervisor::Systemd {
+        let _ = supervise("systemctl", &["--user", "daemon-reload"]);
+    }
+
+    Ok(true)
+}
+
+/// Runs a supervisor's command, answering what it printed or why it
+/// failed.
+fn supervise(program: &str, arguments: &[&str]) -> Result<String> {
+    let ran = Command::new(program)
+        .args(arguments)
+        .output()
+        .with_context(|| format!("cannot run {program}"))?;
+
+    if !ran.status.success() {
+        let said = String::from_utf8_lossy(&ran.stderr);
+        bail!(
+            "`{program} {}` failed: {}",
+            arguments.join(" "),
+            said.trim()
+        );
+    }
+
+    Ok(String::from_utf8_lossy(&ran.stdout).into_owned())
+}
+
+/// The launchd domain of this account's session.
+fn launchd_domain() -> String {
+    format!("gui/{}", current_uid().unwrap_or_default())
+}
+
+/// The launch agent, as launchd names it.
+fn launchd_target() -> String {
+    format!("{}/{LABEL}", launchd_domain())
 }
 
 /// Where a systemd user unit goes.
@@ -502,7 +724,7 @@ fn write(path: &Path, content: &str) -> Result<()> {
     std::fs::write(path, content).with_context(|| format!("cannot write {}", path.display()))
 }
 
-/// This account's number, for the one command that wants it.
+/// This account's number, for the commands that want it.
 fn current_uid() -> Option<String> {
     let output = Command::new("id").arg("-u").output().ok()?;
 
@@ -582,7 +804,7 @@ fn plist(executable: &Path, home: &Home, moved: Option<&str>) -> String {
          \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
          <plist version=\"1.0\">\n\
          <dict>\n    \
-         <key>Label</key><string>org.stemma.daemon</string>\n    \
+         <key>Label</key><string>{LABEL}</string>\n    \
          <key>ProgramArguments</key>\n    \
          <array><string>{}</string><string>daemon</string><string>run</string></array>\n    \
          <key>RunAtLoad</key><true/>\n    \

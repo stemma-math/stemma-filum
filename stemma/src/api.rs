@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use stemma_core::PROTOCOL_VERSION;
 use stemma_core::protocol::{Behind, ProtocolVersion};
 
+use crate::remedy::Remedy;
+
 /// The header both sides announce their protocol in.
 const PROTOCOL_HEADER: &str = stemma_core::PROTOCOL_HEADER;
 
@@ -741,10 +743,12 @@ impl Server {
                 .body_mut()
                 .read_json()
                 .context("the server sent an answer this build does not understand"),
-            403 | 401 => bail!(
-                "{} no longer accepts this machine's credential: run `stemma login` again",
-                self.address
-            ),
+            403 | 401 => Err(Remedy::SignIn).with_context(|| {
+                format!(
+                    "{} no longer accepts this machine's credential",
+                    self.address
+                )
+            }),
             status => bail!("{} answered with {status}", self.address),
         }
     }
@@ -838,6 +842,15 @@ impl Server {
         }
     }
 
+    /// Takes this machine back, and the credential it holds with it.
+    /// Answers whether there was a machine to take back.
+    pub fn retire_node(&self, token: &str) -> Result<bool> {
+        let answer: serde_json::Value =
+            self.ask(token, "/api/machines/retire", &serde_json::json!({}))?;
+
+        Ok(answer["retired"].as_bool().unwrap_or(false))
+    }
+
     /// Asks for whatever work this machine may have next.
     pub fn take_job(&self, token: &str) -> Result<Option<Handed>> {
         let mut response = self
@@ -856,10 +869,8 @@ impl Server {
                 .map(Some)
                 .context("the server sent an answer this build does not understand"),
             204 => Ok(None),
-            403 => bail!(
-                "{} does not know this machine: run `stemma node init`",
-                self.address
-            ),
+            403 => Err(Remedy::SetUpMachine)
+                .with_context(|| format!("{} does not know this machine", self.address)),
             status => bail!("{} answered with {status}", self.address),
         }
     }

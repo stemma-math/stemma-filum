@@ -2349,3 +2349,86 @@ button.block__label:disabled {
         padding: 20px 20px 32px;
     }
 }
+
+/* ── Setting this machine up ─────────────────────────────────────────── */
+
+.checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-height: min(560px, calc(100vh - 240px));
+    padding-right: 4px;
+    overflow-y: auto;
+}
+
+.checklist__item .setting__title .chip {
+    font-weight: 500;
+}
+
+.setting__note--attention {
+    color: var(--warning-fg);
+}
+
+.checklist__line {
+    padding: 6px 10px;
+    font: var(--text-mono-sm);
+    background: var(--fill-muted);
+    border-radius: var(--radius-sm);
+    user-select: all;
+}
+
+.checklist__agents {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+}
+
+.checklist__agents li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+}
+
+.checklist__agent {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.checklist__waiting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.checklist__paths,
+.checklist__done {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.checklist__paths {
+    color: var(--ink-3);
+}
+
+.user-card__mark {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 8px;
+    height: 8px;
+    /* The same amber as the sync card's "needs attention" dot. */
+    background: #f0b35b;
+    border-radius: 50%;
+}
