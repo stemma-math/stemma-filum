@@ -14,6 +14,7 @@ mod claims;
 mod compose;
 mod editing;
 mod engine;
+mod links;
 mod live;
 mod machine;
 #[cfg(target_os = "macos")]
@@ -22,10 +23,6 @@ mod reviews;
 mod setup;
 mod vault;
 mod workspace;
-
-use std::sync::Mutex;
-use tauri::{Emitter, Manager};
-use tauri_plugin_deep_link::DeepLinkExt;
 
 use stemma::home::{Environment, Home};
 
@@ -38,31 +35,9 @@ pub fn run() {
 
     builder
         .manage(account::SigningIn::default())
-        .manage(PendingReview::default())
+        .manage(links::PendingReview::default())
         .setup(|app| {
-            if let Some(urls) = app.deep_link().get_current()?
-                && let Some(proposal) = urls.iter().find_map(|url| proposal_link(url.as_str()))
-            {
-                *app.state::<PendingReview>()
-                    .0
-                    .lock()
-                    .expect("pending review lock") = Some(proposal);
-            }
-            let handle = app.handle().clone();
-            app.deep_link().on_open_url(move |event| {
-                if let Some(proposal) = event
-                    .urls()
-                    .iter()
-                    .find_map(|url| proposal_link(url.as_str()))
-                {
-                    *handle
-                        .state::<PendingReview>()
-                        .0
-                        .lock()
-                        .expect("pending review lock") = Some(proposal.clone());
-                    let _ = handle.emit("stemma:open-review", proposal);
-                }
-            });
+            links::listen(app.handle())?;
             engine::start(app.handle());
             live::start(app.handle());
             setup::repair_at_launch(app.handle());
@@ -116,7 +91,7 @@ pub fn run() {
             reviews::apply_proposal,
             reviews::handoff_proposal,
             reviews::line_history,
-            take_open_review,
+            links::take_open_review,
             vault::vault,
             vault::vault_admit,
             vault::vault_bridge,
@@ -126,40 +101,24 @@ pub fn run() {
         .expect("the Stemma application could not start");
 }
 
-#[derive(Default)]
-struct PendingReview(Mutex<Option<String>>);
-
-/// A pending link opened before the webview began listening.
-#[tauri::command]
-fn take_open_review(state: tauri::State<'_, PendingReview>) -> Option<String> {
-    state.0.lock().expect("pending review lock").take()
-}
-
-fn proposal_link(url: &str) -> Option<String> {
-    let id = url
-        .strip_prefix("stemma://proposal/")?
-        .trim_end_matches('/');
-    id.parse::<stemma_core::id::ProposalId>()
-        .ok()
-        .map(|id| id.to_string())
-}
-
 /// The client's home, as the command line would locate it.
 fn home() -> Home {
     Home::locate(&Environment::from_process())
 }
 
-/// An error as the webview shows it.
+/// An error as the webview shows it, for errors that carry no context:
+/// reading a file, parsing what the webview sent.
 fn said(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 
-/// An `anyhow` error with its whole chain of context.
+/// An error from the client library, with its whole chain of context.
 ///
 /// An error with a remedy loses the command the command line would name,
 /// and is marked instead as `remedy:<slug>:`, which the webview turns into
 /// the button that does the same.
-fn failed(error: anyhow::Error) -> String {
+fn failed(error: impl Into<anyhow::Error>) -> String {
+    let error = error.into();
     let Some(remedy) = stemma::remedy::Remedy::of(&error) else {
         return format!("{error:#}");
     };
@@ -202,7 +161,7 @@ mod tests {
     use anyhow::Context;
     use stemma::remedy::Remedy;
 
-    use super::{failed, proposal_link};
+    use super::failed;
 
     #[test]
     fn an_error_with_a_remedy_names_its_button_and_not_a_command() {
@@ -218,13 +177,14 @@ mod tests {
     }
 
     #[test]
-    fn only_proposal_links_open_a_review() {
-        let id = "prp:01K5YQ4TQ2VZ8H3M9N0P1R2S3T";
+    fn an_error_keeps_its_whole_chain_of_context() {
+        let error = Err::<(), _>(anyhow::anyhow!("connection refused"))
+            .context("cannot reach stemma.example.org")
+            .unwrap_err();
+
         assert_eq!(
-            proposal_link(&format!("stemma://proposal/{id}")),
-            Some(id.to_owned())
+            failed(error),
+            "cannot reach stemma.example.org: connection refused"
         );
-        assert!(proposal_link("stemma://settings").is_none());
-        assert!(proposal_link("stemma://proposal/anything").is_none());
     }
 }
