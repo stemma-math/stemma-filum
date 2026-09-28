@@ -50,6 +50,11 @@ pub struct Which {
 }
 
 /// One revision of one line.
+///
+/// A line that was its author's before it was shared keeps the revisions
+/// it had then, and those stay its author's: sharing hands the group the
+/// line as it stands, and whatever history travelled with it did so by
+/// the author's choice, not to everybody who can ask for a number.
 pub async fn read(
     State(instance): State<Instance>,
     credential: Credential,
@@ -63,6 +68,7 @@ pub async fn read(
     let revision = instance
         .read(move |connection| revisions::at(connection, &at, number))
         .await?
+        .filter(|revision| revision.side == Side::Shared || line.author == credential.user.id)
         .ok_or(WebError::NotFound)?;
 
     Ok(Json(revision_json(&line, &revision)).into_response())
