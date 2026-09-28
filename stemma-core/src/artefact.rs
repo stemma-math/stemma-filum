@@ -10,9 +10,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::id::{GroupId, UserId};
+use crate::id::{BlockId, GroupId, UserId};
 use crate::line::BlackBox;
-use crate::line::Siglum;
 use crate::line::{Line, Name};
 use crate::model::Verification;
 use crate::repository::Side;
@@ -149,7 +148,41 @@ pub struct LineDigest {
     pub revision: Option<u64>,
 }
 
-/// Reconstructible output of checking one line's Lean module.
+/// One declaration the Stemma extractor linked to a block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FormalDeclaration {
+    /// Its fully qualified Lean name.
+    pub name: String,
+    /// The module that defines it.
+    pub module: String,
+    /// Its statement, as Lean printed it.
+    pub statement: String,
+    /// Whether no `sorry` occurs through its proof dependencies.
+    pub sorry_free: bool,
+    /// The axioms its proof uses.
+    pub axioms: Vec<String>,
+    /// Other marked declarations reached through unmarked declarations.
+    pub reaches: Vec<String>,
+    /// The SHA-256 fingerprint of its transitive statement closure.
+    pub statement_closure: String,
+}
+
+/// What checking established for one stable block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockCheck {
+    /// The block this result belongs to.
+    pub block: BlockId,
+    /// Whether the formal work verifies or refutes it, or establishes neither.
+    pub state: Verification,
+    /// What prevented a result, empty for a verified or refuted block.
+    #[serde(default)]
+    pub diagnostic: String,
+    /// The declarations carrying this block's mark.
+    #[serde(default)]
+    pub declarations: Vec<FormalDeclaration>,
+}
+
+/// Reconstructible output of checking a line against its group's library.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeanDigest {
     /// The exact Lean release that ran.
@@ -158,19 +191,21 @@ pub struct LeanDigest {
     pub mathlib: String,
     /// Whether the complete module compiled.
     pub compiled: bool,
-    /// Stable statement identifiers declared by the module as verified.
-    pub statements: Vec<Siglum>,
+    /// Results keyed by stable block identity.
+    #[serde(default)]
+    pub blocks: Vec<BlockCheck>,
     /// A short compiler diagnostic, empty after a clean run.
     pub diagnostic: String,
 }
 
 impl LeanDigest {
-    /// The verification condition of a statement under this result.
-    pub fn verification_of(&self, statement: &Siglum) -> Verification {
-        match self.compiled && self.statements.contains(statement) {
-            true => Verification::Verified,
-            false => Verification::Unverified,
-        }
+    /// The verification condition of a block under this result.
+    pub fn verification_of(&self, block: &BlockId) -> Verification {
+        self.blocks
+            .iter()
+            .find(|result| &result.block == block)
+            .map(|result| result.state)
+            .unwrap_or(Verification::Unverified)
     }
 
     /// Whether every statement inside a non-empty black box compiled.
@@ -180,7 +215,7 @@ impl LeanDigest {
             && black_box
                 .interior
                 .iter()
-                .all(|statement| self.statements.contains(statement))
+                .all(|block| self.verification_of(block) == Verification::Verified)
     }
 }
 

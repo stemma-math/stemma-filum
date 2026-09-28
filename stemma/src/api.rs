@@ -177,6 +177,9 @@ pub struct AcceptedProposal {
     /// Complete accepted Lean module, when formal work changed.
     #[serde(default)]
     pub lean_source: Option<String>,
+    /// Per-file change to the group's Lake package, when formal work changed it.
+    #[serde(default)]
+    pub library_change: Option<stemma_core::proposal::LibraryChange>,
     /// Group whose clone holds it.
     pub group: String,
     /// Shared or private repository.
@@ -379,6 +382,9 @@ pub struct Offered {
     pub source: String,
     /// The Lean module beside it, when formal work changed.
     pub lean_source: Option<String>,
+    /// Per-file change to the group's Lake package, when formal work changed it.
+    #[serde(default)]
+    pub library_change: Option<stemma_core::proposal::LibraryChange>,
     /// What the instance checked before a person was asked.
     pub findings: Vec<String>,
 }

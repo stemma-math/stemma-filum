@@ -309,10 +309,11 @@ pub async fn admit(
             WebError::BadRequest("Build and publish the shared repository first.".to_owned())
         })?;
     let verified = nodes.lines.iter().any(|line| {
-        line.line.node(&siglum).is_some()
-            && line.lean.as_ref().is_some_and(|lean| {
-                lean.verification_of(&siglum) == stemma_core::model::Verification::Verified
+        line.line.node(&siglum).is_some_and(|node| {
+            line.lean.as_ref().is_some_and(|lean| {
+                lean.verification_of(&node.block) == stemma_core::model::Verification::Verified
             })
+        })
     });
     if !verified {
         return Err(WebError::BadRequest(
@@ -623,10 +624,11 @@ async fn require_published_verification(
             WebError::BadRequest("Build and publish the shared repository first.".to_owned())
         })?;
     let verified = nodes.lines.iter().any(|line| {
-        line.line.node(siglum).is_some()
-            && line.lean.as_ref().is_some_and(|lean| {
-                lean.verification_of(siglum) == stemma_core::model::Verification::Verified
+        line.line.node(siglum).is_some_and(|node| {
+            line.lean.as_ref().is_some_and(|lean| {
+                lean.verification_of(&node.block) == stemma_core::model::Verification::Verified
             })
+        })
     });
     if verified {
         Ok(())

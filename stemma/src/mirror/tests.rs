@@ -551,6 +551,7 @@ fn accepted(document: &Document, revision: u64) -> AcceptedProposal {
     AcceptedProposal {
         source: document.to_text(),
         lean_source: None,
+        library_change: None,
         group: "algebra".to_owned(),
         side: "shared".to_owned(),
         line: "quotients".to_owned(),

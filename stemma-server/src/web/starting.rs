@@ -332,7 +332,7 @@ async fn moved(
     let (group_id, author, moving) = (group.id.clone(), who.id.clone(), name.clone());
     let (author_name, author_email) = (who.display_name.clone(), who.email.clone());
 
-    instance
+    let library_commit = instance
         .writing_git(move |repositories| {
             let ours = repositories.shared(&group_id);
             let theirs = repositories.personal(&group_id, &author);
@@ -340,17 +340,21 @@ async fn moved(
             // The group receives it first, so nothing can be lost
             // between the two commits.
             crate::git::bring_line(&ours, &theirs, &moving, history)?;
+            let author = crate::git::Author {
+                name: &author_name,
+                email: &author_email,
+            };
+            let moved = crate::git::bring_line_library(&ours, &theirs, &moving, &author)?;
             crate::git::drop_line(
                 &theirs,
                 &moving,
-                &crate::git::Author {
-                    name: &author_name,
-                    email: &author_email,
-                },
+                &author,
                 &format!("Move {moving} to the group"),
             )?;
 
-            Ok(())
+            Ok((!moved.is_empty())
+                .then(|| crate::git::head_commit(&ours))
+                .flatten())
         })
         .await?;
 
@@ -358,6 +362,18 @@ async fn moved(
         .write(move |connection| {
             let shared = lines::share(connection, &line.id, writing)?;
             lines::committed(connection, &shared.id, shared.revision)?;
+            if let Some(commit) = &library_commit {
+                crate::store::events::publish(
+                    connection,
+                    crate::store::events::Audience::Group(&shared.group),
+                    &stemma_core::event::Event::Library {
+                        group: shared.group.slug().as_str().to_owned(),
+                        side: Side::Shared,
+                        commit: commit.clone(),
+                        change: stemma_core::event::LibraryChange::Shared,
+                    },
+                )?;
+            }
 
             Ok(shared)
         })

@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::id::BlockId;
+use crate::model::Verification;
 use crate::repository::Side;
 
 /// The header a client names the last event it saw in, when it reconnects.
@@ -71,6 +73,35 @@ pub enum Event {
         /// The machine's identifier.
         machine: String,
     },
+    /// A group's Lake package changed on the instance.
+    Library {
+        /// The group's short name.
+        group: String,
+        /// Which package changed.
+        side: Side,
+        /// The commit it is at.
+        commit: String,
+        /// What kind of change caused it.
+        change: LibraryChange,
+    },
+    /// A machine published the formal result for one block revision.
+    Check {
+        /// The group's short name.
+        group: String,
+        /// Which repository contains the line.
+        side: Side,
+        /// The line's name.
+        line: String,
+        /// The line revision this result checks.
+        revision: u64,
+        /// The stable block checked.
+        block: BlockId,
+        /// What Lean established.
+        state: Verification,
+        /// Why neither verification nor refutation was established.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        diagnostic: String,
+    },
     /// The reader was away too long for the events it missed to be kept:
     /// everything should be asked for again.
     Reset,
@@ -112,6 +143,18 @@ pub enum GroupChange {
     Joined,
 }
 
+/// What changed in a Lake package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibraryChange {
+    /// A person approved an agent's file changes.
+    Written,
+    /// An admin changed package or toolchain pins.
+    PinsChanged,
+    /// A private line's formal dependencies moved into the shared package.
+    Shared,
+}
+
 impl Event {
     /// The word the event is filed under.
     pub fn kind(&self) -> &'static str {
@@ -122,6 +165,8 @@ impl Event {
             Self::Job { .. } => "job",
             Self::Proposal { .. } => "proposal",
             Self::Machine { .. } => "machine",
+            Self::Library { .. } => "library",
+            Self::Check { .. } => "check",
             Self::Reset => "reset",
         }
     }

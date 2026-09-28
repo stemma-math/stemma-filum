@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use crate::agent::{AgentFailure, Attempt};
 use crate::fact::{Fact, FactKind};
 use crate::id::{BlockId, IdError, MachineId};
-use crate::line::{BadSiglum, Siglum};
 
 /// What a job asks an agent to do, and where its answer belongs.
 ///
@@ -34,39 +33,39 @@ pub enum Task {
     /// Fill the black box that follows a statement — or the line's first
     /// box, which follows none.
     Fill {
-        /// The statement the box comes after.
-        after: Option<Siglum>,
+        /// The central block the box comes after.
+        after: Option<BlockId>,
     },
     /// Look for a counterexample to a statement.
     Refute {
-        /// The statement to attack.
-        statement: Siglum,
+        /// The statement block to attack.
+        block: BlockId,
     },
     /// Formalize one statement in Lean.
     Formalize {
-        /// The statement whose prose is to receive a formal counterpart.
-        statement: Siglum,
+        /// The statement block whose prose is to receive a formal counterpart.
+        block: BlockId,
     },
     /// Verify the Lean argument for one black box.
     Verify {
-        /// The statement after which the box begins, if any.
-        after: Option<Siglum>,
+        /// The central block after which the box begins, if any.
+        after: Option<BlockId>,
     },
     /// Promote an interior statement so it becomes a frozen box boundary.
     Promote {
-        /// The lemma or proposition to move out of its box.
-        statement: Siglum,
+        /// The lemma or proposition block to move out of its box.
+        block: BlockId,
     },
     /// Write, or finish, the proof of a statement.
     Prove {
-        /// The statement whose proof block is to be written.
-        statement: Siglum,
+        /// The statement block whose proof is to be written.
+        block: BlockId,
     },
     /// Rewrite a statement that is not central so that it is correct and
     /// precise, keeping what it means.
     Rewrite {
-        /// The statement to rewrite.
-        statement: Siglum,
+        /// The statement block to rewrite.
+        block: BlockId,
     },
     /// Turn a prose block into the mathematics it describes: definitions,
     /// statements and proofs that bridge what comes before and after it.
@@ -110,15 +109,15 @@ impl Task {
     }
 
     /// The statement the work hangs off, when it hangs off one.
-    pub fn anchor(&self) -> Option<&Siglum> {
+    pub fn anchor(&self) -> Option<&BlockId> {
         match self {
             Self::Fill { after } => after.as_ref(),
-            Self::Refute { statement } => Some(statement),
-            Self::Formalize { statement } => Some(statement),
+            Self::Refute { block } => Some(block),
+            Self::Formalize { block } => Some(block),
             Self::Verify { after } => after.as_ref(),
-            Self::Promote { statement } => Some(statement),
-            Self::Prove { statement } => Some(statement),
-            Self::Rewrite { statement } => Some(statement),
+            Self::Promote { block } => Some(block),
+            Self::Prove { block } => Some(block),
+            Self::Rewrite { block } => Some(block),
             Self::Develop { .. } | Self::Explore | Self::Reconcile | Self::Build => None,
         }
     }
@@ -137,13 +136,13 @@ impl fmt::Display for Task {
         match self {
             Self::Fill { after: None } => f.write_str("fill"),
             Self::Fill { after: Some(node) } => write!(f, "fill@{node}"),
-            Self::Refute { statement } => write!(f, "refute@{statement}"),
-            Self::Formalize { statement } => write!(f, "formalize@{statement}"),
+            Self::Refute { block } => write!(f, "refute@{block}"),
+            Self::Formalize { block } => write!(f, "formalize@{block}"),
             Self::Verify { after: None } => f.write_str("verify"),
             Self::Verify { after: Some(node) } => write!(f, "verify@{node}"),
-            Self::Promote { statement } => write!(f, "promote@{statement}"),
-            Self::Prove { statement } => write!(f, "prove@{statement}"),
-            Self::Rewrite { statement } => write!(f, "rewrite@{statement}"),
+            Self::Promote { block } => write!(f, "promote@{block}"),
+            Self::Prove { block } => write!(f, "prove@{block}"),
+            Self::Rewrite { block } => write!(f, "rewrite@{block}"),
             Self::Develop { block } => write!(f, "develop@{block}"),
             Self::Explore => f.write_str("explore"),
             Self::Reconcile => f.write_str("reconcile"),
@@ -161,9 +160,6 @@ pub enum BadTask {
     /// The verb needs a statement to hang off and has none.
     #[error("`{0}` has to name the statement it is about")]
     Unanchored(String),
-    /// What it hangs off is not a siglum.
-    #[error(transparent)]
-    Siglum(#[from] BadSiglum),
     /// What it hangs off is not a block.
     #[error(transparent)]
     Block(#[from] IdError),
@@ -184,26 +180,26 @@ impl FromStr for Task {
             ("fill", after) => Ok(Self::Fill {
                 after: after.map(str::parse).transpose()?,
             }),
-            ("refute", Some(statement)) => Ok(Self::Refute {
-                statement: statement.parse()?,
+            ("refute", Some(block)) => Ok(Self::Refute {
+                block: block.parse()?,
             }),
             ("refute", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("formalize", Some(statement)) => Ok(Self::Formalize {
-                statement: statement.parse()?,
+            ("formalize", Some(block)) => Ok(Self::Formalize {
+                block: block.parse()?,
             }),
             ("formalize", None) => Err(BadTask::Unanchored(input.to_owned())),
             ("verify", after) => Ok(Self::Verify {
                 after: after.map(str::parse).transpose()?,
             }),
-            ("promote", Some(statement)) => Ok(Self::Promote {
-                statement: statement.parse()?,
+            ("promote", Some(block)) => Ok(Self::Promote {
+                block: block.parse()?,
             }),
             ("promote", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("prove", Some(statement)) => Ok(Self::Prove {
-                statement: statement.parse()?,
+            ("prove", Some(block)) => Ok(Self::Prove {
+                block: block.parse()?,
             }),
-            ("rewrite", Some(statement)) => Ok(Self::Rewrite {
-                statement: statement.parse()?,
+            ("rewrite", Some(block)) => Ok(Self::Rewrite {
+                block: block.parse()?,
             }),
             ("develop", Some(block)) => Ok(Self::Develop {
                 block: block.parse()?,
@@ -451,8 +447,8 @@ mod tests {
     use super::*;
     use crate::id::Slug;
 
-    fn statement() -> Siglum {
-        "thm:main".parse().unwrap()
+    fn block() -> BlockId {
+        "blk:01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().unwrap()
     }
 
     #[test]
@@ -460,27 +456,17 @@ mod tests {
         for task in [
             Task::Fill { after: None },
             Task::Fill {
-                after: Some(statement()),
+                after: Some(block()),
             },
-            Task::Refute {
-                statement: statement(),
-            },
-            Task::Formalize {
-                statement: statement(),
-            },
+            Task::Refute { block: block() },
+            Task::Formalize { block: block() },
             Task::Verify {
-                after: Some(statement()),
+                after: Some(block()),
             },
             Task::Verify { after: None },
-            Task::Promote {
-                statement: statement(),
-            },
-            Task::Prove {
-                statement: statement(),
-            },
-            Task::Rewrite {
-                statement: statement(),
-            },
+            Task::Promote { block: block() },
+            Task::Prove { block: block() },
+            Task::Rewrite { block: block() },
             Task::Develop {
                 block: BlockId::generate(),
             },
@@ -491,18 +477,12 @@ mod tests {
 
         assert_eq!(Task::Fill { after: None }.to_string(), "fill");
         assert_eq!(
-            Task::Refute {
-                statement: statement()
-            }
-            .to_string(),
-            "refute@thm:main"
+            Task::Refute { block: block() }.to_string(),
+            "refute@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV"
         );
         assert_eq!(
-            Task::Formalize {
-                statement: statement()
-            }
-            .to_string(),
-            "formalize@thm:main"
+            Task::Formalize { block: block() }.to_string(),
+            "formalize@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV"
         );
     }
 

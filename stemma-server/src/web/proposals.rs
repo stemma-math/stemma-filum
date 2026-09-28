@@ -9,6 +9,7 @@
 //! can see at a glance that the statements the line rests on are where
 //! they were.
 
+use anyhow::Context;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Json, Redirect, Response};
 use maud::{Markup, html};
@@ -241,6 +242,14 @@ fn findings(proposal: &proposals::Proposal, stands: Option<&str>) -> Vec<String>
     if proposal.lean_source.is_some() {
         found.push("Lean accepted the complete module on the machine that ran it".to_owned());
     }
+    if let Some(change) = &proposal.library_change {
+        found.push(format!(
+            "the approved library change is based on {} and touches {} file{}",
+            change.base,
+            change.files.len(),
+            if change.files.len() == 1 { "" } else { "s" }
+        ));
+    }
 
     found
 }
@@ -284,13 +293,85 @@ async fn settle(
     let by = by.clone();
     let id = *id;
 
+    let library_commit = if accept {
+        let by_for_read = by.clone();
+        let proposal = instance
+            .read(move |connection| {
+                let proposal =
+                    proposals::by_id(connection, &id)?.context("the proposal does not exist")?;
+                if proposal.state != "awaiting_review" || proposal.job.launched_by != by_for_read {
+                    anyhow::bail!("the proposal is not awaiting this person's review");
+                }
+                let user = crate::store::users::by_id(connection, &proposal.job.launched_by)?
+                    .context("the reviewer does not exist")?;
+                Ok((proposal, user))
+            })
+            .await
+            .map_err(|_| WebError::NotFound)?;
+        match proposal.0.library_change.clone() {
+            None => None,
+            Some(change) => {
+                let group = proposal.0.job.group.clone();
+                let owner = proposal.0.job.launched_by.clone();
+                let side = proposal.0.job.side;
+                let name = proposal.1.display_name.clone();
+                let email = proposal.1.email.clone();
+                let written = instance
+                    .writing_git(move |repositories| {
+                        let path = match side {
+                            stemma_core::repository::Side::Shared => repositories.shared(&group),
+                            stemma_core::repository::Side::Private => {
+                                repositories.personal(&group, &owner)
+                            }
+                        };
+                        crate::git::write_approved_library(
+                            &path,
+                            &change.base,
+                            &change.files,
+                            &crate::git::Author {
+                                name: &name,
+                                email: &email,
+                            },
+                        )
+                    })
+                    .await?;
+                match written {
+                    crate::git::LibraryWritten::Taken(commit) => Some(commit),
+                    crate::git::LibraryWritten::Conflicted(files) => {
+                        return Err(WebError::BadRequest(format!(
+                            "The library changed in these files since the agent worked: {}. Ask the agent to bring the changes together.",
+                            files.join(", ")
+                        )));
+                    }
+                }
+            }
+        }
+    } else {
+        None
+    };
+
+    let by_for_write = by.clone();
+
     let settled = instance
         .write(move |c| {
             let Some(proposal) = proposals::by_id(c, &id)? else {
                 return Ok(false);
             };
-            if !proposals::decide(c, &id, &by, accept)? {
+            if !proposals::decide(c, &id, &by_for_write, accept)? {
                 return Ok(false);
+            }
+            if let Some(commit) = &library_commit {
+                proposals::library_applied(c, &id, commit)?;
+                crate::store::events::publish(
+                    c,
+                    crate::store::events::Audience::Group(&proposal.job.group),
+                    &stemma_core::event::Event::Library {
+                        group: proposal.job.group.slug().as_str().to_owned(),
+                        side: proposal.job.side,
+                        commit: commit.clone(),
+                        change: stemma_core::event::LibraryChange::Written,
+                    },
+                )?;
             }
 
             // Asking again is not a third state: the proposal is
@@ -308,7 +389,7 @@ async fn settle(
                         task: proposal.job.task,
                         agent: proposal.job.agent,
                         choice: proposal.job.choice,
-                        by,
+                        by: by_for_write,
                     },
                 )?;
             }
@@ -385,6 +466,7 @@ pub async fn offered(
         "stands": stands,
         "source": proposal.source,
         "lean_source": proposal.lean_source,
+        "library_change": proposal.library_change,
         "findings": findings(&proposal, stands.as_deref()),
     }))
     .into_response())
@@ -431,6 +513,7 @@ pub async fn accepted(
     Ok(Json(json!({
         "source": proposal.source,
         "lean_source": proposal.lean_source,
+        "library_change": proposal.library_change,
         "group": proposal.job.group.slug().as_str(),
         "side": proposal.job.side.as_str(),
         "line": proposal.job.line.as_str(),

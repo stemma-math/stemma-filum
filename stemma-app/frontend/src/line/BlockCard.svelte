@@ -85,7 +85,7 @@
   const diagnostics = $derived(line.diagnosticsOf(block.id));
   const selected = $derived(line.selected.has(block.id));
   const offered = $derived(line.document ? tasksFor(line.document, block, (id) => line.nodeOf(id)) : []);
-  const verified = $derived(statement && node ? line.verified.has(node.siglum) : false);
+  const verified = $derived(statement ? line.verified.has(block.id) : false);
   const count = $derived(line.document?.blocks.length ?? 0);
 
   let asking = $state(false);

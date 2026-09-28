@@ -85,11 +85,15 @@ const MIGRATIONS: &[Migration] = &[
     },
     Migration {
         name: "revisions",
-        sql: include_str!("../migrations/0014-revisions.sql"),
+        sql: include_str!("../migrations/0015-revisions.sql"),
     },
     Migration {
         name: "builds",
-        sql: include_str!("../migrations/0015-builds.sql"),
+        sql: include_str!("../migrations/0016-builds.sql"),
+    },
+    Migration {
+        name: "lean-libraries",
+        sql: include_str!("../migrations/0017-lean-libraries.sql"),
     },
 ];
 

@@ -4,29 +4,54 @@
 //! the Typst source and publishes only this reconstructible digest. Compiler
 //! output remains local, just like an agent's raw output.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::Command;
 
 use anyhow::{Context, Result};
-use stemma_core::artefact::LeanDigest;
+use serde::Deserialize;
+use stemma_core::artefact::{BlockCheck, FormalDeclaration, LeanDigest};
+use stemma_core::id::BlockId;
 use stemma_core::line::{Name, Siglum};
+use stemma_core::model::Verification;
 use stemma_core::repository::{self, Pins};
 
 const MARKER: &str = "-- stemma: verifies ";
 
 /// Checks a line when it has a Lean module.
 pub fn check(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<LeanDigest>> {
-    let module = repository::line_lean_entry(clone, line);
-    if !module.is_file() {
+    if !has_lean_sources(clone) {
         return Ok(None);
     }
 
     let Some(lean) = pins.lean.as_deref() else {
-        return Ok(Some(refused("Lean is not pinned for this group", pins)));
+        return Ok(Some(refused(
+            clone,
+            line,
+            "Lean is not pinned for this group",
+            pins,
+        )));
     };
     let Some(mathlib) = pins.mathlib.as_deref() else {
-        return Ok(Some(refused("Mathlib is not pinned for this group", pins)));
+        return Ok(Some(refused(
+            clone,
+            line,
+            "Mathlib is not pinned for this group",
+            pins,
+        )));
     };
+
+    if !elan_is_installed() {
+        return Ok(Some(refused(
+            clone,
+            line,
+            "Lean checking needs elan. Install it from https://lean-lang.org/lean4/doc/quickstart.html, then sync again",
+            pins,
+        )));
+    }
+    if let Err(reason) = prepare_environment(clone, lean, mathlib) {
+        return Ok(Some(refused(clone, line, &reason, pins)));
+    }
 
     let installed = installed_version(clone);
     if installed.as_deref() != Some(lean) {
@@ -34,45 +59,326 @@ pub fn check(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<LeanDigest
             Some(found) => format!("Lean {lean} is pinned but Lean {found} is installed"),
             None => format!("Lean {lean} is pinned but is not available through Lake"),
         };
-        return Ok(Some(LeanDigest {
-            lean: lean.to_owned(),
-            mathlib: mathlib.to_owned(),
-            compiled: false,
-            statements: Vec::new(),
-            diagnostic,
-        }));
+        return Ok(Some(refused(clone, line, &diagnostic, pins)));
     }
 
     if let Err(reason) = check_mathlib(clone, mathlib) {
-        return Ok(Some(refused(&reason, pins)));
+        return Ok(Some(refused(clone, line, &reason, pins)));
     }
-
+    let modules = modules_in(clone)?;
+    if modules.is_empty() {
+        return Ok(None);
+    }
     let output = Command::new("lake")
         .current_dir(clone)
-        .args(["env", "lean"])
-        .arg(&module)
+        .arg("build")
         .output()
-        .with_context(|| format!("cannot run Lean for {}", module.display()))?;
-    let compiled = output.status.success();
-    let diagnostic = if compiled {
-        String::new()
-    } else {
-        concise(&String::from_utf8_lossy(&output.stderr))
-    };
-    let source = std::fs::read_to_string(&module)
-        .with_context(|| format!("cannot read {}", module.display()))?;
+        .with_context(|| format!("cannot build the Lean library in {}", clone.display()))?;
+    if !output.status.success() {
+        return Ok(Some(refused(
+            clone,
+            line,
+            &concise(&String::from_utf8_lossy(&output.stderr)),
+            pins,
+        )));
+    }
+
+    let mut report = extract(clone, &modules, &known_blocks(clone)?)?;
+    let prefix = format!("{}/", line.as_str());
+    let mut blocks = Vec::new();
+    for mark in std::mem::take(&mut report.marks) {
+        let Some(written) = mark.block.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Ok(block) = written.parse::<BlockId>() else {
+            continue;
+        };
+        blocks.push(classify(block, mark.declarations));
+    }
+    let line_entry = repository::line_entry(clone, line);
+    if let Ok(source) = std::fs::read_to_string(&line_entry)
+        && let Ok(document) = stemma_core::document::Document::parse(&source)
+    {
+        for block in document
+            .blocks
+            .iter()
+            .filter(|block| block.statement().is_some())
+        {
+            if !blocks.iter().any(|result| &result.block == block.id()) {
+                blocks.push(BlockCheck {
+                    block: *block.id(),
+                    state: Verification::Unverified,
+                    diagnostic: "no Lean declaration is marked for this block".to_owned(),
+                    declarations: Vec::new(),
+                });
+            }
+        }
+    }
+    blocks.sort_by_key(|result| result.block);
 
     Ok(Some(LeanDigest {
         lean: lean.to_owned(),
         mathlib: mathlib.to_owned(),
-        compiled,
-        statements: if compiled {
-            markers(&source)
-        } else {
-            Vec::new()
-        },
-        diagnostic,
+        compiled: true,
+        blocks,
+        diagnostic: broken_for(&report, &prefix),
     }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractorReport {
+    marks: Vec<ExtractedMark>,
+    #[serde(default)]
+    broken_marks: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExtractedMark {
+    block: String,
+    declarations: Vec<ExtractedDeclaration>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractedDeclaration {
+    name: String,
+    module: String,
+    statement: String,
+    sorry_free: bool,
+    axioms: Vec<String>,
+    reaches: Vec<String>,
+    statement_closure: String,
+}
+
+impl From<ExtractedDeclaration> for FormalDeclaration {
+    fn from(found: ExtractedDeclaration) -> Self {
+        Self {
+            name: found.name,
+            module: found.module,
+            statement: found.statement,
+            sorry_free: found.sorry_free,
+            axioms: found.axioms,
+            reaches: found.reaches,
+            statement_closure: found.statement_closure,
+        }
+    }
+}
+
+const ALLOWED_AXIOMS: [&str; 3] = ["propext", "Classical.choice", "Quot.sound"];
+
+fn classify(block: BlockId, declarations: Vec<ExtractedDeclaration>) -> BlockCheck {
+    let sound = |declaration: &ExtractedDeclaration| {
+        declaration.sorry_free
+            && declaration
+                .axioms
+                .iter()
+                .all(|axiom| ALLOWED_AXIOMS.contains(&axiom.as_str()))
+    };
+    let verified: Vec<_> = declarations
+        .iter()
+        .filter(|declaration| sound(declaration))
+        .collect();
+    let refuted = verified
+        .iter()
+        .any(|declaration| is_negation(&declaration.statement));
+    let state = if refuted {
+        Verification::Refuted
+    } else if !verified.is_empty() {
+        Verification::Verified
+    } else {
+        Verification::Unverified
+    };
+    let diagnostic = if state != Verification::Unverified {
+        String::new()
+    } else if declarations
+        .iter()
+        .any(|declaration| !declaration.sorry_free)
+    {
+        "the marked declaration depends on `sorry`".to_owned()
+    } else {
+        let disallowed: BTreeSet<_> = declarations
+            .iter()
+            .flat_map(|declaration| &declaration.axioms)
+            .filter(|axiom| !ALLOWED_AXIOMS.contains(&axiom.as_str()))
+            .cloned()
+            .collect();
+        match disallowed.is_empty() {
+            true => "no verified declaration is marked for this block".to_owned(),
+            false => format!(
+                "the marked declaration uses disallowed axioms: {}",
+                disallowed.into_iter().collect::<Vec<_>>().join(", ")
+            ),
+        }
+    };
+
+    BlockCheck {
+        block,
+        state,
+        diagnostic,
+        declarations: declarations.into_iter().map(Into::into).collect(),
+    }
+}
+
+fn is_negation(statement: &str) -> bool {
+    let statement = statement.trim_start_matches(|character: char| {
+        character.is_whitespace() || matches!(character, '(' | '{' | '[')
+    });
+    statement.starts_with("Not ") || statement.starts_with('¬')
+}
+
+fn extract(clone: &Path, modules: &[String], blocks: &[String]) -> Result<ExtractorReport> {
+    let directory = clone.join(".stemma/check");
+    std::fs::create_dir_all(&directory)
+        .with_context(|| format!("cannot create {}", directory.display()))?;
+    let list = directory.join("blocks.json");
+    std::fs::write(&list, serde_json::to_vec(blocks)?)
+        .with_context(|| format!("cannot write {}", list.display()))?;
+    let mut command = Command::new("lake");
+    command
+        .current_dir(clone)
+        .args(["exe", "stemma-extract", "--", "--blocks"])
+        .arg(&list)
+        .args(modules);
+    let output = command
+        .output()
+        .with_context(|| "cannot run the Stemma Lean extractor")?;
+    if !output.status.success() {
+        anyhow::bail!(concise(&String::from_utf8_lossy(&output.stderr)));
+    }
+    serde_json::from_slice(&output.stdout)
+        .context("the Stemma Lean extractor returned unreadable JSON")
+}
+
+fn broken_for(report: &ExtractorReport, prefix: &str) -> String {
+    let broken: Vec<_> = report
+        .broken_marks
+        .iter()
+        .filter(|mark| mark.starts_with(prefix))
+        .cloned()
+        .collect();
+    match broken.is_empty() {
+        true => String::new(),
+        false => format!("unknown block marks: {}", broken.join(", ")),
+    }
+}
+
+fn has_lean_sources(clone: &Path) -> bool {
+    modules_in(clone).is_ok_and(|modules| !modules.is_empty())
+}
+
+fn modules_in(clone: &Path) -> Result<Vec<String>> {
+    fn visit(root: &Path, at: &Path, found: &mut Vec<String>) -> Result<()> {
+        for entry in
+            std::fs::read_dir(at).with_context(|| format!("cannot read {}", at.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path.strip_prefix(root).unwrap_or(&path);
+            if relative.starts_with(".lake")
+                || relative.starts_with(".stemma")
+                || relative.starts_with(repository::LINES)
+            {
+                continue;
+            }
+            if entry.file_type()?.is_dir() {
+                visit(root, &path, found)?;
+            } else if path.extension().and_then(|extension| extension.to_str()) == Some("lean")
+                && path.file_name().and_then(|name| name.to_str()) != Some("lakefile.lean")
+            {
+                let mut module = relative
+                    .with_extension("")
+                    .to_string_lossy()
+                    .replace(['/', '\\'], ".");
+                if module.ends_with(".Main") {
+                    module.truncate(module.len() - ".Main".len());
+                }
+                found.push(module);
+            }
+        }
+        Ok(())
+    }
+    let mut found = Vec::new();
+    visit(clone, clone, &mut found)?;
+    found.sort();
+    found.dedup();
+    Ok(found)
+}
+
+fn known_blocks(clone: &Path) -> Result<Vec<String>> {
+    let mut found = Vec::new();
+    let lines = clone.join(repository::LINES);
+    let Ok(entries) = std::fs::read_dir(&lines) else {
+        return Ok(found);
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Ok(source) = std::fs::read_to_string(entry.path().join(repository::ENTRY)) else {
+            continue;
+        };
+        let Ok(document) = stemma_core::document::Document::parse(&source) else {
+            continue;
+        };
+        found.extend(
+            document
+                .blocks
+                .iter()
+                .map(|block| format!("{name}/{}", block.id())),
+        );
+    }
+    found.sort();
+    Ok(found)
+}
+
+fn elan_is_installed() -> bool {
+    Command::new("elan")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+}
+
+fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Result<(), String> {
+    set_toolchain(clone, lean).map_err(|error| format!("{error:#}"))?;
+    let update = Command::new("lake")
+        .current_dir(clone)
+        .arg("update")
+        .output()
+        .map_err(|error| format!("cannot prepare the pinned Lake packages: {error}"))?;
+    if !update.status.success() {
+        return Err(concise(&String::from_utf8_lossy(&update.stderr)));
+    }
+
+    let directory = clone.join(".stemma/check");
+    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    let stamp = directory.join("mathlib-cache");
+    if std::fs::read_to_string(&stamp).ok().as_deref() == Some(mathlib) {
+        return Ok(());
+    }
+    let cache = Command::new("lake")
+        .current_dir(clone)
+        .args(["exe", "cache", "get"])
+        .output()
+        .map_err(|error| format!("cannot fetch Mathlib's build cache: {error}"))?;
+    if !cache.status.success() {
+        return Err(format!(
+            "Mathlib's build cache could not be fetched: {}",
+            concise(&String::from_utf8_lossy(&cache.stderr))
+        ));
+    }
+    std::fs::write(stamp, mathlib).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn set_toolchain(clone: &Path, lean: &str) -> Result<()> {
+    let path = clone.join("lean-toolchain");
+    let expected = format!("leanprover/lean4:v{lean}\n");
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(expected.as_str()) {
+        std::fs::write(&path, expected)
+            .with_context(|| format!("cannot set {}", path.display()))?;
+    }
+    Ok(())
 }
 
 /// Checks a proposed complete module before it is allowed to travel.
@@ -122,14 +428,34 @@ pub fn check_offered(
     }
 }
 
-fn refused(reason: &str, pins: &Pins) -> LeanDigest {
+fn refused(clone: &Path, line: &Name, reason: &str, pins: &Pins) -> LeanDigest {
     LeanDigest {
         lean: pins.lean.clone().unwrap_or_default(),
         mathlib: pins.mathlib.clone().unwrap_or_default(),
         compiled: false,
-        statements: Vec::new(),
+        blocks: unchecked_blocks(clone, line, reason),
         diagnostic: reason.to_owned(),
     }
+}
+
+fn unchecked_blocks(clone: &Path, line: &Name, diagnostic: &str) -> Vec<BlockCheck> {
+    let Ok(source) = std::fs::read_to_string(repository::line_entry(clone, line)) else {
+        return Vec::new();
+    };
+    let Ok(document) = stemma_core::document::Document::parse(&source) else {
+        return Vec::new();
+    };
+    document
+        .blocks
+        .iter()
+        .filter(|block| block.statement().is_some())
+        .map(|block| BlockCheck {
+            block: *block.id(),
+            state: Verification::Unverified,
+            diagnostic: diagnostic.to_owned(),
+            declarations: Vec::new(),
+        })
+        .collect()
 }
 
 fn installed_version(clone: &Path) -> Option<String> {
@@ -171,6 +497,7 @@ fn mathlib_revision(clone: &Path) -> Result<Option<String>> {
 fn check_mathlib(clone: &Path, pinned: &str) -> Result<(), String> {
     match mathlib_revision(clone).map_err(|error| format!("{error:#}"))? {
         Some(found) if found == pinned => Ok(()),
+        Some(_) if declares_mathlib_pin(clone, pinned) => Ok(()),
         Some(found) => Err(format!(
             "Mathlib {pinned} is pinned but the Lake manifest has {found}"
         )),
@@ -178,6 +505,16 @@ fn check_mathlib(clone: &Path, pinned: &str) -> Result<(), String> {
             "Mathlib {pinned} is pinned but the Lake manifest does not identify its revision"
         )),
     }
+}
+
+fn declares_mathlib_pin(clone: &Path, pinned: &str) -> bool {
+    let Ok(lakefile) = std::fs::read_to_string(clone.join(repository::LAKEFILE)) else {
+        return false;
+    };
+    let wanted = format!("rev = \"{pinned}\"");
+    lakefile
+        .split("[[require]]")
+        .any(|package| package.contains("name = \"mathlib\"") && package.contains(&wanted))
 }
 
 fn markers(source: &str) -> Vec<Siglum> {
@@ -248,5 +585,43 @@ mod tests {
             version_in(b"Lean (version 4.24.0, arm64-apple-darwin)"),
             Some("4.24.0".to_owned())
         );
+    }
+
+    fn declaration(sorry_free: bool, axioms: &[&str], statement: &str) -> ExtractedDeclaration {
+        ExtractedDeclaration {
+            name: "Algebra.main".to_owned(),
+            module: "Algebra".to_owned(),
+            statement: statement.to_owned(),
+            sorry_free,
+            axioms: axioms.iter().map(|axiom| (*axiom).to_owned()).collect(),
+            reaches: Vec::new(),
+            statement_closure: "sha256:abc".to_owned(),
+        }
+    }
+
+    #[test]
+    fn only_sorry_free_declarations_using_the_allowed_axioms_verify_a_block() {
+        let block = "blk:01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().unwrap();
+        assert_eq!(
+            classify(
+                block,
+                vec![declaration(true, &["Classical.choice"], "True")]
+            )
+            .state,
+            Verification::Verified
+        );
+        let sorry = classify(block, vec![declaration(false, &[], "True")]);
+        assert_eq!(sorry.state, Verification::Unverified);
+        assert!(sorry.diagnostic.contains("sorry"));
+        let axiom = classify(block, vec![declaration(true, &["unsafeAxiom"], "True")]);
+        assert_eq!(axiom.state, Verification::Unverified);
+        assert!(axiom.diagnostic.contains("unsafeAxiom"));
+    }
+
+    #[test]
+    fn a_verified_negation_refutes_its_block() {
+        let block = "blk:01ARZ3NDEKTSV4RRFFQ69G5FAV".parse().unwrap();
+        let result = classify(block, vec![declaration(true, &[], "Not (1 = 2)")]);
+        assert_eq!(result.state, Verification::Refuted);
     }
 }

@@ -351,6 +351,7 @@ fn api() -> Router<Instance> {
         .route("/api/proposals/{id}/review", get(proposals::offered))
         .route("/api/proposals/{id}/decide", post(proposals::api_decide))
         .route("/api/groups/{group}/machines", get(jobs::machine_choices))
+        .route("/api/groups/{group}/pins", post(groups::change_pins))
         .route("/api/groups/{group}/vault", get(vault::api_view))
         .route("/api/groups/{group}/vault/entries", post(vault::api_admit))
         .route("/api/groups/{group}/vault/bridges", post(vault::api_bridge))

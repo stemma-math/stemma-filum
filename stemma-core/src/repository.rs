@@ -26,6 +26,21 @@ pub const ENTRY: &str = "line.json";
 /// The Lean module that formalizes one line.
 pub const LEAN_ENTRY: &str = "Main.lean";
 
+/// Lake's project description at the root of a library mirror.
+pub const LAKEFILE: &str = "lakefile.toml";
+
+/// The toolchain selected by the group's Lean pin.
+pub const LEAN_TOOLCHAIN: &str = "lean-toolchain";
+
+/// Lean used by newly created groups.
+pub const DEFAULT_LEAN: &str = "4.34.1";
+
+/// Mathlib used by newly created groups.
+pub const DEFAULT_MATHLIB: &str = "v4.34.0";
+
+/// The Stemma Lean package used by newly created groups.
+pub const DEFAULT_STEMMA: &str = "v0.1.0";
+
 /// The shape of a repository this build understands.
 pub const FORMAT: u32 = 1;
 
@@ -46,14 +61,9 @@ spelled!(Side, BadSide("`{0}` is not one of a group's repositories") {
 
 /// What the group has pinned.
 ///
-/// Absent means nobody has pinned it yet, which is honest for a group
-/// that has not written anything: a pin somebody never chose would be a
-/// decision made by whichever release happened to create the repository.
-///
-/// `package` is the exception, and is set when the repository is made.
-/// It is not a tool the group goes and installs but Stemma's own
-/// package, and there is no version of it a line could be written
-/// without.
+/// A new shared repository starts from Stemma's supported defaults. Private
+/// repositories omit the Lean pins because they inherit the shared package's
+/// exact environment. `package` is Stemma's Typst package version.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pins {
@@ -63,9 +73,29 @@ pub struct Pins {
     pub lean: Option<String>,
     /// The exact Mathlib revision used by the group's Lake project.
     pub mathlib: Option<String>,
+    /// The release of the Stemma Lean package providing marks and extraction.
+    pub stemma: Option<String>,
+    /// Additional Lake packages, including releases of other groups.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<LakeDependency>,
     /// The version of the Typst package the group's lines are typeset with.
     #[serde(alias = "notation")]
     pub package: Option<String>,
+}
+
+/// One additional package pinned into the group's Lake project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LakeDependency {
+    /// The package name Lake imports.
+    pub name: String,
+    /// Its Git repository.
+    pub git: String,
+    /// The immutable release tag or commit.
+    pub rev: String,
+    /// A package below the repository root, where needed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_dir: Option<String>,
 }
 
 /// The file at the root of a repository.
@@ -88,15 +118,25 @@ pub struct Manifest {
 impl Manifest {
     /// A manifest for a new repository.
     pub fn new(group: GroupId, side: Side, description: impl Into<String>) -> Self {
+        let pins = match side {
+            Side::Shared => Pins {
+                lean: Some(DEFAULT_LEAN.to_owned()),
+                mathlib: Some(DEFAULT_MATHLIB.to_owned()),
+                stemma: Some(DEFAULT_STEMMA.to_owned()),
+                package: Some(crate::package::VERSION.to_owned()),
+                ..Pins::default()
+            },
+            Side::Private => Pins {
+                package: Some(crate::package::VERSION.to_owned()),
+                ..Pins::default()
+            },
+        };
         Self {
             format: FORMAT,
             group,
             side,
             description: Some(description.into()),
-            pins: Pins {
-                package: Some(crate::package::VERSION.to_owned()),
-                ..Pins::default()
-            },
+            pins,
         }
     }
 
@@ -128,6 +168,67 @@ impl Manifest {
              # compose rather than produce a second rendering of one line.\n\
              \n{body}"
         )
+    }
+
+    /// The files that make this repository a Lake package.
+    pub fn lake_files(&self) -> Vec<(String, String)> {
+        let lean = self.pins.lean.as_deref().unwrap_or(DEFAULT_LEAN);
+        let package = match self.side {
+            Side::Shared => format!(
+                "stemma_{}_library",
+                self.group.slug().as_str().replace('-', "_")
+            ),
+            Side::Private => format!(
+                "stemma_{}_private",
+                self.group.slug().as_str().replace('-', "_")
+            ),
+        };
+        let library = match self.side {
+            Side::Shared => "GroupLibrary",
+            Side::Private => "PrivateLibrary",
+        };
+        let mut lake = format!(
+            "name = \"{package}\"\nversion = \"0.1.0\"\ndefaultTargets = [\"{library}\"]\n\n"
+        );
+        if let Some(mathlib) = &self.pins.mathlib {
+            lake.push_str(&format!(
+                "[[require]]\nname = \"mathlib\"\ngit = \"https://github.com/leanprover-community/mathlib4.git\"\nrev = \"{mathlib}\"\n\n"
+            ));
+        }
+        if let Some(stemma) = &self.pins.stemma {
+            lake.push_str(&format!(
+                "[[require]]\nname = \"stemma\"\ngit = \"https://github.com/stemma-math/stemma.git\"\nrev = \"{stemma}\"\nsubDir = \"lean\"\n\n"
+            ));
+        }
+        for dependency in &self.pins.dependencies {
+            lake.push_str(&format!(
+                "[[require]]\nname = \"{}\"\ngit = \"{}\"\nrev = \"{}\"\n",
+                dependency.name, dependency.git, dependency.rev
+            ));
+            if let Some(sub_dir) = &dependency.sub_dir {
+                lake.push_str(&format!("subDir = \"{sub_dir}\"\n"));
+            }
+            lake.push('\n');
+        }
+        if self.side == Side::Private {
+            lake.push_str("[[require]]\nname = \"group_library\"\npath = \"../shared\"\n\n");
+        }
+        lake.push_str(&format!("[[lean_lib]]\nname = \"{library}\"\n"));
+
+        vec![
+            (LAKEFILE.to_owned(), lake),
+            (
+                LEAN_TOOLCHAIN.to_owned(),
+                format!("leanprover/lean4:v{lean}\n"),
+            ),
+            (
+                format!("{library}.lean"),
+                match self.side {
+                    Side::Shared => "import Stemma\n\n-- Formal code is organized by subject modules imported here.\n".to_owned(),
+                    Side::Private => "import GroupLibrary\n\n-- Private formal code extends the group's shared library.\n".to_owned(),
+                },
+            ),
+        ]
     }
 }
 
@@ -203,6 +304,35 @@ mod tests {
         assert_eq!(Manifest::parse(&text).unwrap(), manifest);
         assert!(text.contains("# What this repository is."));
         assert!(text.contains("part of the mathematics"));
+    }
+
+    #[test]
+    fn a_new_group_starts_with_a_complete_pinned_lake_project() {
+        let manifest = Manifest::new(group(), Side::Shared, "Algebra, shared");
+        assert_eq!(manifest.pins.lean.as_deref(), Some(DEFAULT_LEAN));
+        assert_eq!(manifest.pins.mathlib.as_deref(), Some(DEFAULT_MATHLIB));
+        assert_eq!(manifest.pins.stemma.as_deref(), Some(DEFAULT_STEMMA));
+
+        let files: std::collections::BTreeMap<_, _> = manifest.lake_files().into_iter().collect();
+        assert!(files[LAKEFILE].contains("name = \"mathlib\""));
+        assert!(files[LAKEFILE].contains("name = \"stemma\""));
+        assert_eq!(
+            files[LEAN_TOOLCHAIN],
+            format!("leanprover/lean4:v{DEFAULT_LEAN}\n")
+        );
+    }
+
+    #[test]
+    fn a_private_package_depends_on_the_shared_package() {
+        let manifest = Manifest::new(group(), Side::Private, "Ana only");
+        let files: std::collections::BTreeMap<_, _> = manifest.lake_files().into_iter().collect();
+
+        assert!(files[LAKEFILE].contains("path = \"../shared\""));
+        assert!(files["PrivateLibrary.lean"].contains("import GroupLibrary"));
+        assert!(
+            manifest.pins.lean.is_none(),
+            "the shared manifest owns the pin"
+        );
     }
 
     #[test]
