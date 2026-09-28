@@ -1,13 +1,13 @@
 <script lang="ts">
-  // The navy sidebar: the brand, the group, its lines, the vault, how the
-  // last sync went and who is signed in.
+  // The navy sidebar: the brand, the group, its lines, the vault, whether
+  // this machine reaches the server and who is signed in.
   import { app } from "../lib/app.svelte";
   import { initials } from "../lib/names";
   import type { Known } from "../lib/types";
   import Bubble from "./Bubble.svelte";
   import Glyph from "./Glyph.svelte";
   import Mark from "./Mark.svelte";
-  import SyncIndicator from "./SyncIndicator.svelte";
+  import Connection from "./Connection.svelte";
 
   let choosing = $state(false);
 
@@ -29,6 +29,9 @@
       onclick={() => app.open(line.path)}
     >
       <span class="sidebar__line-title">{line.title ?? line.name}</span>
+      {#if line.state !== "sent"}
+        <span class="sidebar__line-state">{line.state === "needs_decision" ? "Needs a decision" : "Not sent yet"}</span>
+      {/if}
       {#if line.description}<span class="sidebar__line-about">{line.description}</span>{/if}
     </button>
   {:else}
@@ -88,7 +91,7 @@
       {@render list(app.railLines.ours, "Nothing shared yet.")}
     </nav>
   {:else}
-    <p class="sidebar__empty sidebar__lines">No groups are on this machine yet. Sync to bring them here.</p>
+    <p class="sidebar__empty sidebar__lines">No groups are on this machine yet. They arrive as soon as it reaches the server.</p>
   {/if}
 
   <div class="sidebar__foot">
@@ -103,7 +106,7 @@
       </button>
     {/if}
 
-    <SyncIndicator />
+    <Connection />
 
     <div class="user-card">
       <button

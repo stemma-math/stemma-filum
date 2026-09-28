@@ -3,7 +3,7 @@
 //! The launcher in the app is anchored to the mathematics, which is
 //! where an action belongs when there is a screen. Here there is no
 //! screen, so the anchor is where the command is run from: inside a
-//! clone, inside a line, against the commit that is checked out.
+//! line, against the revision the instance has of it.
 //!
 //! The choice of machine and agent stays deliberate either way. Asking
 //! for nobody in particular is something a person says in as many
@@ -16,13 +16,13 @@ use anyhow::{Context, Result, bail};
 use stemma_core::id::JobId;
 use stemma_core::job::Task;
 use stemma_core::line::Name;
-use stemma_core::repository;
+use stemma_core::repository::{self, Side};
 
 use crate::api::{Asking, Server};
 use crate::build;
 use crate::credentials::Credentials;
-use crate::git;
 use crate::home::Home;
+use crate::mirror::{self, Instance, Mirror, Which};
 use crate::session;
 use crate::work;
 
@@ -41,19 +41,14 @@ pub struct Wanted {
     pub here: bool,
 }
 
-/// Puts a job in the queue.
+/// Puts a job in the queue, against the revision of the line the
+/// instance has. What is here and not sent yet is sent first, so the
+/// job works on what the person sees.
 pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Result<String> {
     let (credentials, server) = session::connect(home)?;
-
-    let clone = git::containing(at)
-        .context("this is not inside a clone: run it from a group's repository")?;
-    let manifest = build::read_manifest(&clone)?;
-    let commit = git::head(&clone)?;
-
+    let (group, side, line) = mirror::line_at(at, wanted.line.as_deref())?;
     let task: Task = wanted.task.parse().context("that is not a task")?;
-    let line = line_of(&clone, at, wanted.line.as_deref())?;
-
-    ensure_reachable(&clone, &commit)?;
+    let revision = sent_revision(home, &group, side, &line)?;
 
     let machine = match (&wanted.machine, wanted.here) {
         (Some(_), true) => bail!("choose one machine, not two"),
@@ -65,10 +60,10 @@ pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Res
     let job = server.launch_job(
         &credentials.token,
         &Asking {
-            group: manifest.group.slug().as_str().to_owned(),
-            side: manifest.side.as_str().to_owned(),
+            group,
+            side: side.as_str().to_owned(),
             line: line.as_str().to_owned(),
-            commit: commit.clone(),
+            revision,
             against: None,
             task: task.to_string(),
             agent: wanted.agent.clone(),
@@ -79,11 +74,10 @@ pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Res
     writeln!(out, "{job}")?;
     writeln!(
         out,
-        "  {} · {} on {} at {}",
+        "  {} · {} on {} at revision {revision}",
         task.asked_for(),
         wanted.agent,
         line,
-        short(&commit)
     )?;
     writeln!(
         out,
@@ -193,28 +187,33 @@ fn available(clone: &Path) -> String {
     }
 }
 
-/// Refuses to launch work against a commit nobody else can get to.
-///
-/// A machine that takes the job fetches it from the instance, so a
-/// commit that has not been pushed is work nothing can reach — and
-/// finding that out as a failed job hours later is the worst way to
-/// learn it.
-pub(crate) fn ensure_reachable(clone: &Path, commit: &str) -> Result<()> {
-    if git::is_dirty(clone).unwrap_or(false) {
-        bail!(
-            "there are uncommitted changes here, so {} is not what you see",
-            short(commit)
-        );
+/// The revision a line is at on the instance, once what is here has
+/// been sent: a job works on what the instance has, and work against
+/// something only this machine has is work nothing else can reach.
+fn sent_revision(home: &Home, group: &str, side: Side, line: &Name) -> Result<u64> {
+    let mirror = Mirror::at(home)?;
+    let record = mirror
+        .find(group, side, line.as_str())?
+        .context("this line is not on this machine yet: run `stemma sync`")?;
+
+    if record.there.is_some() {
+        bail!("this line needs a decision first: `stemma conflict list` shows which blocks");
+    }
+    if !record.pending() {
+        return Ok(record.base);
     }
 
-    if git::distance(clone)
-        .map(|far| far.ahead > 0)
-        .unwrap_or(false)
-    {
-        bail!("this commit is not on the server yet: run `stemma sync` first");
+    let report = mirror.send(&Instance::connect(home)?, &Which::Line(record.id.clone()));
+    match report.revisions.get(&record.id) {
+        Some(revision) => Ok(*revision),
+        None => bail!(
+            "what is here has not been sent yet, so no other machine could work on it: {}",
+            report
+                .stopped
+                .or_else(|| report.waiting.into_iter().next().map(|waiting| waiting.why))
+                .unwrap_or_else(|| "it is waiting to be sent".to_owned())
+        ),
     }
-
-    Ok(())
 }
 
 /// This machine's identifier on the instance.
@@ -224,11 +223,6 @@ pub(crate) fn this_machine(server: &Server, credentials: &Credentials) -> Result
         .context("this machine is not registered to run jobs: run `stemma node init`")?;
 
     Ok(node.machine)
-}
-
-/// A commit, short enough to read.
-fn short(commit: &str) -> &str {
-    &commit[..commit.len().min(8)]
 }
 
 #[cfg(test)]

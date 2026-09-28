@@ -2,7 +2,7 @@
 
 import type {
   AuditAction, AuditTarget, Beginning, Claim, Conflict, Decision, Known, LineDocument, Machine,
-  Offer, OpenLine, Preview, Review, Signed, Stepped, Vault, Verdict, Waiting,
+  Mirrored, Offer, OpenLine, Preview, Review, Signed, Vault, Verdict, Waiting,
 } from "./types";
 
 type Bridge = { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } };
@@ -49,7 +49,8 @@ export const api = {
   signOut: () => call<string>("sign_out"),
   openLink: (url: string) => call<void>("open_link", { url }),
 
-  sync: () => call<Stepped[]>("sync"),
+  standing: () => call<Mirrored>("standing"),
+  sendNow: () => call<void>("send_now"),
   groups: () => call<string[]>("groups"),
   managedGroups: () => call<string[]>("managed_groups"),
   lines: () => call<Known[]>("lines"),
@@ -62,7 +63,6 @@ export const api = {
 
   openLine: (path: string) => call<OpenLine>("open_line", { path }),
   saveLine: (path: string, document: LineDocument) => call<OpenLine>("save_line", { path, document }),
-  recordLine: (path: string) => call<string | null>("record_line", { path }),
   preview: (path: string, document: LineDocument) => call<Preview>("preview", { path, document }),
 
   claim: (path: string) => call<Claim>("claim", { path }),

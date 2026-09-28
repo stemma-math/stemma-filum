@@ -1,11 +1,11 @@
 // Application-wide state: who is signed in, which group and view are
 // showing, the open line, and moving between them.
 
-import { api, said } from "./api";
+import { api } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
 import { fail, tell } from "./status.svelte";
-import type { Known, Signed, Stepped, Waiting } from "./types";
+import type { Known, LineState, Mirrored, Signed, Waiting } from "./types";
 
 /** What fills the middle of the window. */
 export type Stage = "welcome" | "editor" | "new-line" | "vault";
@@ -15,16 +15,6 @@ export type Panel = "machine" | "reviews" | "account" | "appearance";
 
 /** How an open line is shown: its blocks to edit, or the typeset page. */
 export type View = "blocks" | "pdf";
-
-/** What the last sync did, as the sidebar reports it. */
-export type Synced = {
-  /** Whether one is running now. */
-  running: boolean;
-  /** Each repository's outcome, from the last sync that answered. */
-  stepped: Stepped[] | null;
-  /** Why the last sync failed, when it did. */
-  failed: string | null;
-};
 
 /** How often a held claim is renewed. */
 const RENEW = 5 * 60 * 1000;
@@ -44,7 +34,8 @@ class App {
   waiting = $state<Waiting[]>([]);
   line = $state<LineSession | null>(null);
   view = $state<View>("blocks");
-  synced = $state<Synced>({ running: false, stepped: null, failed: null });
+  /** Where synchronisation stands; null until the engine has said. */
+  mirrored = $state<Mirrored | null>(null);
 
   #openRequest = latestRequest();
   #renewal = 0;
@@ -56,6 +47,11 @@ class App {
       mine: here.filter((line) => line.side === "private"),
       ours: here.filter((line) => line.side !== "private"),
     };
+  }
+
+  /** Where one line stands, by its path. */
+  stateOf(path: string): LineState {
+    return this.lines.find((line) => line.path === path)?.state ?? "sent";
   }
 
   /** The open line's heading, or its directory name when it has none. */
@@ -71,6 +67,7 @@ class App {
     try { this.signed = await api.whoami(); } catch { this.signed = null; }
     if (this.signed) {
       try { this.waiting = await api.proposals(); } catch { this.waiting = []; }
+      try { this.mirrored = await api.standing(); } catch { this.mirrored = null; }
       await this.#loadGroups();
       await this.#loadLines();
       this.stage = "welcome";
@@ -144,7 +141,6 @@ class App {
       if (!active()) return;
       if (leaving) {
         await leaving.flush();
-        await leaving.record();
         if (!active()) return;
       }
       this.line = new LineSession(opened, offers);
@@ -154,34 +150,12 @@ class App {
     }
   }
 
-  /** Syncs every repository, then rereads groups and lines whatever the
-   * outcome: a partial sync may still have brought something. The
-   * sidebar shows how it went; only a failure, or its end, is a toast. */
-  async sync() {
-    if (this.synced.running) return;
-    const wasFailing = this.synced.failed !== null;
-    this.synced.running = true;
-    let stepped: Stepped[] = [];
-    let failed: unknown = null;
-    try { stepped = await api.sync(); } catch (error) { failed = error; }
-    await this.#loadGroups();
-    await this.#loadLines();
-    this.synced.running = false;
-    if (failed) {
-      this.synced.failed = said(failed);
-      fail(failed);
-      return;
-    }
-    this.synced.failed = null;
-    this.synced.stepped = stepped;
-    if (wasFailing) tell("Synced");
-  }
-
-  /** Runs a command that changes which lines exist, then syncs. */
+  /** Runs a command that changes which lines exist; it brings the change
+   * to this machine before it answers. */
   async changeLines(work: () => Promise<string>) {
     try {
       tell(await work());
-      await this.sync();
+      await this.lookAgain();
       await this.goTo("welcome");
     } catch (error) {
       fail(error);
@@ -201,63 +175,53 @@ class App {
     }
   }
 
-  /** Brings what this machine has up to what the instance has, then reads
-   * the groups and lines again. Called when the instance says something
-   * changed, so it says nothing unless it fails. */
+  /** Reads the groups and lines again, as this machine has them now. */
   async lookAgain() {
-    if (!this.signed || this.synced.running) return;
-    await this.sync();
+    if (!this.signed) return;
+    await this.#loadGroups();
+    await this.#loadLines();
+  }
+
+  /** The engine finished a round: what changed here is read again, and
+   * the open line too when it was one of them. */
+  async mirror(said: Mirrored) {
+    this.mirrored = said;
+    const report = said.report;
+    const touched = [...report.arrived, ...report.merged, ...report.gone];
+    const states = new Map(said.lines.map((line) => [`${line.group}/${line.side}/${line.name}`, line.state]));
+    const stale = this.lines.some((line) => (states.get(`${line.group}/${line.side}/${line.name}`) ?? "sent") !== line.state);
+    if (touched.length || stale) await this.lookAgain();
+
+    const open = this.stage === "editor" ? this.line : null;
+    const entry = open?.opened.entry;
+    if (open && entry && touched.includes(`${entry.group}/${entry.side}/${entry.name}`)) {
+      if (this.lines.some((line) => line.path === entry.path)) await open.reread();
+      else await this.goTo("welcome");
+    }
+    for (const aside of report.aside) {
+      tell(`${aside.line}: a version was kept at ${aside.path}, because ${aside.why}.`);
+    }
   }
 
   async refreshWaiting() {
     this.waiting = await api.proposals();
   }
 
-  /** Flushes and records the open line before the window closes. Throws
-   * when the edits could not be saved, so the close can be refused. */
+  /** Saves the open line and sends what can be sent before the window
+   * closes. Throws when the edits could not be saved, so the close can be
+   * refused; what cannot be sent now is kept here and leaves later. */
   async beforeClose() {
     const line = this.stage === "editor" ? this.line : null;
-    if (!line) return;
-    line.lock(true);
-    try {
-      await line.flush();
-      await line.record();
-    } finally {
-      line.lock(false);
+    if (line) {
+      line.lock(true);
+      try {
+        await line.flush();
+      } finally {
+        line.lock(false);
+      }
     }
+    await api.sendNow().catch(() => {});
   }
-}
-
-/** How a sync went, most urgent first: a headline, the detail under it,
- * and how much it asks of the reader. */
-export function syncReport(stepped: Stepped[]): { tone: "good" | "attention"; headline: string; detail: string } {
-  const where = (one: Stepped) => `${one.group}/${one.side}`;
-  const parted = stepped.filter((one) => one.parted);
-  if (parted.length) {
-    return {
-      tone: "attention",
-      headline: "Conflict",
-      detail: `${parted.map(where).join(", ")}: both versions changed. Open the line to resolve the conflict.`,
-    };
-  }
-  const dirty = stepped.filter((one) => one.dirty);
-  if (dirty.length) {
-    return {
-      tone: "attention",
-      headline: "Uncommitted changes",
-      detail: `${dirty.map(where).join(", ")}: uncommitted changes were not synced. A line is committed when you release it.`,
-    };
-  }
-  const recorded = stepped.flatMap((one) => one.recorded);
-  if (recorded.length) {
-    return { tone: "good", headline: "Synced", detail: `Committed before syncing: ${recorded.join(", ")}.` };
-  }
-  const moved = stepped.filter((one) => one.outcome !== "up to date");
-  return {
-    tone: "good",
-    headline: "Synced",
-    detail: moved.length ? moved.map((one) => `${one.outcome} · ${where(one)}`).join("; ") : "Everything is up to date.",
-  };
 }
 
 export const app = new App();

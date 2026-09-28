@@ -132,8 +132,12 @@
       {:else if line.saveState === "not saved"}
         <span class="save-state save-state--failed"><Glyph name="alert" small />Couldn't save
           <button type="button" class="button button--link" onclick={() => line.save()}>Retry</button></span>
+      {:else if app.stateOf(line.path) === "needs_decision"}
+        <span class="save-state save-state--failed"><Glyph name="alert" small />Needs a decision</span>
+      {:else if app.stateOf(line.path) === "not_sent"}
+        <span class="save-state"><Glyph name="check" small />Saved · not sent yet</span>
       {:else}
-        <span class="save-state"><Glyph name="check" small />{line.saveState === "committed" ? "Committed" : "Saved"}</span>
+        <span class="save-state"><Glyph name="check" small />Saved</span>
       {/if}
     </div>
 

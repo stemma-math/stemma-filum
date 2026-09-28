@@ -1,5 +1,6 @@
-// One open line: its blocks being edited, saving and recording them, its
-// claim, the blocks selected for an agent, and what is composed from it.
+// One open line: its blocks being edited and saved, its claim, the blocks
+// selected for an agent, and what is composed from it. Saving is all the
+// window does; the engine sends what is saved.
 
 import { SvelteSet } from "svelte/reactivity";
 import { api, said } from "./api";
@@ -13,7 +14,7 @@ const PREVIEW_AFTER = 650;
 /** How long a pause in typing has to be to close one step of the history. */
 const STEP_AFTER = 600;
 
-export type SaveState = "saved" | "saving" | "not saved" | "committed";
+export type SaveState = "saved" | "saving" | "not saved";
 
 export class LineSession {
   opened = $state<OpenLine>() as OpenLine;
@@ -72,7 +73,8 @@ export class LineSession {
   }
 
   /** Asks the chosen agent to do each task, one job per task. Everything
-   * is saved first, because the job reads the committed line. */
+   * is saved first, because the job works on what the server has, and
+   * what is saved is sent before the job is asked for. */
   async ask(tasks: string[]): Promise<number> {
     const [machine, agent] = this.agent.split("|");
     if (!machine || !agent) {
@@ -80,7 +82,6 @@ export class LineSession {
       return 0;
     }
     await this.flush();
-    await this.record();
     let started = 0;
     for (const task of tasks) {
       try {
@@ -242,18 +243,27 @@ export class LineSession {
     }
   }
 
-  /** Commits the line into its clone's history. Done at the end of a
-   * stretch of writing (releasing, leaving, closing), not on every save. */
-  async record() {
+  /** Reads the line again, after it changed here because of what was
+   * written elsewhere. Edits not saved yet are kept, and saved over it. */
+  async reread() {
+    if (!this.#attached || this.#text() !== this.#saved || this.#savesInFlight > 0) return;
     try {
-      if (await api.recordLine(this.path)) this.saveState = "committed";
-    } catch (error) {
-      fail(`This line is saved on this machine but not committed yet: ${said(error)}`);
+      const opened = await api.openLine(this.path);
+      if (!this.#attached || this.#text() !== this.#saved) return;
+      this.opened = opened;
+      this.document = opened.document ? structuredClone(opened.document) : null;
+      this.#remember(opened);
+      this.#history = new History(this.#text() ?? "");
+      this.canUndo = false;
+      this.canRedo = false;
+      void this.render();
+    } catch {
+      // What is shown stays until the next look works.
     }
   }
 
-  /** Puts the line down: flushed to disk, then committed. False when the
-   * last edits could not be saved. */
+  /** Puts the line down: everything saved. False when the last edits
+   * could not be saved. */
   async leave(): Promise<boolean> {
     try {
       await this.flush();
@@ -262,7 +272,6 @@ export class LineSession {
       return false;
     }
     this.detach();
-    await this.record();
     this.writing = false;
     return true;
   }
@@ -272,8 +281,7 @@ export class LineSession {
   }
 
   async release() {
-    await this.save();
-    await this.record();
+    await this.flush();
     return this.#claimWith(() => api.release(this.path));
   }
 
