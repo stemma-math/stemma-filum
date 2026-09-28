@@ -347,15 +347,13 @@ fn wait_for_controlled(
         match child.try_wait().context("cannot wait for the agent")? {
             Some(status) => break status.code(),
             None if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop(&mut child);
                 gave_up = true;
 
                 break None;
             }
             None if cancelled.load(std::sync::atomic::Ordering::Relaxed) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop(&mut child);
                 was_cancelled = true;
                 break None;
             }
@@ -370,6 +368,47 @@ fn wait_for_controlled(
         limit,
         cancelled: was_cancelled,
     })
+}
+
+/// Stops an agent and everything it started.
+///
+/// An agent runs tools of its own (shells, compilers, `lake`), and
+/// killing only the agent would leave them working in the job's
+/// workspace after the job is over. The agent stays in the daemon's
+/// process group, so a service manager stopping the daemon, or Ctrl-C at
+/// a terminal, still reaches all of them.
+fn stop(child: &mut std::process::Child) {
+    let mut family = descendants(child.id());
+    family.push(child.id());
+    let _ = Command::new("kill")
+        .arg("-KILL")
+        .args(family.iter().map(u32::to_string))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Every process below `parent`, deepest first, as `pgrep` sees them.
+fn descendants(parent: u32) -> Vec<u32> {
+    let Ok(listed) = Command::new("pgrep")
+        .args(["-P", &parent.to_string()])
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+
+    String::from_utf8_lossy(&listed.stdout)
+        .split_whitespace()
+        .filter_map(|pid| pid.parse::<u32>().ok())
+        .flat_map(|child| {
+            let mut below = descendants(child);
+            below.push(child);
+            below
+        })
+        .collect()
 }
 
 /// Words that mean the owner has not signed this agent in.
@@ -825,6 +864,38 @@ mod private_output {
             std::fs::metadata(&kept).unwrap().permissions().mode() & 0o777,
             0o600
         );
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_agent_out_of_time_takes_what_it_started_with_it() {
+        let root = std::env::temp_dir().join(format!(
+            "stemma-agents-family-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let marker = root.join("still-running");
+
+        // The agent starts a tool that would write the marker after the
+        // job is over, then waits.
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!("(sleep 2; touch '{}') & sleep 30", marker.display()),
+        ]);
+        let finished = wait_for(
+            &mut command,
+            &root.join("out.log"),
+            Duration::from_millis(500),
+        )
+        .unwrap();
+        assert!(finished.gave_up);
+
+        std::thread::sleep(Duration::from_secs(3));
+        assert!(!marker.exists(), "a tool the agent started outlived it");
 
         std::fs::remove_dir_all(&root).unwrap();
     }
