@@ -564,6 +564,37 @@ async fn taking_a_machine_back_stops_its_credential_and_nothing_else() {
 }
 
 #[tokio::test]
+async fn a_machine_removed_from_its_computer_takes_itself_back() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+
+    // Signed in and never offered: there is nothing to take back.
+    let writing = harness.credential("ana").await;
+    let answered = harness
+        .post_json_with_token("/api/machines/retire", &writing, "{}")
+        .await;
+    assert_eq!(answered.status, StatusCode::OK);
+    assert_eq!(parsed(&answered)["retired"], Value::Bool(false));
+
+    let token = harness.credential("ana").await;
+    offer_a_machine(&mut harness, &token, "ana's laptop").await;
+
+    let answered = harness
+        .post_json_with_token("/api/machines/retire", &token, "{}")
+        .await;
+    assert_eq!(answered.status, StatusCode::OK);
+    assert_eq!(parsed(&answered)["retired"], Value::Bool(true));
+
+    // The machine and its credential are gone together.
+    assert_eq!(
+        harness.get_with_token("/api/me", &token).await.status,
+        StatusCode::FORBIDDEN
+    );
+    assert!(!harness.get("/").await.says("ana's laptop"));
+}
+
+#[tokio::test]
 async fn one_persons_machines_are_their_own_business() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;

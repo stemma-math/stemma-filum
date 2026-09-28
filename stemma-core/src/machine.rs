@@ -128,6 +128,8 @@ pub struct KnownAgent {
     pub vendor: &'static str,
     /// What its makers call it.
     pub called: &'static str,
+    /// Where its makers explain how to install it and sign it in.
+    pub instructions: &'static str,
 }
 
 impl KnownAgent {
@@ -147,16 +149,19 @@ pub const CATALOGUE: &[KnownAgent] = &[
         slug: "claude",
         vendor: "Anthropic",
         called: "Claude Code",
+        instructions: "https://docs.anthropic.com/en/docs/claude-code/setup",
     },
     KnownAgent {
         slug: "codex",
         vendor: "OpenAI",
         called: "Codex CLI",
+        instructions: "https://github.com/openai/codex#readme",
     },
     KnownAgent {
         slug: "gemini",
         vendor: "Google",
         called: "Gemini CLI",
+        instructions: "https://github.com/google-gemini/gemini-cli#readme",
     },
 ];
 

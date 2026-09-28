@@ -127,12 +127,24 @@ just app
 open target/release/bundle/macos/Stemma.app
 ```
 
-The bundle carries the `stemma` command with it: the application's
-"This machine" panel installs it into `~/.local/bin`, so one install
-gives both surfaces. Everything the application does can be done from
-the command line, and everything the command line does is in the
-application — writing mathematics is the one thing only the application
-offers.
+The bundle carries the `stemma` command with it. *Set Up This Machine…*
+(after the first sign-in, in the application menu, and as Settings → This
+machine) is a checklist of the background service, the command line (a
+link in `~/.local/bin`, and the line that puts that directory on the
+shell's path), the groups the machine works for, the agents and Lean.
+The service runs the link rather than the bundle, and every launch of the
+application points the link at the command it carries, rewrites the
+service if it names anything else, and restarts a daemon from an earlier
+build. So one install gives both surfaces. Everything the application
+does can be done from the command line, and everything the command line
+does is in the application — writing mathematics is the one thing only
+the application offers.
+
+*Remove Stemma from This Machine…* (in the application menu and in
+Settings), or `stemma uninstall`, sends what is not on the server yet,
+removes the service, the link and the path line, takes the machine back
+on the server, signs out, and asks whether to delete what Stemma keeps on
+the machine.
 
 The bundle is suitable for local testing. Its ad-hoc signature has no Apple
 Developer identity, so distribution to another Mac still requires Developer ID

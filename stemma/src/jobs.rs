@@ -23,6 +23,7 @@ use crate::build;
 use crate::credentials::Credentials;
 use crate::home::Home;
 use crate::mirror::{self, Instance, Mirror, Which};
+use crate::remedy::Remedy;
 use crate::session;
 use crate::work;
 
@@ -221,10 +222,11 @@ fn sent_revision(home: &Home, group: &str, side: Side, line: &Name) -> Result<u6
     let mirror = Mirror::at(home)?;
     let record = mirror
         .find(group, side, line.as_str())?
-        .context("this line is not on this machine yet: run `stemma sync`")?;
+        .ok_or(Remedy::Sync)
+        .context("this line is not on this machine yet")?;
 
     if record.there.is_some() {
-        bail!("this line needs a decision first: `stemma conflict list` shows which blocks");
+        return Err(Remedy::Decide).context("this line needs a decision first");
     }
     if !record.pending() {
         return Ok(record.base);
@@ -247,7 +249,8 @@ fn sent_revision(home: &Home, group: &str, side: Side, line: &Name) -> Result<u6
 pub(crate) fn this_machine(server: &Server, credentials: &Credentials) -> Result<String> {
     let node = server
         .node(&credentials.token)?
-        .context("this machine is not registered to run jobs: run `stemma node init`")?;
+        .ok_or(Remedy::SetUpMachine)
+        .context("this machine is not registered to run jobs")?;
 
     Ok(node.machine)
 }

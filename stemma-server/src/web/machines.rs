@@ -148,6 +148,28 @@ pub async fn mine(
     Ok(described(&instance, &machine).await?.into_response())
 }
 
+/// Takes back the machine asking, as it is removed from its owner's
+/// computer. A credential with no machine behind it has nothing to take
+/// back, and says so rather than failing: the machine may never have
+/// offered to work.
+pub async fn api_retire(
+    State(instance): State<Instance>,
+    credential: Credential,
+) -> Result<Response, WebError> {
+    let token_id = credential.token_id.clone();
+
+    let retired = instance
+        .write(
+            move |connection| match machines::by_token(connection, &token_id)? {
+                Some(machine) => machines::retire(connection, &machine.id),
+                None => Ok(false),
+            },
+        )
+        .await?;
+
+    Ok(Json(json!({ "retired": retired })).into_response())
+}
+
 /// The machine behind this credential, if it has registered.
 pub async fn registered(instance: &Instance, credential: &Credential) -> Result<Machine, WebError> {
     let token_id = credential.token_id.clone();

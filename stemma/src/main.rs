@@ -1,7 +1,7 @@
 //! The `stemma` command: the client researchers install on their own
 //! machine. Everything it does lives in the library; this only dispatches.
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -15,7 +15,7 @@ use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
 use stemma::{
     build, claims, conflicts, daemon, export, git_credential, jobs, lines, machines, mirror, node,
-    proposals, session, vault,
+    proposals, session, uninstall, vault,
 };
 use stemma_core::proposal::Verdict;
 
@@ -82,6 +82,26 @@ fn run(cli: Cli) -> Result<bool> {
             build::run(home, &here(), out)?;
         }
         Command::Where => where_things_are(home, out)?,
+        Command::Uninstall {
+            discard_unsent,
+            delete_data,
+            keep_data,
+        } => {
+            let told = uninstall::Told {
+                discard_unsent,
+                delete_data: match (delete_data, keep_data) {
+                    (true, _) => Some(true),
+                    (_, true) => Some(false),
+                    _ => None,
+                },
+            };
+            let stdin = std::io::stdin();
+            let mut terminal = stdin.is_terminal().then(|| stdin.lock());
+            let asking = terminal
+                .as_mut()
+                .map(|input| input as &mut dyn std::io::BufRead);
+            uninstall::run(home, told, asking, out)?;
+        }
         Command::Export {
             group,
             private,

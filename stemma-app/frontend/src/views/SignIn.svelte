@@ -5,6 +5,7 @@
   import { api, said } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import { latestRequest } from "../lib/lifecycle";
+  import { setup } from "../lib/setup.svelte";
   import type { Beginning } from "../lib/types";
 
   const attempt = latestRequest();
@@ -44,7 +45,10 @@
     let answer: string;
     try { answer = await api.signInPoll(); } catch (error) { answer = said(error); }
     if (!active()) return;
-    if (answer === "signed") return app.boot();
+    if (answer === "signed") {
+      setup.afterSignIn = true;
+      return app.boot();
+    }
     if (answer === "waiting" || answer === "nothing") return schedule(active, interval);
     restart(
       answer === "refused" ? "That sign-in was refused."

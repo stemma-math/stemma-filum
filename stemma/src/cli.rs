@@ -126,6 +126,21 @@ pub enum Command {
     /// Shows where this machine keeps its files.
     Where,
 
+    /// Removes Stemma from this machine: the service, the command line's
+    /// link, the machine on the server and the credential, and what it
+    /// keeps here if you say so.
+    Uninstall {
+        /// Remove it even if some lines are not on the server yet.
+        #[arg(long)]
+        discard_unsent: bool,
+        /// Delete what Stemma keeps here without asking.
+        #[arg(long, conflicts_with = "keep_data")]
+        delete_data: bool,
+        /// Keep what Stemma keeps here without asking.
+        #[arg(long)]
+        keep_data: bool,
+    },
+
     /// Answers git when it asks for a credential.
     #[command(hide = true)]
     Credential {

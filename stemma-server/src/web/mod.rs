@@ -356,6 +356,7 @@ fn api() -> Router<Instance> {
             get(machines::mine).post(machines::register),
         )
         .route("/api/machines/beat", post(machines::beat))
+        .route("/api/machines/retire", post(machines::api_retire))
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/jobs/{id}/finish", post(jobs::finish))

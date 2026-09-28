@@ -1,12 +1,10 @@
-//! This machine as a worker: its agents and jobs, offering it to groups,
-//! and installing the command line and daemon it carries.
-
-use std::path::PathBuf;
+//! This machine as a worker: its agents and jobs, and offering it to
+//! groups.
 
 use serde::Serialize;
 
 use crate::workspace::LineAt;
-use crate::{Session, carried_out, home, said};
+use crate::{Session, carried_out, failed, home, said};
 
 #[derive(Serialize)]
 pub struct Agent {
@@ -64,20 +62,19 @@ pub struct Offer {
     agents: Vec<Agent>,
 }
 
-/// This machine as the instance sees it, with the jobs it was given.
+/// This machine as the instance sees it, with the jobs it was given;
+/// nothing when it has not offered to run jobs.
 #[tauri::command(async)]
-pub fn machine() -> Result<MachinePanel, String> {
+pub fn machine() -> Result<Option<MachinePanel>, String> {
     let home = home();
     let session = Session::open()?;
-    let node = session
-        .server
-        .node(&session.token)
-        .map_err(said)?
-        .ok_or_else(|| "run `stemma node init` to offer this machine".to_owned())?;
+    let Some(node) = session.server.node(&session.token).map_err(failed)? else {
+        return Ok(None);
+    };
     let jobs = session
         .server
         .jobs(&session.token)
-        .map_err(said)?
+        .map_err(failed)?
         .into_iter()
         .map(|job| Job {
             raw_output: stemma::work::output_exists(&home, &job.job),
@@ -92,12 +89,12 @@ pub fn machine() -> Result<MachinePanel, String> {
         })
         .collect();
 
-    Ok(MachinePanel {
+    Ok(Some(MachinePanel {
         label: node.label,
         presence: node.presence.to_string(),
         agents: node.agents.iter().map(Agent::of).collect(),
         jobs,
-    })
+    }))
 }
 
 /// The raw agent output kept on this machine for one job.
@@ -178,54 +175,11 @@ pub fn launch(
             })
             .transpose()?,
     };
-    stemma::jobs::run(&home(), line.directory(), &wanted, &mut Vec::new()).map_err(said)
+    stemma::jobs::run(&home(), line.directory(), &wanted, &mut Vec::new()).map_err(failed)
 }
 
 /// Offers this machine to the instance for work in `groups`.
 #[tauri::command(async)]
 pub fn node_init(groups: Vec<String>) -> Result<String, String> {
     carried_out(|home, out| stemma::node::init(home, &groups, out).map(|_| ()))
-}
-
-/// Registers the daemon with the system's user service manager.
-#[tauri::command(async)]
-pub fn daemon_install() -> Result<String, String> {
-    carried_out(stemma::daemon::install)
-}
-
-/// Links the `stemma` binary bundled with the application into
-/// `~/.local/bin`, which needs no administrator rights.
-#[tauri::command(async)]
-pub fn install_cli() -> Result<String, String> {
-    let carried = stemma::program::carried().ok_or_else(|| {
-        "this build does not carry the command line: build the application with `just app`"
-            .to_owned()
-    })?;
-
-    let home = std::env::var("HOME").map_err(|_| "there is no home directory".to_owned())?;
-    let directory = PathBuf::from(home).join(".local").join("bin");
-    let placed = directory.join(stemma::program::NAME);
-
-    std::fs::create_dir_all(&directory).map_err(said)?;
-    if std::fs::symlink_metadata(&placed).is_ok() {
-        std::fs::remove_file(&placed).map_err(said)?;
-    }
-
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(&carried, &placed).map_err(said)?;
-    #[cfg(not(unix))]
-    std::fs::copy(&carried, &placed).map_err(said)?;
-
-    let on_path = std::env::var_os("PATH")
-        .is_some_and(|path| std::env::split_paths(&path).any(|entry| entry == directory));
-
-    Ok(if on_path {
-        format!("`stemma` is at {}, and on your path.", placed.display())
-    } else {
-        format!(
-            "`stemma` is at {}. Add that directory to your path: \
-             echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.zshrc",
-            placed.display()
-        )
-    })
 }

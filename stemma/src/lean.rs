@@ -474,6 +474,11 @@ fn known_blocks(clone: &Path) -> Result<Vec<String>> {
     Ok(found)
 }
 
+/// Where elan is on this machine, if it is anywhere a program would be.
+pub fn elan() -> Option<std::path::PathBuf> {
+    crate::agents::on_path("elan")
+}
+
 fn elan_is_installed() -> bool {
     Command::new("elan")
         .arg("--version")
