@@ -55,6 +55,10 @@ pub struct Record {
     /// Why what is here could not be sent, the last time it was tried.
     #[serde(default)]
     pub trouble: Option<String>,
+    /// When this machine last sent a revision nothing has been built from
+    /// yet, in milliseconds since the epoch.
+    #[serde(default)]
+    pub unbuilt: Option<u64>,
 }
 
 /// A revision on the instance that this machine's changes part from.
@@ -134,6 +138,44 @@ impl Store {
             .with_context(|| format!("cannot lock {}", path.display()))?;
 
         Ok(Locked { _file: file })
+    }
+
+    /// Keeps the machine for the application, for as long as what this
+    /// returns is held: the daemon's engine leaves the work to it.
+    pub fn hold_window(&self) -> Result<Locked> {
+        let file = self.window_file()?;
+        file.try_lock()
+            .map_err(|_| anyhow::anyhow!("another window already keeps this machine in step"))?;
+
+        Ok(Locked { _file: file })
+    }
+
+    /// Whether the application is keeping the machine in step.
+    pub fn window_open(&self) -> bool {
+        let Ok(file) = self.window_file() else {
+            return false;
+        };
+
+        match file.try_lock() {
+            Ok(()) => {
+                let _ = file.unlock();
+                false
+            }
+            Err(_) => true,
+        }
+    }
+
+    fn window_file(&self) -> Result<File> {
+        std::fs::create_dir_all(&self.root)
+            .with_context(|| format!("cannot create {}", self.root.display()))?;
+        let path = self.root.join("window");
+
+        File::options()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .with_context(|| format!("cannot open {}", path.display()))
     }
 
     /// Every record.

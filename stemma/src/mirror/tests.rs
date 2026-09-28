@@ -153,10 +153,7 @@ impl Remote for Pretend {
     fn root(&self, _group: &str, side: &str) -> Result<BTreeMap<String, String>> {
         self.reachable()?;
         Ok(BTreeMap::from([
-            (
-                repository::MANIFEST.to_owned(),
-                format!("# the {side} manifest\n"),
-            ),
+            (repository::MANIFEST.to_owned(), manifest(side)),
             ("../outside".to_owned(), "no".to_owned()),
             ("lines/sneaky/line.json".to_owned(), "no".to_owned()),
         ]))
@@ -188,6 +185,15 @@ impl Remote for Pretend {
         self.released.set(self.released.get() + 1);
         Ok(())
     }
+}
+
+fn manifest(side: &str) -> String {
+    repository::Manifest::new(
+        "grp:algebra".parse().unwrap(),
+        side.parse().unwrap(),
+        "Algebra",
+    )
+    .to_text()
 }
 
 fn typeset(_root: &Path, document: &Document) -> Result<String> {
@@ -291,7 +297,7 @@ fn a_line_arrives_as_its_file_beside_the_repository_root() {
     let root = world.root.join("workspace/algebra/shared");
     assert_eq!(
         std::fs::read_to_string(root.join(repository::MANIFEST)).unwrap(),
-        "# the shared manifest\n"
+        manifest("shared")
     );
     assert!(!world.root.join("workspace/algebra/outside").exists());
     assert!(
@@ -599,4 +605,101 @@ fn a_proposal_touching_a_block_changed_since_is_outdated() {
         2,
         "nothing was written"
     );
+}
+
+#[test]
+fn a_build_names_the_revision_of_every_line_the_group_has() {
+    let (world, _) = started("build");
+    world
+        .instance
+        .start("lin:two", Side::Shared, "groups", &three());
+    world.step();
+    world
+        .mirror
+        .save(
+            "algebra",
+            Side::Shared,
+            "groups",
+            &saying(&three(), 0, "Unsent."),
+        )
+        .unwrap();
+
+    let built = crate::build::read(&world.mirror, "algebra", Side::Shared).unwrap();
+    let revision = |name: &str| {
+        built
+            .nodes
+            .lines
+            .iter()
+            .find(|line| line.name.as_str() == name)
+            .unwrap()
+            .revision
+    };
+
+    assert_eq!(revision("quotients"), Some(1));
+    assert_eq!(
+        revision("groups"),
+        None,
+        "what is not sent is nobody's revision"
+    );
+    assert!(stemma_core::artefact::is_commit(&built.nodes.commit));
+    assert_eq!(
+        crate::build::read(&world.mirror, "algebra", Side::Shared)
+            .unwrap()
+            .nodes
+            .commit,
+        built.nodes.commit,
+        "the same build is filed under the same name"
+    );
+}
+
+#[test]
+fn writing_is_built_once_it_is_let_go_or_goes_quiet() {
+    let (world, document) = started("due");
+    world.save(&saying(&document, 0, "Sent."));
+    world.step();
+
+    assert!(
+        world
+            .mirror
+            .due_builds(&[], Duration::from_secs(600))
+            .unwrap()
+            .is_empty(),
+        "still being written"
+    );
+    assert_eq!(
+        world
+            .mirror
+            .due_builds(&["lin:one".to_owned()], Duration::from_secs(600))
+            .unwrap(),
+        [("algebra".to_owned(), Side::Shared)]
+    );
+    assert_eq!(
+        world.mirror.due_builds(&[], Duration::ZERO).unwrap().len(),
+        1,
+        "or it went quiet"
+    );
+
+    let built = crate::build::read(&world.mirror, "algebra", Side::Shared).unwrap();
+    world.mirror.built(&built.nodes).unwrap();
+
+    assert!(
+        world
+            .mirror
+            .due_builds(&[], Duration::ZERO)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn the_window_keeps_the_machine_while_it_is_open() {
+    let world = world("window");
+    let store = Store::at(&world.root.join("state"));
+
+    assert!(!store.window_open());
+    let held = store.hold_window().unwrap();
+    assert!(store.window_open());
+    assert!(store.hold_window().is_err(), "one window at a time");
+    drop(held);
+    assert!(!store.window_open());
 }

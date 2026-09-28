@@ -268,11 +268,14 @@ pub struct Handed {
     pub side: String,
     /// Which line of work.
     pub line: String,
-    /// The commit to work against.
-    pub commit: String,
-    /// The other version, when the job is to bring two of them together.
+    /// The line, by identifier, so it is found after it moved.
     #[serde(default)]
-    pub against: Option<String>,
+    pub line_id: Option<String>,
+    /// The revision of the line to work against.
+    pub revision: u64,
+    /// The other revision, when the job is to bring two of them together.
+    #[serde(default)]
+    pub against: Option<u64>,
     /// What is being asked.
     pub task: String,
     /// Which agent to use.

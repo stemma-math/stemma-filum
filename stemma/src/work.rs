@@ -1,8 +1,8 @@
 //! Doing one job on this machine.
 //!
-//! The work is read out of git at the commit the job names, never out of
-//! the working tree: the tree belongs to whoever is at the keyboard, it
-//! may be half-written, and nothing here touches it.
+//! The work is read from the instance at the revision the job names,
+//! never out of the files here: those belong to whoever is at the
+//! keyboard, they may be half-written, and nothing here touches them.
 //!
 //! What comes back from the agent stays here. The instance is told the
 //! type of what happened and one line, which is what the group reads.
@@ -19,6 +19,7 @@ use crate::agents::{self, Ran};
 use crate::api::Handed;
 use crate::config::Config;
 use crate::home::Home;
+use crate::mirror::{Instance, Mirror, Remote, Which};
 
 /// Which revision of the prompt this build sends.
 ///
@@ -31,13 +32,17 @@ pub const PROMPT_REVISION: &str = "2";
 /// Nothing in here fails: every way this can go wrong is one of the
 /// outcomes, because a job that ends in nothing at all leaves the person
 /// who launched it watching a queue.
-pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
+pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Handed) -> Completed {
     let task: Task = match handed.task.parse() {
         Ok(task) => task,
         Err(problem) => return Completed::only(Outcome::out_of_reach(problem.to_string())),
     };
 
-    let source = match read_source(home, config, handed) {
+    if task == Task::Build {
+        return build(home, instance, handed);
+    }
+
+    let source = match read_at(instance, handed, handed.revision) {
         Ok(source) => source,
         Err(why) => return Completed::only(Outcome::out_of_reach(why)),
     };
@@ -46,7 +51,7 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
         Ok(line) => line,
         Err(faults) => {
             return Completed::only(Outcome::out_of_reach(format!(
-                "`{}` cannot be read at that commit: {}",
+                "`{}` cannot be read at that revision: {}",
                 handed.line,
                 faults
                     .first()
@@ -57,8 +62,8 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
     };
 
     let other = match &task {
-        Task::Reconcile => match handed.against.as_deref() {
-            Some(commit) => match read_at(home, config, handed, commit) {
+        Task::Reconcile => match handed.against {
+            Some(revision) => match read_at(instance, handed, revision) {
                 Ok(other) => Some(other),
                 Err(why) => return Completed::only(Outcome::out_of_reach(why)),
             },
@@ -95,8 +100,9 @@ pub fn carry_out(home: &Home, config: &Config, handed: &Handed) -> Completed {
             .and_then(|offer| offer.lean_source.as_deref())
             .ok_or_else(|| "the agent offered no complete Lean module".to_owned())
             .and_then(|lean_source| {
-                let clone = clone_of(home, config, handed)
-                    .ok_or_else(|| "this machine has no matching clone".to_owned())?;
+                let clone = repository_of(home, handed).ok_or_else(|| {
+                    "this machine does not have the line's repository yet".to_owned()
+                })?;
                 let manifest = crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
                 let pins = crate::build::group_pins(&clone, &manifest);
                 crate::lean::check_offered(
@@ -284,57 +290,65 @@ fn nothing_found(task: &Task) -> &'static str {
         Task::Develop { .. } => "nothing was developed",
         Task::Explore => "nothing to suggest",
         Task::Reconcile => "no reconciliation was found",
+        Task::Build => "nothing was built",
     }
 }
 
-/// The source of the line a job is about, at the commit it names.
-fn read_source(home: &Home, config: &Config, handed: &Handed) -> Result<String, String> {
-    read_at(home, config, handed, &handed.commit)
+/// The source of the line a job is about, at a revision it names.
+fn read_at(instance: &Instance, handed: &Handed, revision: u64) -> Result<String, String> {
+    let line = handed
+        .line_id
+        .as_deref()
+        .ok_or_else(|| "this job does not say which line it is for".to_owned())?;
+
+    instance
+        .revision(line, Some(revision))
+        .map(|found| found.source)
+        .map_err(|error| {
+            format!(
+                "revision {revision} of `{}` cannot be read: {error:#}",
+                handed.line
+            )
+        })
 }
 
-/// The source of the same line at any commit the job names.
-fn read_at(home: &Home, config: &Config, handed: &Handed, commit: &str) -> Result<String, String> {
-    let clone = clone_of(home, config, handed)
-        .ok_or_else(|| format!("this machine has no clone of {}", handed.group))?;
+/// Where this machine shows the repository a job is about, when it has
+/// it: the files beside the lines are what Lean checks against.
+fn repository_of(home: &Home, handed: &Handed) -> Option<PathBuf> {
+    let side = handed.side.parse::<Side>().ok()?;
+    let root = Mirror::at(home).ok()?.repository(&handed.group, side);
 
-    if !crate::git::holds(&clone, commit) {
-        // One fetch, in case the commit landed after the last sync. The
-        // tree is left exactly as it was: nothing here resets anything.
-        let _ = crate::git::fetch(&clone);
-    }
-
-    if !crate::git::holds(&clone, commit) {
-        return Err(format!(
-            "this machine does not have commit {} of {}",
-            short(commit),
-            handed.group
-        ));
-    }
-
-    let inside = format!(
-        "{}/{}/{}",
-        repository::LINES,
-        handed.line,
-        repository::ENTRY
-    );
-
-    crate::git::show(&clone, commit, &inside)
-        .map_err(|_| format!("`{}` is not in that commit", handed.line))
+    root.join(repository::MANIFEST).is_file().then_some(root)
 }
 
-/// Where this machine keeps the repository a job is about.
-fn clone_of(home: &Home, config: &Config, handed: &Handed) -> Option<PathBuf> {
-    let side = match handed.side.parse::<Side>().ok()? {
-        Side::Shared => crate::workspace::Side::Shared,
-        Side::Private => crate::workspace::Side::Private,
-    };
+/// Builds the repository a line is in and publishes it, as the instance
+/// asked: the machine that wrote the line did not.
+fn build(home: &Home, instance: &Instance, handed: &Handed) -> Completed {
+    let built = (|| -> anyhow::Result<crate::build::Published> {
+        let mirror = Mirror::at(home)?;
+        let round = mirror.step(instance, true, &Which::All);
+        if let Some(stopped) = round.stopped {
+            anyhow::bail!("{stopped}");
+        }
 
-    let workspace = config.workspace_or(home.workspace());
-    let clone = config
-        .group_directory(&handed.group, &workspace)
-        .join(side.directory());
+        let side: Side = handed.side.parse()?;
+        let built = crate::build::read(&mirror, &handed.group, side)?;
+        let credentials = crate::credentials::Credentials::read(&home.credentials_file())?;
+        let published = crate::build::publish(&built, credentials.as_ref());
+        if published == crate::build::Published::Kept {
+            mirror.built(&built.nodes)?;
+        }
 
-    crate::git::is_clone(&clone).then_some(clone)
+        Ok(published)
+    })();
+
+    Completed::only(match built {
+        Ok(crate::build::Published::Kept) => Outcome::Produced {
+            said: "its pages were built and published".to_owned(),
+        },
+        Ok(other) => Outcome::out_of_reach(other.to_string()),
+        Err(error) => Outcome::out_of_reach(format!("{error:#}")),
+    })
 }
 
 /// What the agent is asked.
@@ -348,9 +362,8 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option
     let _ = writeln!(
         asked,
         "You are working on one line of mathematical work. It belongs to the \
-         group `{}`, and this is its state at commit {}.",
-        handed.group,
-        short(&handed.commit)
+         group `{}`, and this is its state at revision {}.",
+        handed.group, handed.revision
     );
     let _ = writeln!(asked);
     let _ = writeln!(asked, "{FORMAT}");
@@ -486,6 +499,7 @@ fn asked_of(task: &Task, line: &Line, other: Option<&str>) -> String {
              ----------------------------------------",
             other.unwrap_or("it is missing").trim()
         ),
+        Task::Build => "Nothing: a build takes no agent.".to_owned(),
     }
 }
 
@@ -507,11 +521,6 @@ fn bounded(black_box: &BlackBox) -> String {
 /// Where the raw output of a job is, for the person whose machine it is.
 pub fn output_of(home: &Home, job: &str) -> PathBuf {
     agents::output_path(home, job)
-}
-
-/// A commit, short enough to read.
-fn short(commit: &str) -> &str {
-    &commit[..commit.len().min(8)]
 }
 
 /// Whether the file holding a job's output is still there.
@@ -572,7 +581,8 @@ mod tests {
             group: "algebra".to_owned(),
             side: "shared".to_owned(),
             line: "quotient-groups".to_owned(),
-            commit: "0123456789abcdef".to_owned(),
+            line_id: Some("lin:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned()),
+            revision: 3,
             against: None,
             task: task.to_owned(),
             agent: "claude".to_owned(),

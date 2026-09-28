@@ -1,8 +1,10 @@
-//! The loop that takes work.
+//! The loop that takes work, and keeps lines in step with the window shut.
 //!
 //! It says it is there, asks for a job, does it, reports the type of
-//! what happened, and asks again. Nothing else: the instance keeps the
-//! queue, this machine does the work, and the two never swap jobs.
+//! what happened, and asks again: the instance keeps the queue, this
+//! machine does the work, and the two never swap jobs. Beside it runs the
+//! engine the application runs, which works while the application is
+//! closed, so what was written still leaves.
 //!
 //! A headless machine has to be able to do all of this, so the daemon is
 //! a command like any other and can be put under whatever supervises the
@@ -35,22 +37,52 @@ const AFTER_TROUBLE: Duration = Duration::from_secs(30);
 
 /// Runs the loop.
 ///
-/// With `once`, it takes at most one job and returns, which is what a
-/// machine woken by something else wants and what a test can watch.
+/// It keeps this machine's lines in step while the application is closed
+/// — the same engine, one at a time — and, on a machine registered to run
+/// jobs, takes them. With `once`, it does one round and takes at most one
+/// job and returns, which is what a machine woken by something else wants
+/// and what a test can watch.
 pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
     let (credentials, server) = session::connect(home)?;
     let config = Config::read(&home.config_file())?;
+    let node = server.node(&credentials.token)?.is_some();
 
-    if server.node(&credentials.token)?.is_none() {
-        bail!("this machine is not registered to run jobs: run `stemma node init`");
+    if once {
+        if !crate::mirror::Store::at(home.state_dir()).window_open() {
+            let report = crate::mirror::Mirror::at(home)?.step(
+                &crate::mirror::Instance::connect(home)?,
+                true,
+                &crate::mirror::Which::All,
+            );
+            crate::mirror::tell(&report, out)?;
+        }
+        if !node {
+            return Ok(());
+        }
+    }
+
+    let woken = match once {
+        true => None,
+        false => Some(listen(home)),
+    };
+
+    if !node {
+        writeln!(
+            out,
+            "Keeping lines in step with {} as {}. This machine is not registered to run \
+             jobs: `stemma node init` offers it.",
+            credentials.server, credentials.user
+        )?;
+        out.flush()?;
+
+        // Nothing else to do: the engine runs until the program is stopped.
+        loop {
+            std::thread::park();
+        }
     }
 
     let mut agents = crate::agents::look(home, &config);
     let mut looked = Instant::now();
-    let woken = match once {
-        true => None,
-        false => Some(wake_on_work(home)),
-    };
 
     writeln!(
         out,
@@ -123,25 +155,42 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
     }
 }
 
-/// Listens to the instance on a thread of its own, and rings whenever a
-/// job may be waiting: one was queued, a machine changed, or the stream
-/// opened after being away.
-fn wake_on_work(home: &Home) -> std::sync::mpsc::Receiver<()> {
+/// Listens to the instance on a thread of its own, passing everything
+/// to the engine, which runs on another, and ringing whenever a job may
+/// be waiting: one was queued, a machine changed, or the stream opened
+/// after being away.
+fn listen(home: &Home) -> std::sync::mpsc::Receiver<()> {
     use crate::events::Heard;
+    use crate::mirror::engine::{self, Nudge, Role};
     use stemma_core::event::Event;
 
     let (ring, woken) = std::sync::mpsc::channel();
-    let home = home.clone();
+    let (nudges, heard) = engine::channel();
 
+    let keeping = home.clone();
+    std::thread::spawn(move || {
+        engine::run(&keeping, Role::Background, &heard, |_| {});
+    });
+
+    let home = home.clone();
     std::thread::spawn(move || {
         let never = std::sync::atomic::AtomicBool::new(false);
 
         crate::events::follow(&home, &never, |heard| {
             let work = match &heard {
-                Heard::Connected => true,
-                Heard::Changed(Event::Job { state, .. }) => state == "queued",
-                Heard::Changed(Event::Machine { .. } | Event::Reset) => true,
-                _ => false,
+                Heard::Connected => {
+                    let _ = nudges.send(Nudge::Connected);
+                    true
+                }
+                Heard::Changed(event) => {
+                    let _ = nudges.send(Nudge::Heard(event.clone()));
+                    match event {
+                        Event::Job { state, .. } => state == "queued",
+                        Event::Machine { .. } | Event::Reset => true,
+                        _ => false,
+                    }
+                }
+                Heard::Lost(_) => false,
             };
 
             if work {
@@ -174,7 +223,13 @@ fn do_one(
     let completed = std::thread::scope(|scope| -> Result<work::Completed> {
         let (finished, waiting) = std::sync::mpsc::sync_channel(1);
         scope.spawn(move || {
-            let completed = work::carry_out(home, config, handed);
+            let completed = match crate::mirror::Instance::connect(home) {
+                Ok(instance) => work::carry_out(home, config, &instance, handed),
+                Err(error) => work::Completed {
+                    outcome: stemma_core::job::Outcome::out_of_reach(format!("{error:#}")),
+                    proposal: None,
+                },
+            };
             let _ = finished.send(completed);
         });
         wait_with_heartbeat(waiting, Duration::from_secs(BEAT_SECONDS), || {

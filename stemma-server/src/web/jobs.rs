@@ -332,6 +332,9 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
     let revision = asking.revision;
     let against = asking.against;
 
+    if task == Task::Build {
+        return Err(refuse("Builds are asked for by the server itself."));
+    }
     if task == Task::Reconcile && against.is_none() {
         return Err(refuse("A merge job needs the other version's revision."));
     }

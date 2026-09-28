@@ -500,6 +500,96 @@ pub fn committed(
     lines::committed(connection, line, revision)
 }
 
+/// How long after a stretch of writing ends a machine has to publish
+/// what it came to, before another machine is asked to.
+pub const BUILD_GRACE_MINUTES: u32 = 5;
+
+/// Notes that what a line came to up to a revision has been built.
+pub fn built_up_to(connection: &Connection, line: &LineId, revision: u64) -> Result<usize> {
+    connection
+        .execute(
+            "UPDATE writing_sessions SET built = 1
+              WHERE line_id = ?1 AND built = 0
+                AND id IN (SELECT session_id FROM revisions
+                            WHERE line_id = ?1 AND session_id IS NOT NULL
+                            GROUP BY session_id HAVING max(number) <= ?2)",
+            params![line.to_string(), revision as i64],
+        )
+        .context("cannot note what was built")
+}
+
+/// A stretch of writing nobody has built, a while after it ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unbuilt {
+    /// Which stretch.
+    pub session: String,
+    /// The line it wrote, as it is now.
+    pub line: Started,
+    /// Who wrote it.
+    pub writer: UserId,
+}
+
+/// Every stretch of writing that is committed, not built, not yet asked
+/// of anybody, and past its grace. A stretch some later writing has
+/// overtaken is owed nothing, and is noted as such.
+pub fn unbuilt(connection: &Connection) -> Result<Vec<Unbuilt>> {
+    let mut statement = connection.prepare(
+        "SELECT s.id, s.line_id, s.user_id, max(r.number) AS last
+           FROM writing_sessions s JOIN revisions r ON r.session_id = s.id
+          WHERE s.built = 0 AND s.build_job IS NULL
+            AND s.commit_id IS NOT NULL
+            AND s.closed_at < datetime('now', ?1)
+          GROUP BY s.id
+          ORDER BY s.closed_at, s.id",
+    )?;
+    let found = statement
+        .query_map([format!("-{BUILD_GRACE_MINUTES} minutes")], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                id_at::<LineId>(row, "line_id")?,
+                id_at::<UserId>(row, "user_id")?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("cannot list what is not built")?;
+
+    let mut owed = Vec::new();
+    for (session, line, writer, last) in found {
+        match lines::by_id(connection, &line)? {
+            Some(line) if !line.is_deleted() && line.revision == last.max(0) as u64 => {
+                owed.push(Unbuilt {
+                    session,
+                    line,
+                    writer,
+                });
+            }
+            _ => {
+                connection
+                    .execute(
+                        "UPDATE writing_sessions SET built = 1 WHERE id = ?1",
+                        [&session],
+                    )
+                    .context("cannot note what is owed nothing")?;
+            }
+        }
+    }
+
+    Ok(owed)
+}
+
+/// Notes which job was asked to build a stretch of writing.
+pub fn build_asked(connection: &Connection, session: &str, job: &str) -> Result<()> {
+    connection
+        .execute(
+            "UPDATE writing_sessions SET build_job = ?2 WHERE id = ?1",
+            params![session, job],
+        )
+        .context("cannot note the build that was asked for")?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -770,5 +860,44 @@ mod tests {
                 .number,
             4
         );
+    }
+
+    #[test]
+    fn a_stretch_nothing_built_is_owed_a_build_until_something_covers_it() {
+        let mut world = world();
+        let laptop = world.laptop;
+        take(&world, &laptop);
+        written(&mut world, &laptop, 1, "Two").unwrap();
+        end_writing(world.database.connection(), &world.line).unwrap();
+        let ready = uncommitted(world.database.connection()).unwrap();
+        committed(
+            world.database.connection(),
+            &ready[0].session,
+            &world.line,
+            2,
+            Some("abc"),
+        )
+        .unwrap();
+
+        assert!(
+            unbuilt(world.database.connection()).unwrap().is_empty(),
+            "still inside its grace"
+        );
+
+        let ago = |connection: &Connection| {
+            connection
+                .execute(
+                    "UPDATE writing_sessions SET closed_at = datetime('now', '-1 hour')",
+                    [],
+                )
+                .unwrap();
+        };
+        ago(world.database.connection());
+        let owed = unbuilt(world.database.connection()).unwrap();
+        assert_eq!(owed.len(), 1);
+        assert_eq!(owed[0].line.revision, 2);
+
+        built_up_to(world.database.connection(), &world.line, 2).unwrap();
+        assert!(unbuilt(world.database.connection()).unwrap().is_empty());
     }
 }

@@ -112,6 +112,17 @@ pub enum Command {
     /// contacting the server.
     Status,
 
+    /// Makes a read-only git clone of one of a group's repositories.
+    Export {
+        /// The group's short name.
+        group: String,
+        /// Your own repository in the group rather than the shared one.
+        #[arg(long)]
+        private: bool,
+        /// Where the clone goes; a new directory beside you otherwise.
+        into: Option<PathBuf>,
+    },
+
     /// Shows where this machine keeps its files.
     Where,
 

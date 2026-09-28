@@ -120,6 +120,12 @@ async fn maintain(instance: Instance) {
             tracing::warn!("cannot commit the writing that went quiet: {error}");
         }
 
+        match crate::history::ask_for_builds(&instance).await {
+            Ok(0) => {}
+            Ok(asked) => tracing::info!("asked for {asked} builds nobody published"),
+            Err(error) => tracing::warn!("cannot ask for builds: {error}"),
+        }
+
         if rounds % 120 == 1 {
             match instance.read(crate::store::events::forget_old).await {
                 Ok(0) => {}

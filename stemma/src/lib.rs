@@ -15,6 +15,7 @@ pub mod conflicts;
 pub mod credentials;
 pub mod daemon;
 pub mod events;
+pub mod export;
 pub mod git;
 pub mod git_credential;
 pub mod home;

@@ -49,6 +49,8 @@ export type Mirrored = {
   /** Every line not sent yet or needing a decision. */
   lines: Standing[];
   report: Round;
+  /** The repositories whose pages were built and published. */
+  published: string[];
 };
 
 export type Entry = { group: string; side: string; name: string; path: string };
