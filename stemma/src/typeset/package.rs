@@ -17,10 +17,10 @@ use anyhow::{Context, Result};
 use stemma_core::package::{NAME, NAMESPACE, VERSION};
 
 /// The package's own manifest, as Typst reads it.
-const MANIFEST: &str = include_str!("../../typst/typst.toml");
+const MANIFEST: &str = include_str!("../../../typst/typst.toml");
 
 /// What the environments are.
-const LIBRARY: &str = include_str!("../../typst/lib.typ");
+const LIBRARY: &str = include_str!("../../../typst/lib.typ");
 
 /// Where this version of the package goes.
 pub fn directory() -> Result<PathBuf> {

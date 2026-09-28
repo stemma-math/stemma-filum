@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use crate::account::credentials::Credentials;
 use crate::api::Server;
-use crate::credentials::Credentials;
 use crate::home::Home;
 use crate::mirror::{Mirror, Standing};
 
@@ -36,16 +36,16 @@ pub fn send(home: &Home) -> Vec<Standing> {
 pub fn take_down(home: &Home) -> Result<Vec<String>> {
     let mut done = Vec::new();
 
-    if crate::daemon::remove(home)? {
+    if crate::machine::daemon::remove(home)? {
         done.push("The background service is stopped and removed.".to_owned());
     }
-    if crate::setup::unlink()? {
+    if crate::machine::setup::unlink()? {
         done.push(format!(
             "{} is removed.",
-            crate::setup::link_path()?.display()
+            crate::machine::setup::link_path()?.display()
         ));
     }
-    for profile in crate::setup::remove_lines()? {
+    for profile in crate::machine::setup::remove_lines()? {
         done.push(format!(
             "The Stemma line is removed from {}.",
             profile.display()

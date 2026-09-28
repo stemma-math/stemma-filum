@@ -211,7 +211,7 @@ impl Mirror {
             store: Store::at(home.state_dir()),
             config,
             workspace,
-            typeset: crate::render::page,
+            typeset: crate::typeset::render::page,
         })
     }
 
@@ -849,10 +849,10 @@ impl Mirror {
     /// What a line is sent as: the line, and the page it typesets to.
     fn prepared(&self, record: &Record) -> Result<Outgoing> {
         let root = self.repository(&record.group, record.side);
-        let pins = crate::build::read_manifest(&root)
-            .map(|manifest| crate::build::group_pins(&root, &manifest))
+        let pins = crate::repository::read_manifest(&root)
+            .map(|manifest| crate::repository::group_pins(&root, &manifest))
             .unwrap_or_default();
-        crate::render::may_typeset(&pins)?;
+        crate::typeset::render::may_typeset(&pins)?;
 
         let document = Document::parse(&record.source).context("what is here is not a line")?;
         let page = (self.typeset)(&root, &document)?;
@@ -1087,30 +1087,6 @@ fn remove_file(path: &Path) -> Result<()> {
 }
 
 // ---- The command line ----
-
-/// The repository a path is inside, found by its manifest.
-pub fn repository_of(path: &Path) -> Option<PathBuf> {
-    let path = path.canonicalize().ok()?;
-
-    path.ancestors()
-        .find(|directory| directory.join(repository::MANIFEST).is_file())
-        .map(Path::to_path_buf)
-}
-
-/// The group, repository and line a command is about: the line named,
-/// or the one the path is inside.
-pub fn line_at(at: &Path, named: Option<&str>) -> Result<(String, Side, Name)> {
-    let root = repository_of(at)
-        .context("this is not inside a group's repository: run it from one of its lines")?;
-    let manifest = crate::build::read_manifest(&root)?;
-    let name = crate::jobs::line_of(&root, at, named)?;
-
-    Ok((
-        manifest.group.slug().as_str().to_owned(),
-        manifest.side,
-        name,
-    ))
-}
 
 /// Takes in what changed and sends what is here, now, and says so.
 pub fn run(home: &Home, out: &mut impl Write) -> Result<Report> {

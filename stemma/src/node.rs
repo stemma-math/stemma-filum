@@ -14,10 +14,10 @@ use std::io::Write;
 use anyhow::{Context, Result};
 use stemma_core::machine::{Availability, Detected};
 
+use crate::account::session;
 use crate::api::Node;
 use crate::config::Config;
 use crate::home::Home;
-use crate::session;
 
 /// Registers this machine, and says what it will work on.
 ///
@@ -29,7 +29,7 @@ pub fn init(home: &Home, groups: &[String], out: &mut impl Write) -> Result<Node
     let config = Config::read(&home.config_file())?;
 
     writeln!(out, "Looking for agents on this machine...")?;
-    let agents = crate::agents::look(home, &config);
+    let agents = crate::job::agents::look(home, &config);
 
     let serving: Vec<String> = match groups.is_empty() {
         false => groups.iter().map(|group| group.trim().to_owned()).collect(),

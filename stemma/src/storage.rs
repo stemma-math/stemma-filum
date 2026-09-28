@@ -47,6 +47,22 @@ pub fn replace(path: &Path, contents: &str) -> Result<()> {
         .with_context(|| format!("cannot replace {}", path.display()))
 }
 
+/// An identifier the instance handed over, as one file name.
+///
+/// Identifiers are a prefix, a colon and letters, and the colon is no
+/// business of a file system's. Anything else that is not a letter, a
+/// digit, `-` or `_` is replaced the same way, so that an identifier can
+/// never name a directory above the one it is put in.
+pub fn file_name(id: &str) -> String {
+    id.chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => character,
+            _ => '-',
+        })
+        .collect()
+}
+
+/// A temporary file that is removed unless it was renamed into place.
 struct Temporary(PathBuf);
 
 impl Drop for Temporary {
@@ -77,5 +93,15 @@ mod tests {
         assert!(directory.is_dir());
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_identifier_is_one_file_name_and_never_a_path() {
+        assert_eq!(
+            file_name("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T"),
+            "job-01K5YQ4TQ2VZ8H3M9N0P1R2S3T"
+        );
+        assert_eq!(file_name("lin:../../credentials"), "lin-------credentials");
+        assert!(!file_name("a/b\\c").contains(['/', '\\']));
     }
 }

@@ -39,7 +39,7 @@ pub struct Instance {
 impl Instance {
     /// The instance, as the credential here names it.
     pub fn connect(home: &Home) -> Result<Self> {
-        let (credentials, server) = crate::session::connect(home)?;
+        let (credentials, server) = crate::account::session::connect(home)?;
 
         Ok(Self {
             server,

@@ -14,7 +14,7 @@ use stemma_core::id::BlockId;
 use stemma_core::reconcile::Keep;
 
 use crate::home::Home;
-use crate::mirror::{self, Mirror, Standing, State};
+use crate::mirror::{Mirror, Standing, State};
 
 /// Lists the blocks that need a decision, in the line the path is inside
 /// or in every line.
@@ -76,7 +76,7 @@ pub fn resolve(home: &Home, at: &Path, keep: Keep, out: &mut impl Write) -> Resu
 /// The lines needing a decision: the one the path is inside, when it is
 /// inside one, or all of them.
 fn deciding(mirror: &Mirror, at: &Path) -> Result<Vec<Standing>> {
-    let only = mirror::line_at(at, None).ok();
+    let only = crate::repository::line_at(at, None).ok();
 
     Ok(mirror
         .standing()?

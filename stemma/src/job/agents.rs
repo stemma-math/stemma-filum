@@ -276,7 +276,7 @@ pub fn run_in_workspace(
         .current_dir(workspace)
         .env("PATH", std::env::join_paths(paths)?)
         .env(
-            crate::job_api::STATE_VARIABLE,
+            crate::job::answer::STATE_VARIABLE,
             workspace.join(".stemma/job.json"),
         );
 

@@ -25,7 +25,7 @@ fn main() -> ExitCode {
         .and_then(|path| PathBuf::from(path).file_stem().map(|name| name.to_owned()))
         .is_some_and(|name| name == "stemma-job")
     {
-        return match stemma::job_api::run_from_environment() {
+        return match stemma::job::answer::run_from_environment() {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("stemma-job: {error:#}");

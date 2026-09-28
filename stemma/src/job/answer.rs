@@ -3,9 +3,13 @@
 //! The daemon creates the state file and grants. The `stemma-job` command
 //! only appends actions that validate against both, so the daemon never has
 //! to interpret free-form agent output or read arbitrary workspace changes.
+//!
+//! An agent may run several `stemma-job` commands at once, so every one
+//! that changes the state holds a lock beside it from reading it to
+//! writing it back: two answers given together are both kept.
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -114,8 +118,12 @@ pub fn run_from_environment() -> Result<()> {
     let path = std::env::var_os(STATE_VARIABLE)
         .map(PathBuf::from)
         .context("this command is only available inside a Stemma job workspace")?;
+    let mut changed = !matches!(api.command, JobCommand::Check | JobCommand::Status);
+    let _locked = match changed {
+        true => Some(lock(&path)?),
+        false => None,
+    };
     let mut state = read(&path)?;
-    let mut changed = true;
 
     match api.command {
         JobCommand::Edit { block, from } => {
@@ -216,15 +224,26 @@ pub fn read(path: &Path) -> Result<State> {
 /// Writes a state atomically, so an interrupted command leaves the last
 /// complete answer for the daemon to inspect.
 pub fn write(path: &Path, state: &State) -> Result<()> {
-    let parent = path.parent().context("the job state has no directory")?;
-    std::fs::create_dir_all(parent)?;
-    let temporary = parent.join("job.json.writing");
-    let mut file = std::fs::File::create(&temporary)?;
-    serde_json::to_writer_pretty(&mut file, state)?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    std::fs::rename(&temporary, path)?;
-    Ok(())
+    let mut text = serde_json::to_string_pretty(state).context("cannot write the job state")?;
+    text.push('\n');
+
+    crate::storage::replace(path, &text)
+}
+
+/// Waits for, and takes, the lock on a job's state, held for as long as
+/// what this returns is.
+fn lock(state: &Path) -> Result<File> {
+    let path = state.with_extension("lock");
+    let file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .with_context(|| format!("cannot open {}", path.display()))?;
+    file.lock()
+        .with_context(|| format!("cannot lock {}", path.display()))?;
+
+    Ok(file)
 }
 
 fn block_from(path: &Path) -> Result<Block> {

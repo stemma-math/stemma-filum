@@ -15,17 +15,17 @@ use stemma_core::line::Line;
 use stemma_core::proposal::{FormalReview, LibraryChange, LibraryFileChange, Offer, Operation};
 use stemma_core::repository::{self, Side};
 
-use crate::agents::{self, Ran};
 use crate::api::Handed;
 use crate::config::Config;
 use crate::home::Home;
+use crate::job::agents::{self, Ran};
 use crate::mirror::{Instance, Mirror, Remote, Which};
 
 /// Which revision of the prompt this build sends.
 ///
 /// It is recorded with every run, because "an agent said so" is not an
 /// attribution: the vendor, the model and the words it was given are.
-pub const PROMPT_REVISION: &str = crate::job_workspace::INSTRUCTION_REVISION;
+pub const PROMPT_REVISION: &str = crate::job::workspace::INSTRUCTION_REVISION;
 
 /// Carries out one job and says what came of it.
 ///
@@ -90,7 +90,7 @@ pub fn carry_out_controlled(
     };
 
     let repository = repository_of(home, handed);
-    let workspace = match crate::job_workspace::prepare(
+    let workspace = match crate::job::workspace::prepare(
         handed,
         &task,
         &source,
@@ -134,7 +134,7 @@ pub fn carry_out_controlled(
             return Completed::at(Outcome::out_of_reach(format!("{error:#}")), workspace.root);
         }
     };
-    let state = crate::job_api::read(&workspace.state).ok();
+    let state = crate::job::answer::read(&workspace.state).ok();
     let was_cancelled = matches!(&ran, Ran::Finished(finished) if finished.cancelled);
     let failure = stemma_core::id::Slug::parse(&handed.agent)
         .ok()
@@ -240,8 +240,8 @@ pub fn carry_out_controlled(
                         "this machine does not have the line's repository yet".to_owned()
                     })?;
                     let manifest =
-                        crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
-                    let pins = crate::build::group_pins(&clone, &manifest);
+                        crate::repository::read_manifest(&clone).map_err(|e| e.to_string())?;
+                    let pins = crate::repository::group_pins(&clone, &manifest);
                     let name = stemma_core::line::Name::parse(&handed.line)
                         .map_err(|error| error.to_string())?;
                     let targets = formal_targets(&task, &line)?;
@@ -272,8 +272,9 @@ pub fn carry_out_controlled(
                 let clone = repository_of(home, handed).ok_or_else(|| {
                     "this machine does not have the line's repository yet".to_owned()
                 })?;
-                let manifest = crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
-                let pins = crate::build::group_pins(&clone, &manifest);
+                let manifest =
+                    crate::repository::read_manifest(&clone).map_err(|e| e.to_string())?;
+                let pins = crate::repository::group_pins(&clone, &manifest);
                 crate::lean::check_offered(
                     &clone,
                     &pins,
@@ -588,7 +589,7 @@ fn build(home: &Home, instance: &Instance, handed: &Handed) -> Completed {
 
         let side: Side = handed.side.parse()?;
         let built = crate::build::read(&mirror, &handed.group, side)?;
-        let credentials = crate::credentials::Credentials::read(&home.credentials_file())?;
+        let credentials = crate::account::credentials::Credentials::read(&home.credentials_file())?;
         let published = crate::build::publish(&built, credentials.as_ref());
         if published == crate::build::Published::Kept {
             mirror.built(&built.nodes)?;

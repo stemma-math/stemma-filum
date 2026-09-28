@@ -13,8 +13,8 @@ use std::time::Duration;
 use anyhow::Result;
 use stemma_core::event::Event;
 
+use crate::account::session;
 use crate::home::Home;
-use crate::session;
 
 /// What a listener hears.
 #[derive(Debug, Clone, PartialEq, Eq)]

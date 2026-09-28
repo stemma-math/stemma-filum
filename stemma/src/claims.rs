@@ -14,10 +14,10 @@ use std::path::Path;
 use anyhow::Result;
 use stemma_core::claim::Held;
 
+use crate::account::session;
 use crate::api::{About, Claimed, Server};
 use crate::home::Home;
-use crate::mirror::{self, Instance, Mirror, Which};
-use crate::session;
+use crate::mirror::{Instance, Mirror, Which};
 
 /// Takes the line, if nothing else has it.
 pub fn take(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
@@ -152,7 +152,7 @@ fn lapsing(left: u64) -> String {
 /// The instance, the credential, and which line the command is about.
 fn addressed(home: &Home, at: &Path, line: Option<&str>) -> Result<(Server, String, About)> {
     let (credentials, server) = session::connect(home)?;
-    let (group, side, name) = mirror::line_at(at, line)?;
+    let (group, side, name) = crate::repository::line_at(at, line)?;
 
     Ok((
         server,

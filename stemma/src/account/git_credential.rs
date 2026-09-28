@@ -10,7 +10,7 @@ use std::io::{BufRead, Write};
 
 use anyhow::Result;
 
-use crate::credentials::Credentials;
+use crate::account::credentials::Credentials;
 use crate::home::Home;
 
 /// The username git is given.

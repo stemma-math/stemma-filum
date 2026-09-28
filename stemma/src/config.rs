@@ -148,12 +148,12 @@ impl Config {
         self.groups
             .get(group)
             .cloned()
-            .unwrap_or_else(|| crate::workspace::group_directory(workspace, group))
+            .unwrap_or_else(|| crate::repository::group_directory(workspace, group))
     }
 
     /// Remembers that a group lives somewhere other than the default.
     pub fn put_group(&mut self, group: &str, directory: &Path, workspace: &Path) {
-        if directory == crate::workspace::group_directory(workspace, group) {
+        if directory == crate::repository::group_directory(workspace, group) {
             self.groups.remove(group);
         } else {
             self.groups.insert(group.to_owned(), directory.to_owned());
