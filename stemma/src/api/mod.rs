@@ -8,7 +8,7 @@
 //!
 //! Every exchange goes through [`Server`], which refuses an answer from
 //! anything that does not say it speaks this build's protocol. The types
-//! that travel are in [`wire`], and re-exported here.
+//! that travel are defined in a module of their own and re-exported here.
 
 pub mod events;
 mod reaching;

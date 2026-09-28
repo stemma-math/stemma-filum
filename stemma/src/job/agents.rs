@@ -174,17 +174,21 @@ impl Finished {
 
 /// Runs an agent against one prompt, keeping what it says here.
 pub fn run(config: &Config, slug: &str, prompt: &str, into: &Path) -> Result<Ran> {
-    let Some(program) = program(config, slug) else {
+    let Some(mut command) = asking(config, slug, prompt) else {
         return Ok(Ran::Missing);
     };
-    let Some(invocation) = invocation(slug) else {
-        return Ok(Ran::Missing);
-    };
-
-    let mut command = Command::new(program);
-    command.args(invocation.run).arg(prompt);
 
     Ok(Ran::Finished(wait_for(&mut command, into, RUN_LIMIT)?))
+}
+
+/// The command that asks an agent one prompt, when this machine has the
+/// agent and this build knows how to ask it.
+fn asking(config: &Config, slug: &str, prompt: &str) -> Option<Command> {
+    let program = program(config, slug)?;
+    let mut command = Command::new(program);
+    command.args(invocation(slug)?.run).arg(prompt);
+
+    Some(command)
 }
 
 /// How long trying an agent out may take.
@@ -193,22 +197,14 @@ const TRY_LIMIT: Duration = Duration::from_secs(2 * 60);
 /// Asks an agent for one word, to find out whether it is installed and
 /// signed in. What it says stays in this machine's cache.
 pub fn try_out(home: &Home, config: &Config, slug: &str) -> Result<Ran> {
-    let Some(program) = program(config, slug) else {
-        return Ok(Ran::Missing);
-    };
-    let Some(invocation) = invocation(slug) else {
+    let Some(mut command) = asking(config, slug, "Answer with the single word: ready") else {
         return Ok(Ran::Missing);
     };
 
     let directory = scratch(home)?.join("tried");
     std::fs::create_dir_all(&directory)
         .with_context(|| format!("cannot create {}", directory.display()))?;
-
-    let mut command = Command::new(program);
-    command
-        .current_dir(&directory)
-        .args(invocation.run)
-        .arg("Answer with the single word: ready");
+    command.current_dir(&directory);
 
     Ok(Ran::Finished(wait_for(
         &mut command,
