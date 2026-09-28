@@ -59,6 +59,28 @@ fn run(directory: &Path, arguments: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Checks one commit out as a detached temporary worktree.
+pub(crate) fn detached_worktree(repository: &Path, commit: &str, at: &Path) -> Result<()> {
+    if at.exists() {
+        let _ = std::fs::remove_dir_all(at);
+    }
+    let shown = at.display().to_string();
+    run(
+        repository,
+        &[
+            "worktree", "add", "--quiet", "--detach", "--", &shown, commit,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Removes a temporary worktree, including git's administrative record.
+pub(crate) fn remove_worktree(repository: &Path, at: &Path) {
+    let shown = at.display().to_string();
+    let _ = run(repository, &["worktree", "remove", "--force", "--", &shown]);
+    let _ = std::fs::remove_dir_all(at);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

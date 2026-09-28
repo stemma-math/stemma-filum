@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use stemma_core::id::BlockId;
 use stemma_core::job::{Outcome, Task};
 use stemma_core::line::{BlackBox, Line};
-use stemma_core::proposal::{LibraryChange, Offer};
+use stemma_core::proposal::{FormalReview, LibraryChange, Offer};
 use stemma_core::repository::{self, Side};
 
 use crate::agents::{self, Ran};
@@ -26,7 +26,7 @@ use crate::mirror::{Instance, Mirror, Remote, Which};
 ///
 /// It is recorded with every run, because "an agent said so" is not an
 /// attribution: the vendor, the model and the words it was given are.
-pub const PROMPT_REVISION: &str = "2";
+pub const PROMPT_REVISION: &str = "3";
 
 /// Carries out one job and says what came of it.
 ///
@@ -88,20 +88,51 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
     };
 
     let outcome = became_of(&task, &handed.agent, &ran);
-    let proposal = match (&outcome, &ran) {
+    let mut proposal = match (&outcome, &ran) {
         (Outcome::Produced { .. }, Ran::Finished(finished)) => {
             proposal(&handed.agent, &finished.output)
         }
         _ => None,
     };
 
-    if needs_lean_check(&task, &outcome) {
+    let reviews_library = proposal
+        .as_ref()
+        .is_some_and(|offer| offer.library_change.is_some());
+    if reviews_library || needs_lean_check(&task, &outcome) {
         let checked = proposal
-            .as_ref()
+            .as_mut()
             .ok_or_else(|| "the agent offered no formal change".to_owned())
             .and_then(|offer| {
                 if let Some(change) = &offer.library_change {
-                    return check_library_offer(change, &task, &line, &handed.line);
+                    check_library_offer(change, &task, &line, &handed.line)?;
+                    let clone = repository_of(home, handed).ok_or_else(|| {
+                        "this machine does not have the line's repository yet".to_owned()
+                    })?;
+                    let manifest =
+                        crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
+                    let pins = crate::build::group_pins(&clone, &manifest);
+                    let name = stemma_core::line::Name::parse(&handed.line)
+                        .map_err(|error| error.to_string())?;
+                    let targets = formal_targets(&task, &line)?;
+                    let review = crate::lean::review_change(
+                        &clone,
+                        &name,
+                        &pins,
+                        change,
+                        &offer.source,
+                        &home.cache_dir().join("lean").join(&handed.job),
+                        &targets,
+                    )
+                    .map_err(|error| format!("{error:#}"))?;
+                    let proposed_line = Line::read(&offer.source).map_err(|faults| {
+                        faults
+                            .first()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| "the proposed line is unreadable".to_owned())
+                    })?;
+                    check_review(&review, &targets, &proposed_line)?;
+                    offer.formal_review = Some(Box::new(review));
+                    return Ok(());
                 }
                 let lean_source = offer
                     .lean_source
@@ -123,7 +154,7 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
                 )?;
                 let declared = crate::lean::declared_statements(lean_source);
                 match &task {
-                    Task::Formalize { block } => {
+                    Task::Formalize { block } | Task::FollowRoute { block } => {
                         let statement = line
                             .node_at(block)
                             .ok_or_else(|| "the statement block is no longer there".to_owned())?;
@@ -195,8 +226,10 @@ pub fn carry_out(home: &Home, config: &Config, instance: &Instance, handed: &Han
 }
 
 fn needs_lean_check(task: &Task, outcome: &Outcome) -> bool {
-    matches!(task, Task::Formalize { .. } | Task::Verify { .. })
-        && matches!(outcome, Outcome::Produced { .. })
+    matches!(
+        task,
+        Task::Formalize { .. } | Task::FollowRoute { .. } | Task::Verify { .. }
+    ) && matches!(outcome, Outcome::Produced { .. })
 }
 
 fn check_library_offer(
@@ -207,6 +240,9 @@ fn check_library_offer(
 ) -> Result<(), String> {
     if change.files.is_empty() {
         return Err("the agent offered an empty Lean library change".to_owned());
+    }
+    if let Some(file) = change.files.iter().find(|file| file.before == file.after) {
+        return Err(format!("the agent did not change {}", file.path));
     }
     let marked: std::collections::BTreeSet<String> = change
         .files
@@ -220,7 +256,7 @@ fn check_library_offer(
         })
         .collect();
     let required: Vec<BlockId> = match task {
-        Task::Formalize { block } => vec![*block],
+        Task::Formalize { block } | Task::FollowRoute { block } => vec![*block],
         Task::Verify { after } => {
             line.boxes()
                 .into_iter()
@@ -243,6 +279,52 @@ fn check_library_offer(
             missing.join(", ")
         ))
     }
+}
+
+fn formal_targets(task: &Task, line: &Line) -> Result<Vec<BlockId>, String> {
+    match task {
+        Task::Formalize { block } | Task::FollowRoute { block } => Ok(vec![*block]),
+        Task::Verify { after } => line
+            .boxes()
+            .into_iter()
+            .find(|black_box| &black_box.after == after)
+            .map(|black_box| black_box.interior)
+            .ok_or_else(|| "the black box is no longer there".to_owned()),
+        _ => Ok(Vec::new()),
+    }
+}
+
+fn check_review(review: &FormalReview, targets: &[BlockId], line: &Line) -> Result<(), String> {
+    for block in targets {
+        if !review
+            .blocks
+            .iter()
+            .any(|reviewed| &reviewed.check.block == block)
+        {
+            return Err(format!("Lean produced no review evidence for `{block}`"));
+        }
+    }
+    for reviewed in &review.blocks {
+        let central = line
+            .node_at(&reviewed.check.block)
+            .is_some_and(stemma_core::line::Node::is_central);
+        if (central || targets.contains(&reviewed.check.block))
+            && reviewed.check.state != stemma_core::model::Verification::Verified
+        {
+            return Err(if reviewed.check.diagnostic.is_empty() {
+                format!("Lean did not verify `{}`", reviewed.check.block)
+            } else {
+                reviewed.check.diagnostic.clone()
+            });
+        }
+        if central && reviewed.reading.trim().is_empty() {
+            return Err(format!(
+                "the agent gave no plain-language reading of the formal statement for `{}`",
+                reviewed.check.block
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Everything this machine returns after doing one job.
@@ -289,6 +371,7 @@ fn proposal(agent: &str, output: &str) -> Option<Offer> {
         lean_source: section(output, LEAN_START, LEAN_END),
         library_change: section(output, LIBRARY_START, LIBRARY_END)
             .and_then(|change| serde_json::from_str(&change).ok()),
+        formal_review: None,
         vendor,
         model: model.to_owned(),
         prompt_revision: PROMPT_REVISION.to_owned(),
@@ -350,6 +433,7 @@ fn nothing_found(task: &Task) -> &'static str {
         // evidence of nothing, and the words have to say so.
         Task::Refute { .. } => "no counterexample was found, which settles nothing",
         Task::Formalize { .. } => "no formalization was found",
+        Task::FollowRoute { .. } => "the agent could not formalize the author's route",
         Task::Verify { .. } => "no Lean argument was found",
         Task::Promote { .. } => "no justified promotion was found",
         Task::Prove { .. } => "no proof was found",
@@ -462,8 +546,10 @@ fn prompt(handed: &Handed, task: &Task, line: &Line, source: &str, other: Option
          then the complete proposed line.json, then `stemma: end proposal`. \
          If Lean changes, then print `stemma: lean`, the complete `Main.lean` module, \
          and `stemma: end lean`. A group-library change is instead printed between \
-         `stemma: library` and `stemma: end library` as a JSON `base` commit and a `files` \
-         array of path, before and after. After it print `stemma: model MODEL-ID` with the concrete model you used, \
+         `stemma: library` and `stemma: end library` as JSON with a `base` commit, a `files` \
+         array of path, before and after, and a `readings` object mapping every central block \
+         you mark to your plain-language reading of its Lean-printed statement. After it print \
+         `stemma: model MODEL-ID` with the concrete model you used, \
          and finally `stemma: produced`. If you found nothing, end with `{NOTHING}`. \
          Finding nothing is an ordinary answer and a useful one."
     );
@@ -514,7 +600,17 @@ fn asked_of(task: &Task, line: &Line, line_name: &str, other: Option<&str>) -> S
         ),
         Task::Formalize { block } => format!(
             "Formalize `{}` in Lean. Keep its prose fixed. Mark every declaration that backs it \
-             with `@[stemma \"{line_name}/{block}\"]`.",
+             with `@[stemma \"{line_name}/{block}\"]`. If Lean reaches this central result by a \
+             different route, revise only non-central blocks so the narrative honestly follows \
+             that route, and explain the realignment in your answer.",
+            named(line, block)
+        ),
+        Task::FollowRoute { block } => format!(
+            "Your proposed route to `{}` was declined. Keep the author's prose route and every \
+             central statement fixed, and try to formalize that route in Lean. Mark the backing \
+             declaration with `@[stemma \"{line_name}/{block}\"]`. If the route cannot be made \
+             formal, explain exactly where it fails and finish with `stemma: nothing`; do not \
+             silently substitute another route.",
             named(line, block)
         ),
         Task::Verify { after } => {
@@ -731,6 +827,10 @@ mod tests {
                     "@[stemma \"quotient-groups/{block}\"] theorem first : True := by trivial\n"
                 )),
             }],
+            readings: std::collections::BTreeMap::from([(
+                block,
+                "The first marked statement holds.".to_owned(),
+            )]),
         };
 
         assert!(check_library_offer(&offered, &task, &line, "quotient-groups").is_ok());

@@ -119,6 +119,18 @@ export type LeanDigest = {
   diagnostic: string;
 };
 
+export type FormalReview = {
+  blocks: {
+    check: LeanDigest["blocks"][number];
+    reading: string;
+  }[];
+  impact: {
+    proofs_only: boolean;
+    statement_closures: string[];
+    line_links: string[];
+  };
+};
+
 /** Something wrong with a line; `at` is the block, counting from one. */
 export type Fault = { at: number | null; message: string };
 
@@ -204,6 +216,8 @@ export type Review = {
   rows: Moved[];
   source: string;
   lean_source: string | null;
+  formal_review: FormalReview | null;
+  library_files: { path: string; rows: Moved[] }[];
   findings: string[];
 };
 
@@ -235,5 +249,8 @@ export type ServerEvent =
   | { kind: "group"; group: string; change: "created" | "joined" }
   | { kind: "job"; group: string; job: string; state: string }
   | { kind: "proposal"; group: string; proposal: string; state: string }
+  | { kind: "library"; group: string; side: string; commit: string; change: string }
+  | { kind: "check"; group: string; side: string; line: string; revision: number; block: string; state: string; diagnostic?: string }
+  | { kind: "formal_audit"; group: string; line: string; block: string; state: string }
   | { kind: "machine"; machine: string }
   | { kind: "reset" };

@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use stemma_core::id::{JobId, ProposalId, UserId};
-use stemma_core::proposal::{LibraryChange, Offer};
+use stemma_core::proposal::{FormalReview, LibraryChange, Offer};
 
 use super::jobs::Job;
 
@@ -20,6 +20,8 @@ pub struct Proposal {
     pub lean_source: Option<String>,
     /// Per-file change to the Lake package, when one was proposed.
     pub library_change: Option<LibraryChange>,
+    /// Lean-produced evidence for reviewing the library change.
+    pub formal_review: Option<FormalReview>,
     /// The commit that change became after approval.
     pub library_commit: Option<String>,
     /// Agent vendor.
@@ -44,16 +46,22 @@ pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<Propo
         .as_ref()
         .map(serde_json::to_string)
         .transpose()?;
+    let formal_review = offer
+        .formal_review
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
     connection
         .execute(
-            "INSERT INTO proposals (id, job_id, source, lean_source, library_change, vendor, model, prompt_revision)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO proposals (id, job_id, source, lean_source, library_change, formal_review, vendor, model, prompt_revision)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 id.to_string(),
                 job.id.to_string(),
                 offer.source,
                 offer.lean_source,
                 library_change,
+                formal_review,
                 offer.vendor,
                 offer.model,
                 offer.prompt_revision
@@ -87,7 +95,7 @@ fn tell(connection: &Connection, id: &ProposalId) -> Result<()> {
 pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal>> {
     let row = connection
         .query_row(
-            "SELECT job_id, source, lean_source, library_change, library_commit, vendor, model,
+            "SELECT job_id, source, lean_source, library_change, formal_review, library_commit, vendor, model,
                 prompt_revision, state, decided_by, applied_revision
          FROM proposals WHERE id = ?1",
             params![id.to_string()],
@@ -98,12 +106,13 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, Option<String>>(3)?,
                     row.get::<_, Option<String>>(4)?,
-                    row.get(5)?,
+                    row.get::<_, Option<String>>(5)?,
                     row.get(6)?,
                     row.get(7)?,
                     row.get(8)?,
-                    row.get::<_, Option<String>>(9)?,
-                    row.get::<_, Option<i64>>(10)?,
+                    row.get(9)?,
+                    row.get::<_, Option<String>>(10)?,
+                    row.get::<_, Option<i64>>(11)?,
                 ))
             },
         )
@@ -113,6 +122,7 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         source,
         lean_source,
         library_change,
+        formal_review,
         library_commit,
         vendor,
         model,
@@ -139,6 +149,10 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
             .map(|change| serde_json::from_str(&change))
             .transpose()
             .context("cannot read the proposed library change")?,
+        formal_review: formal_review
+            .map(|review| serde_json::from_str(&review))
+            .transpose()
+            .context("cannot read the formal review evidence")?,
         library_commit,
         vendor,
         model,
@@ -304,6 +318,7 @@ mod tests {
                 source: "= A proposal".to_owned(),
                 lean_source: None,
                 library_change: None,
+                formal_review: None,
                 vendor: "Anthropic".to_owned(),
                 model: "claude-opus-5".to_owned(),
                 prompt_revision: "1".to_owned(),

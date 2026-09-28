@@ -6,8 +6,10 @@
 //! any change to the text or declared dependencies of a central statement.
 
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::actor::{AgentRun, Attribution};
+use crate::artefact::BlockCheck;
 use crate::document::{Block, Document};
 use crate::fact::{Fact, FactKind};
 use crate::id::{JobId, ProposalId, UserId};
@@ -34,12 +36,117 @@ pub struct Offer {
     /// An approved-only change to the group's Lake package, when formal work moved there.
     #[serde(default)]
     pub library_change: Option<LibraryChange>,
+    /// Lean-produced evidence shown beside a proposed library change.
+    #[serde(default)]
+    pub formal_review: Option<Box<FormalReview>>,
     /// Who supplied the agent.
     pub vendor: String,
     /// The concrete model the agent reported using.
     pub model: String,
     /// Which prompt contract produced it.
     pub prompt_revision: String,
+}
+
+/// Machine-checked evidence attached to a proposed Lean library change.
+///
+/// This is reconstructible evidence, not an audit: only the later human
+/// decision says that a printed Lean statement means what its prose says.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FormalReview {
+    /// Checks whose observable formal meaning changed, plus the task's target.
+    pub blocks: Vec<ReviewedBlock>,
+    /// What kind of formal surface the file change reaches.
+    pub impact: FormalImpact,
+}
+
+/// One block as the worker asks a person to compare it with Lean.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReviewedBlock {
+    /// The extractor's complete result for the block after the change.
+    pub check: BlockCheck,
+    /// The agent's plain-language reading of the printed statement.
+    pub reading: String,
+}
+
+/// The observable reach of a proposed library change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FormalImpact {
+    /// The changed files leave every extracted statement and line link intact.
+    pub proofs_only: bool,
+    /// Blocks whose transitive statement closure changed.
+    pub statement_closures: Vec<crate::id::BlockId>,
+    /// Blocks whose links to other marked declarations changed.
+    pub line_links: Vec<crate::id::BlockId>,
+}
+
+impl FormalReview {
+    /// Compares extractor output before and after a staged library change.
+    ///
+    /// Proof terms are deliberately absent from an extractor digest. Thus an
+    /// otherwise non-empty change whose statement closures and marked links
+    /// are unchanged is exactly a proof-only change at the review boundary.
+    pub fn between(
+        before: &[BlockCheck],
+        after: &[BlockCheck],
+        targets: impl IntoIterator<Item = crate::id::BlockId>,
+        readings: &BTreeMap<crate::id::BlockId, String>,
+    ) -> Self {
+        let before: BTreeMap<_, _> = before.iter().map(|check| (check.block, check)).collect();
+        let after: BTreeMap<_, _> = after.iter().map(|check| (check.block, check)).collect();
+        let targets: BTreeSet<_> = targets.into_iter().collect();
+        let blocks: BTreeSet<_> = before.keys().chain(after.keys()).copied().collect();
+        let mut statement_closures = Vec::new();
+        let mut line_links = Vec::new();
+        let mut reviewed = Vec::new();
+
+        for block in blocks {
+            let old = before.get(&block).copied();
+            let new = after.get(&block).copied();
+            if statement_surface(old) != statement_surface(new) {
+                statement_closures.push(block);
+            }
+            if link_surface(old) != link_surface(new) {
+                line_links.push(block);
+            }
+            if let Some(check) = new.filter(|_| old != new || targets.contains(&block)) {
+                reviewed.push(ReviewedBlock {
+                    check: check.clone(),
+                    reading: readings.get(&block).cloned().unwrap_or_default(),
+                });
+            }
+        }
+
+        Self {
+            blocks: reviewed,
+            impact: FormalImpact {
+                proofs_only: statement_closures.is_empty() && line_links.is_empty(),
+                statement_closures,
+                line_links,
+            },
+        }
+    }
+}
+
+fn statement_surface(check: Option<&BlockCheck>) -> Vec<(&str, &str, &str)> {
+    check
+        .into_iter()
+        .flat_map(|check| &check.declarations)
+        .map(|declaration| {
+            (
+                declaration.name.as_str(),
+                declaration.statement.as_str(),
+                declaration.statement_closure.as_str(),
+            )
+        })
+        .collect()
+}
+
+fn link_surface(check: Option<&BlockCheck>) -> Vec<(&str, &[String])> {
+    check
+        .into_iter()
+        .flat_map(|check| &check.declarations)
+        .map(|declaration| (declaration.name.as_str(), declaration.reaches.as_slice()))
+        .collect()
 }
 
 /// A revision-based, per-file change to a Lake package.
@@ -49,6 +156,9 @@ pub struct LibraryChange {
     pub base: String,
     /// Files changed by the agent. Files absent here are untouched.
     pub files: Vec<LibraryFileChange>,
+    /// The agent's reading of each marked formal statement, keyed by block.
+    #[serde(default)]
+    pub readings: BTreeMap<crate::id::BlockId, String>,
 }
 
 /// One file in a proposed library change.
@@ -210,6 +320,8 @@ fn read(which: &'static str, text: &str) -> Result<Document, GuardError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::artefact::FormalDeclaration;
+    use crate::model::Verification;
 
     fn base() -> Document {
         let mut document = Document::new("A line", None);
@@ -238,6 +350,49 @@ mod tests {
         step.statement_mut().unwrap().uses.push(set);
         document.push(step);
         document
+    }
+
+    fn checked(block: crate::id::BlockId, closure: &str, reaches: &[&str]) -> BlockCheck {
+        BlockCheck {
+            block,
+            state: Verification::Verified,
+            diagnostic: String::new(),
+            declarations: vec![FormalDeclaration {
+                name: "Library.main".to_owned(),
+                module: "Library".to_owned(),
+                statement: "True".to_owned(),
+                sorry_free: true,
+                axioms: Vec::new(),
+                reaches: reaches.iter().map(|name| (*name).to_owned()).collect(),
+                statement_closure: closure.to_owned(),
+            }],
+        }
+    }
+
+    #[test]
+    fn formal_review_separates_proof_changes_from_statement_and_link_changes() {
+        let block = crate::id::BlockId::generate();
+        let mut proof_before = checked(block, "same", &["Library.lemma"]);
+        proof_before.declarations[0].sorry_free = false;
+        let proof_after = checked(block, "same", &["Library.lemma"]);
+        let proof = FormalReview::between(
+            &[proof_before],
+            std::slice::from_ref(&proof_after),
+            [block],
+            &BTreeMap::from([(block, "The proposition is true.".to_owned())]),
+        );
+        assert!(proof.impact.proofs_only);
+        assert_eq!(proof.blocks[0].reading, "The proposition is true.");
+
+        let changed = FormalReview::between(
+            std::slice::from_ref(&proof_after),
+            &[checked(block, "different", &["Library.other"])],
+            [block],
+            &BTreeMap::new(),
+        );
+        assert!(!changed.impact.proofs_only);
+        assert_eq!(changed.impact.statement_closures, [block]);
+        assert_eq!(changed.impact.line_links, [block]);
     }
 
     fn statement(document: &mut Document, at: usize) -> &mut crate::document::Statement {

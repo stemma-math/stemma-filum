@@ -10,6 +10,7 @@ pub mod artefacts;
 pub mod claims;
 pub mod devices;
 pub mod events;
+pub mod formal_audits;
 pub mod groups;
 pub mod invitations;
 pub mod jobs;

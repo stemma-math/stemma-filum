@@ -2050,6 +2050,24 @@ button.block__label:disabled {
     font-size: 13px;
 }
 
+.formal-review,
+.block__formal {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.formal-review pre,
+.block__formal pre {
+    margin: 8px 0;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font: 12px / 1.5 var(--font-mono);
+    white-space: pre-wrap;
+    background: var(--surface-subtle);
+    border-radius: var(--radius-sm);
+}
+
 /* ── Views in the middle of the window ─────────────────────────────── */
 
 .pane {

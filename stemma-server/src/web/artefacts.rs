@@ -89,9 +89,8 @@ pub async fn receive(
                 let Some(revision) = line.revision else {
                     continue;
                 };
-                if let Some(found) =
-                    lines::by_name(connection, &group, nodes.side, &line.name, &by)?
-                {
+                let found = lines::by_name(connection, &group, nodes.side, &line.name, &by)?;
+                if let Some(found) = &found {
                     revisions::built_up_to(connection, &found.id, revision)?;
                 }
                 if let Some(lean) = &line.lean {
@@ -102,6 +101,22 @@ pub async fn receive(
                         }
                     };
                     for result in &lean.blocks {
+                        if let Some(found) = &found
+                            && crate::store::formal_audits::reconcile_check(
+                                connection, &found.id, result,
+                            )?
+                        {
+                            crate::store::events::publish(
+                                connection,
+                                audience,
+                                &stemma_core::event::Event::FormalAudit {
+                                    group: group.slug().as_str().to_owned(),
+                                    line: line.name.as_str().to_owned(),
+                                    block: result.block,
+                                    state: "audit_withdrawn".to_owned(),
+                                },
+                            )?;
+                        }
                         crate::store::events::publish(
                             connection,
                             audience,

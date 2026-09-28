@@ -46,6 +46,11 @@ pub enum Task {
         /// The statement block whose prose is to receive a formal counterpart.
         block: BlockId,
     },
+    /// Try the author's narrative route after a proposed formal route was declined.
+    FollowRoute {
+        /// The central statement whose formalization must follow the prose route.
+        block: BlockId,
+    },
     /// Verify the Lean argument for one black box.
     Verify {
         /// The central block after which the box begins, if any.
@@ -97,6 +102,7 @@ impl Task {
             Self::Fill { .. } => "fill this box",
             Self::Refute { .. } => "look for a counterexample",
             Self::Formalize { .. } => "formalize in Lean",
+            Self::FollowRoute { .. } => "follow the author's route in Lean",
             Self::Verify { .. } => "verify this box in Lean",
             Self::Promote { .. } => "promote this statement",
             Self::Prove { .. } => "write the proof",
@@ -114,6 +120,7 @@ impl Task {
             Self::Fill { after } => after.as_ref(),
             Self::Refute { block } => Some(block),
             Self::Formalize { block } => Some(block),
+            Self::FollowRoute { block } => Some(block),
             Self::Verify { after } => after.as_ref(),
             Self::Promote { block } => Some(block),
             Self::Prove { block } => Some(block),
@@ -127,7 +134,10 @@ impl Task {
     /// A central statement is frozen against agents, so refuting one is
     /// the only thing an agent may aim at it.
     pub fn is_aimed_at_a_central_statement(&self) -> bool {
-        matches!(self, Self::Refute { .. } | Self::Formalize { .. })
+        matches!(
+            self,
+            Self::Refute { .. } | Self::Formalize { .. } | Self::FollowRoute { .. }
+        )
     }
 }
 
@@ -138,6 +148,7 @@ impl fmt::Display for Task {
             Self::Fill { after: Some(node) } => write!(f, "fill@{node}"),
             Self::Refute { block } => write!(f, "refute@{block}"),
             Self::Formalize { block } => write!(f, "formalize@{block}"),
+            Self::FollowRoute { block } => write!(f, "follow@{block}"),
             Self::Verify { after: None } => f.write_str("verify"),
             Self::Verify { after: Some(node) } => write!(f, "verify@{node}"),
             Self::Promote { block } => write!(f, "promote@{block}"),
@@ -188,6 +199,10 @@ impl FromStr for Task {
                 block: block.parse()?,
             }),
             ("formalize", None) => Err(BadTask::Unanchored(input.to_owned())),
+            ("follow", Some(block)) => Ok(Self::FollowRoute {
+                block: block.parse()?,
+            }),
+            ("follow", None) => Err(BadTask::Unanchored(input.to_owned())),
             ("verify", after) => Ok(Self::Verify {
                 after: after.map(str::parse).transpose()?,
             }),
@@ -460,6 +475,7 @@ mod tests {
             },
             Task::Refute { block: block() },
             Task::Formalize { block: block() },
+            Task::FollowRoute { block: block() },
             Task::Verify {
                 after: Some(block()),
             },
@@ -483,6 +499,10 @@ mod tests {
         assert_eq!(
             Task::Formalize { block: block() }.to_string(),
             "formalize@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV"
+        );
+        assert_eq!(
+            Task::FollowRoute { block: block() }.to_string(),
+            "follow@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV"
         );
     }
 

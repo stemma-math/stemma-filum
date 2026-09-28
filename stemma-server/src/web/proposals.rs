@@ -112,6 +112,26 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
             }
         }
 
+        @if let Some(change) = &proposal.library_change {
+            div class="block" {
+                p class="label" { "Lean library changes · base " (change.base) }
+                @for file in &change.files {
+                    p class="identifier" { (file.path) }
+                    (drawn(
+                        &diff::between(
+                            file.before.as_deref().unwrap_or(""),
+                            file.after.as_deref().unwrap_or(""),
+                        ),
+                        &std::collections::BTreeSet::new(),
+                    ))
+                }
+            }
+        }
+
+        @if let Some(review) = &proposal.formal_review {
+            (formal_review(review))
+        }
+
         div class="block" {
             p class="label" { "What was checked" }
             ul class="findings" {
@@ -128,12 +148,21 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
                     "Reject"
                 }
                 button class="button" name="decision" value="ask_again" {
-                    "Ask again"
+                    @if matches!(proposal.job.task, stemma_core::job::Task::Formalize { .. })
+                        && proposal.formal_review.is_some()
+                    {
+                        "Follow the author's route"
+                    } @else {
+                        "Ask again"
+                    }
                 }
                 button class="button button--primary" name="decision" value="accept" { "Accept" }
             }
             p class="quiet" {
                 "Accepting records you as the reviewer and preserves the model information. "
+                @if proposal.formal_review.is_some() {
+                    "For each central result, it also records your audit of the printed Lean statement against the prose. "
+                }
                 "One of your machines then brings it into the line, as a revision of yours."
             }
         } @else {
@@ -150,6 +179,43 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
                         "so it was not brought into the line. Ask for it again against the line as it is."
                     }
                     (state, _) => { "This proposal was " (state.replace('_', " ")) "." }
+                }
+            }
+        }
+    }
+}
+
+fn formal_review(review: &stemma_core::proposal::FormalReview) -> Markup {
+    html! {
+        div class="block" {
+            p class="label" { "Formal reach" }
+            p {
+                @if review.impact.proofs_only {
+                    "Proofs only: every printed statement and line link is unchanged."
+                } @else {
+                    @if !review.impact.statement_closures.is_empty() {
+                        "Statement closure changed for "
+                        (review.impact.statement_closures.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "))
+                        ". "
+                    }
+                    @if !review.impact.line_links.is_empty() {
+                        "Links of the line changed for "
+                        (review.impact.line_links.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "))
+                        "."
+                    }
+                }
+            }
+            @for reviewed in &review.blocks {
+                div class="formal-review" {
+                    p class="label" { (reviewed.check.block) " · " (reviewed.check.state.as_str()) }
+                    @for declaration in &reviewed.check.declarations {
+                        p class="identifier" { (declaration.name) " · " (declaration.module) }
+                        pre class="diff" { (declaration.statement) }
+                        @if !declaration.reaches.is_empty() {
+                            p class="quiet" { "Reaches " (declaration.reaches.join(", ")) }
+                        }
+                    }
+                    p { strong { "Agent reading: " } (reviewed.reading) }
                 }
             }
         }
@@ -249,6 +315,12 @@ fn findings(proposal: &proposals::Proposal, stands: Option<&str>) -> Vec<String>
             change.files.len(),
             if change.files.len() == 1 { "" } else { "s" }
         ));
+    }
+    if proposal.formal_review.is_some() {
+        found.push(
+            "the worker compiled the staged library change and extracted its printed statements"
+                .to_owned(),
+        );
     }
 
     found
@@ -373,6 +445,38 @@ async fn settle(
                     },
                 )?;
             }
+            if accept {
+                for audit in crate::store::formal_audits::accept(c, &proposal, &by_for_write)? {
+                    let Some(recorded) = crate::store::formal_audits::for_line(
+                        c,
+                        &proposal.job.line_id.context("the proposal has no line")?,
+                    )?
+                    .into_iter()
+                    .find(|recorded| recorded.id == audit) else {
+                        continue;
+                    };
+                    crate::store::events::publish(
+                        c,
+                        match proposal.job.side {
+                            stemma_core::repository::Side::Shared => {
+                                crate::store::events::Audience::Group(&proposal.job.group)
+                            }
+                            stemma_core::repository::Side::Private => {
+                                crate::store::events::Audience::Person(
+                                    &proposal.job.group,
+                                    &proposal.job.launched_by,
+                                )
+                            }
+                        },
+                        &stemma_core::event::Event::FormalAudit {
+                            group: proposal.job.group.slug().as_str().to_owned(),
+                            line: proposal.job.line.as_str().to_owned(),
+                            block: recorded.block,
+                            state: "audited".to_owned(),
+                        },
+                    )?;
+                }
+            }
 
             // Asking again is not a third state: the proposal is
             // declined and the same question goes back in the queue.
@@ -386,7 +490,14 @@ async fn settle(
                         line_id: proposal.job.line_id,
                         revision: proposal.job.revision,
                         against: None,
-                        task: proposal.job.task,
+                        task: match proposal.job.task {
+                            stemma_core::job::Task::Formalize { block }
+                                if proposal.formal_review.is_some() =>
+                            {
+                                stemma_core::job::Task::FollowRoute { block }
+                            }
+                            task => task,
+                        },
                         agent: proposal.job.agent,
                         choice: proposal.job.choice,
                         by: by_for_write,
@@ -467,6 +578,7 @@ pub async fn offered(
         "source": proposal.source,
         "lean_source": proposal.lean_source,
         "library_change": proposal.library_change,
+        "formal_review": proposal.formal_review,
         "findings": findings(&proposal, stands.as_deref()),
     }))
     .into_response())

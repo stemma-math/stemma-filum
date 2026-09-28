@@ -99,6 +99,46 @@
       <h4 class="setting__title">Lean module</h4>
       <pre class="diff">{review.lean_source}</pre>
     {/if}
+    {#if review.library_files.length}
+      <h4 class="setting__title">Lean library changes</h4>
+      {#each review.library_files as file (file.path)}
+        <p class="row__meta identifier">{file.path}</p>
+        <div class="diff">
+          {#each file.rows as row, at (at)}
+            <div class={rowClass(file.rows, at)}>
+              <span class="diff__at">{row.before ?? ""}</span>
+              <span class="diff__at">{row.after ?? ""}</span>
+              <span class="diff__mark">{sign[row.change]}</span>
+              <span class="diff__text">{row.text}</span>
+            </div>
+          {/each}
+        </div>
+      {/each}
+    {/if}
+    {#if review.formal_review}
+      <h4 class="setting__title">Formal reach</h4>
+      {#if review.formal_review.impact.proofs_only}
+        <p class="setting__note">Proofs only: printed statements and links of the line are unchanged.</p>
+      {:else}
+        {#if review.formal_review.impact.statement_closures.length}
+          <p class="setting__note">Statement closure: {review.formal_review.impact.statement_closures.join(", ")}</p>
+        {/if}
+        {#if review.formal_review.impact.line_links.length}
+          <p class="setting__note">Links of the line: {review.formal_review.impact.line_links.join(", ")}</p>
+        {/if}
+      {/if}
+      {#each review.formal_review.blocks as formal (formal.check.block)}
+        <div class="formal-review">
+          <p class="row__meta identifier">{formal.check.block} · {formal.check.state}</p>
+          {#each formal.check.declarations as declaration (declaration.name)}
+            <p class="row__meta identifier">{declaration.name} · {declaration.module}</p>
+            <pre class="diff">{declaration.statement}</pre>
+            {#if declaration.reaches.length}<p class="setting__note">Reaches {declaration.reaches.join(", ")}</p>{/if}
+          {/each}
+          <p><strong>Agent reading:</strong> {formal.reading}</p>
+        </div>
+      {/each}
+    {/if}
     <h4 class="setting__title">What was checked</h4>
     <ul class="findings">
       {#each review.findings as finding, at (at)}<li>{finding}</li>{/each}
@@ -106,10 +146,15 @@
     {#if review.state === "awaiting_review"}
       <div class="row__actions">
         <button type="button" class="button button--small" onclick={() => decide(review.proposal, "reject")}>Reject</button>
-        <button type="button" class="button button--small" onclick={() => decide(review.proposal, "ask_again")}>Ask again</button>
+        <button type="button" class="button button--small" onclick={() => decide(review.proposal, "ask_again")}>
+          {review.task.startsWith("formalize@") && review.formal_review ? "Follow the author's route" : "Ask again"}
+        </button>
         <button type="button" class="button button--primary button--small" onclick={() => decide(review.proposal, "accept")}>Accept</button>
       </div>
-      <p class="setting__note">Accepting records you as the reviewer and preserves the model information.</p>
+      <p class="setting__note">
+        Accepting records you as the reviewer and preserves the model information.
+        {review.formal_review ? " It also records your audit of each central printed Lean statement against its prose." : ""}
+      </p>
     {:else}
       <p class="setting__note">This proposal was {review.state}.</p>
       <div class="row__actions"><button type="button" class="button button--small" onclick={() => write(review.proposal)}>Apply</button></div>
