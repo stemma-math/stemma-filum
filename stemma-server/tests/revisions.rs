@@ -140,6 +140,19 @@ async fn a_new_line_is_listed_at_its_first_revision_with_a_page_nobody_compiled(
         .await;
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.says("<h1>Quotient groups</h1>"));
+    assert!(page.says("@media print"));
+    assert!(page.says("--font-math"));
+
+    let download = writing
+        .harness
+        .get("/g/algebra/shared/quotient-groups/line.json")
+        .await;
+    assert_eq!(download.status, StatusCode::OK);
+    assert_eq!(
+        download.content_type.as_deref(),
+        Some("application/json; charset=utf-8")
+    );
+    assert!(Document::parse(&download.body).is_ok());
 }
 
 #[tokio::test]
@@ -188,6 +201,16 @@ async fn the_machine_holding_the_line_writes_it_a_revision_at_a_time() {
         .await;
     assert!(view.says("Being written"));
     assert!(view.says("revision 2"));
+    assert!(view.says("Download line.json"));
+    assert!(view.says("Print or save as PDF"));
+    assert!(!view.says("Typst source"));
+
+    let download = writing
+        .harness
+        .get("/g/algebra/shared/quotient-groups/line.json")
+        .await;
+    assert!(download.says("Every group has one."));
+    assert!(!download.says("From an old revision."));
 }
 
 #[tokio::test]
@@ -255,6 +278,25 @@ async fn a_page_from_a_machine_runs_nothing_and_loads_nothing() {
     assert_eq!(
         answer.headers().get("x-content-type-options").unwrap(),
         "nosniff"
+    );
+
+    let request = axum::http::Request::builder()
+        .uri("/g/algebra/shared/quotient-groups/line.json")
+        .header(
+            axum::http::header::COOKIE,
+            writing.harness.cookie.clone().unwrap(),
+        )
+        .body(axum::body::Body::empty())
+        .unwrap();
+    let answer = tower::ServiceExt::oneshot(
+        stemma_server::web::router().with_state(writing.harness.instance.clone()),
+        request,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        answer.headers().get("content-disposition").unwrap(),
+        "attachment; filename=\"line.json\""
     );
 
     let view = writing

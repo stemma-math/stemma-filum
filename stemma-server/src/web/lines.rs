@@ -5,10 +5,8 @@
 //! so what it can show is what the source declares: the definitions, the
 //! statements the line rests on, and the boxes between them.
 //!
-//! The prose is shown as the Typst document the line at the head of the
-//! repository becomes, uncompiled. A composed document would be a different
-//! artefact, and a page that typeset the mathematics itself would be
-//! pretending to be that document.
+//! The current revision carries its typeset HTML page from the machine that
+//! wrote it. The server serves that page without compiling the source.
 
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
@@ -408,6 +406,15 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                     @if let Some(written) = written {
                         span class="quiet identifier" { "revision " (written.revision) }
                     }
+                    a class="button button--quiet"
+                      href={ "/g/" (group.slug()) "/" (side) "/" (digest.name) "/line.json" }
+                      download="line.json" { "Download line.json" }
+                    a class="button button--quiet"
+                      href={ "/g/" (group.slug()) "/" (side) "/" (digest.name) "/page" }
+                      target="_blank" rel="noopener"
+                      title="Open the typeset page, then use your browser's print command" {
+                        "Print or save as PDF"
+                    }
                 }
                 iframe class="typeset__frame" sandbox=""
                        src={ "/g/" (group.slug()) "/" (side) "/" (digest.name) "/page" }
@@ -484,17 +491,6 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             }
         }
 
-        // What was written, prose and all, as the Typst it becomes. It has
-        // the width of the page because most of it is prose.
-        @if let Some(written) = written {
-            div class="block source" {
-                p class="label" {
-                    "Typst source · "
-                    span class="identifier" { "revision " (written.revision) }
-                }
-                pre class="source__text" { (stemma_core::render::readable(&written.source)) }
-            }
-        }
     }
 }
 

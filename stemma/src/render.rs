@@ -169,8 +169,7 @@ fn placed(main: &Source, rendered: &Rendered, diagnostic: &SourceDiagnostic) -> 
     }
 }
 
-/// The page of a line that does not typeset yet: its title, what stops
-/// it, and what is written, as it is written.
+/// The page of a line that does not typeset yet: its title and what stops it.
 fn unfinished(document: &Document, diagnostics: &[Diagnostic]) -> String {
     let errors: String = diagnostics
         .iter()
@@ -180,10 +179,9 @@ fn unfinished(document: &Document, diagnostics: &[Diagnostic]) -> String {
 
     format!(
         "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{title}</title></head>\
-         <body><h1>{title}</h1><p>This revision does not typeset yet.</p><ul>{errors}</ul>\
-         <pre>{source}</pre></body></html>\n",
+         <body><main class=\"stemma-line\"><h1>{title}</h1>\
+         <p>This revision does not typeset yet.</p><ul>{errors}</ul></main></body></html>\n",
         title = escaped(&document.title),
-        source = escaped(&render::readable(&document.to_text())),
     )
 }
 
@@ -239,10 +237,21 @@ mod tests {
 
     #[test]
     fn a_line_becomes_a_page_of_html() {
-        let page = page(Path::new("."), &every_kind()).expect("a page");
+        let document = every_kind();
+        let page = page(Path::new("."), &document).expect("a page");
 
         assert!(page.contains("<html"), "{page}");
         assert!(page.contains("We begin."), "{page}");
+        assert!(page.contains("A group is a set."), "{page}");
+        assert!(page.contains("Proof."), "{page}");
+        assert!(page.contains("<main class=\"stemma-line\""), "{page}");
+        for block in &document.blocks {
+            assert!(
+                page.contains(&format!("<section id=\"{}\"", block.id())),
+                "{page}"
+            );
+        }
+        assert!(page.contains("<svg"), "equations use inline SVG: {page}");
         assert!(!page.contains("does not typeset yet"), "{page}");
     }
 
@@ -272,6 +281,7 @@ mod tests {
 
         assert!(page.contains("does not typeset yet"));
         assert!(page.contains("nonexistent"));
+        assert!(!page.contains("<pre>"));
         assert!(
             page.contains("Things &lt;b&gt;"),
             "the title is text, not markup"

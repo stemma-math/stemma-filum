@@ -175,6 +175,29 @@ pub async fn root(
     Ok(Json(json!({ "files": files })).into_response())
 }
 
+/// The current revision's line.json, downloaded exactly as the machine wrote it.
+pub async fn source(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path((slug, side, name)): Path<(String, String, String)>,
+) -> Result<Response, WebError> {
+    let revision = current(&instance, &signed, &slug, &side, &name).await?;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment; filename=\"line.json\""),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("private, no-cache"),
+    );
+    Ok((headers, revision.source).into_response())
+}
+
 /// The page a line typesets to, for the web to show inside a frame.
 ///
 /// The page came from a machine, so it is shown as it would be shown
@@ -185,12 +208,24 @@ pub async fn page(
     signed: SignedIn,
     Path((slug, side, name)): Path<(String, String, String)>,
 ) -> Result<Response, WebError> {
-    let group = GroupId::new(Slug::parse(&slug).map_err(|_| WebError::NotFound)?);
+    let revision = current(&instance, &signed, &slug, &side, &name).await?;
+    Ok((framed_page_headers(), styled_page(&revision.page)).into_response())
+}
+
+/// Reads exactly the current revision after checking the reader's membership.
+async fn current(
+    instance: &Instance,
+    signed: &SignedIn,
+    slug: &str,
+    side: &str,
+    name: &str,
+) -> Result<Revision, WebError> {
+    let group = GroupId::new(Slug::parse(slug).map_err(|_| WebError::NotFound)?);
     let side: Side = side.parse().map_err(|_| WebError::NotFound)?;
-    let name = Name::parse(&name).map_err(|_| WebError::NotFound)?;
+    let name = Name::parse(name).map_err(|_| WebError::NotFound)?;
     let reader = signed.user.id.clone();
 
-    let page = instance
+    instance
         .read(move |connection| {
             if groups::role_of(connection, &group, &reader)?.is_none() {
                 return Ok(None);
@@ -199,12 +234,29 @@ pub async fn page(
                 return Ok(None);
             };
 
-            Ok(revisions::current(connection, &line)?.map(|revision| revision.page))
+            revisions::current(connection, &line)
         })
         .await?
-        .ok_or(WebError::NotFound)?;
+        .ok_or(WebError::NotFound)
+}
 
-    Ok((framed_page_headers(), page).into_response())
+/// Adds the identity's colours and the line's print rules to the page the
+/// machine sent. Its content is served unchanged and is never compiled here.
+fn styled_page(page: &str) -> String {
+    let style = format!(
+        "<style>\n{}\n{}\n</style>",
+        stemma_identity::TOKENS_CSS,
+        include_str!("../../assets/line.css")
+    );
+    if let Some(at) = page.find("</head>") {
+        let mut styled = String::with_capacity(page.len() + style.len());
+        styled.push_str(&page[..at]);
+        styled.push_str(&style);
+        styled.push_str(&page[at..]);
+        styled
+    } else {
+        format!("{style}{page}")
+    }
 }
 
 /// What a page from a machine is served with.
