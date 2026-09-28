@@ -14,6 +14,7 @@ pub mod cli;
 pub mod config;
 pub mod db;
 pub mod git;
+pub mod history;
 pub mod install;
 pub mod mail;
 pub mod password;

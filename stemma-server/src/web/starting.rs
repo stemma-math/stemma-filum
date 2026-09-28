@@ -20,13 +20,14 @@ use stemma_core::document::Document;
 use stemma_core::id::{GroupId, Slug};
 use stemma_core::line::{Line, Name, NodeKind};
 use stemma_core::render;
-use stemma_core::repository::{self, Side};
+use stemma_core::repository::Side;
 
 use super::layout::{page, signature};
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::groups::{self, Group};
 use crate::store::lines;
+use crate::store::revisions::Content;
 
 /// What the form that starts a line sends.
 #[derive(Debug, Default, Deserialize)]
@@ -98,9 +99,9 @@ pub async fn start(
     )
     .await
     {
-        Ok(name) => {
-            Ok(Redirect::to(&format!("/g/{}/{}/{}", group.slug(), side, name)).into_response())
-        }
+        Ok(started) => Ok(
+            Redirect::to(&format!("/g/{}/{}/{}", group.slug(), side, started.name)).into_response(),
+        ),
         Err(WebError::BadRequest(problem)) => {
             let chrome = super::layout::around(&instance, &signed, "New line")
                 .await?
@@ -113,6 +114,10 @@ pub async fn start(
 }
 
 /// Starts a line, wherever the asking came from.
+///
+/// Its first revision is what the form said, and its page is written
+/// here from those words: nothing is compiled, because nothing needs to
+/// be for a title and a sentence.
 async fn born(
     instance: &Instance,
     who: &crate::store::users::User,
@@ -120,7 +125,7 @@ async fn born(
     title: &str,
     description: &str,
     side: Side,
-) -> Result<Name, WebError> {
+) -> Result<lines::Started, WebError> {
     let refuse = |what: &str| WebError::BadRequest(what.to_owned());
 
     if title.is_empty() {
@@ -133,24 +138,43 @@ async fn born(
         ));
     };
 
-    let path = match side {
-        Side::Shared => instance.repositories().shared(&group.id),
-        Side::Private => instance.repositories().personal(&group.id, &who.id),
+    let taken = {
+        let (id, name, author) = (group.id.clone(), name.clone(), who.id.clone());
+
+        instance
+            .read(move |connection| {
+                Ok(lines::by_name(connection, &id, side, &name, &author)?.is_some())
+            })
+            .await?
     };
 
-    if crate::git::holds_line(&path, &name) {
+    if taken {
         return Err(refuse("There is already a line by that name here."));
     }
 
+    let description = (!description.is_empty()).then(|| description.to_owned());
+    let content = Content {
+        source: Document::new(title, description.clone()).to_text(),
+        lean_source: None,
+        page: first_page(title, description.as_deref()),
+    };
+
     {
-        let path = path.clone();
-        let name = name.clone();
-        let source = Document::new(title, Some(description.to_owned())).to_text();
-        let author_name = who.display_name.clone();
-        let author_email = who.email.clone();
+        let (group, name, source) = (group.id.clone(), name.clone(), content.source.clone());
+        let (author, author_name, author_email) =
+            (who.id.clone(), who.display_name.clone(), who.email.clone());
 
         instance
-            .blocking(move || {
+            .writing_git(move |repositories| {
+                let path = match side {
+                    Side::Shared => repositories.shared(&group),
+                    Side::Private => repositories.personal(&group, &author),
+                };
+
+                if crate::git::holds_line(&path, &name) {
+                    anyhow::bail!("There is already a line by that name here.");
+                }
+
                 crate::git::start_line(
                     &path,
                     &name,
@@ -166,28 +190,37 @@ async fn born(
             .await?;
     }
 
-    {
-        let id = group.id.clone();
-        let named = name.clone();
-        let who = who.id.clone();
+    let (id, named, author) = (group.id.clone(), name.clone(), who.id.clone());
 
-        instance
-            .write(move |connection| {
-                match side {
-                    Side::Shared => {
-                        lines::share(connection, &id, &named, &who, WhoWrites::Anyone)?;
-                    }
-                    Side::Private => {
-                        lines::start(connection, &id, side, &named, &who)?;
-                    }
+    instance
+        .write(move |connection| {
+            let started = lines::start(connection, &id, side, &named, &author, &content)?;
+            lines::committed(connection, &started.id, started.revision)?;
+
+            Ok(started)
+        })
+        .await
+}
+
+/// The page a line has before anybody has typeset it: its title and what
+/// it is about, as the form said them.
+pub fn first_page(title: &str, description: Option<&str>) -> String {
+    html! {
+        (maud::DOCTYPE)
+        html lang="en" {
+            head {
+                meta charset="utf-8";
+                title { (title) }
+            }
+            body {
+                h1 { (title) }
+                @if let Some(description) = description {
+                    p { (description) }
                 }
-
-                Ok(())
-            })
-            .await?;
+            }
+        }
     }
-
-    Ok(name)
+    .into_string()
 }
 
 /// The two questions and the one warning.
@@ -239,7 +272,7 @@ pub async fn share(
     )
     .await
     {
-        Ok(()) => Ok(Redirect::to(&format!("/g/{}/shared/{}", group.slug(), name)).into_response()),
+        Ok(_) => Ok(Redirect::to(&format!("/g/{}/shared/{}", group.slug(), name)).into_response()),
         Err(WebError::BadRequest(problem)) => {
             let source = mine(&instance, &signed.user, &group.id, &name).await?;
             let held = held_back(&instance, &group.id, &source).await?;
@@ -265,7 +298,12 @@ async fn moved(
     name: &Name,
     history: bool,
     writing: WhoWrites,
-) -> Result<(), WebError> {
+) -> Result<lines::Started, WebError> {
+    let line = own_line(instance, who, &group.id, name).await?;
+
+    // Git has to have everything the line says before it moves.
+    crate::history::settle(instance, line.id).await?;
+
     let source = mine(instance, who, &group.id, name).await?;
     let held = held_back(instance, &group.id, &source).await?;
 
@@ -275,15 +313,30 @@ async fn moved(
         ));
     }
 
-    let repositories = instance.repositories();
-    let ours = repositories.shared(&group.id);
-    let theirs = repositories.personal(&group.id, &who.id);
-    let moving = name.clone();
-    let author_name = who.display_name.clone();
-    let author_email = who.email.clone();
+    let clash = {
+        let (id, name, author) = (group.id.clone(), name.clone(), who.id.clone());
+
+        instance
+            .read(move |connection| {
+                Ok(lines::by_name(connection, &id, Side::Shared, &name, &author)?.is_some())
+            })
+            .await?
+    };
+
+    if clash {
+        return Err(WebError::BadRequest(
+            "The group already has a line by that name. Rename yours before sharing it.".to_owned(),
+        ));
+    }
+
+    let (group_id, author, moving) = (group.id.clone(), who.id.clone(), name.clone());
+    let (author_name, author_email) = (who.display_name.clone(), who.email.clone());
 
     instance
-        .blocking(move || {
+        .writing_git(move |repositories| {
+            let ours = repositories.shared(&group_id);
+            let theirs = repositories.personal(&group_id, &author);
+
             // The group receives it first, so nothing can be lost
             // between the two commits.
             crate::git::bring_line(&ours, &theirs, &moving, history)?;
@@ -294,25 +347,36 @@ async fn moved(
                     name: &author_name,
                     email: &author_email,
                 },
+                &format!("Move {moving} to the group"),
             )?;
 
             Ok(())
         })
         .await?;
 
-    let id = group.id.clone();
-    let named = name.clone();
-    let author = who.id.clone();
-
     instance
         .write(move |connection| {
-            lines::share(connection, &id, &named, &author, writing)?;
+            let shared = lines::share(connection, &line.id, writing)?;
+            lines::committed(connection, &shared.id, shared.revision)?;
 
-            Ok(())
+            Ok(shared)
         })
-        .await?;
+        .await
+}
 
-    Ok(())
+/// A line of this person's own, in their own repository.
+async fn own_line(
+    instance: &Instance,
+    who: &crate::store::users::User,
+    group: &GroupId,
+    name: &Name,
+) -> Result<lines::Started, WebError> {
+    let (group, name, author) = (group.clone(), name.clone(), who.id.clone());
+
+    instance
+        .read(move |connection| lines::by_name(connection, &group, Side::Private, &name, &author))
+        .await?
+        .ok_or(WebError::NotFound)
 }
 
 /// Takes a line of one's own out of the repository.
@@ -345,14 +409,12 @@ pub async fn api_remove(
         return Err(WebError::NotFound);
     };
 
-    gone(&instance, &credential.user, &group, &name).await?;
+    let deleted = gone(&instance, &credential.user, &group, &name).await?;
 
-    Ok(axum::Json(serde_json::json!({
-        "group": group.slug().as_str(),
-        "line": name.as_str(),
-        "gone": true,
-    }))
-    .into_response())
+    let mut said = placed(&deleted);
+    said["gone"] = serde_json::Value::Bool(true);
+
+    Ok(axum::Json(said).into_response())
 }
 
 /// What the form that takes a line out sends.
@@ -367,76 +429,66 @@ pub struct Removing {
 ///
 /// Only out of their own: a line the group has is the group's
 /// mathematics, and nothing about it is one person's to remove. Even
-/// here nothing is destroyed — the commit that takes it out is a
-/// commit, and every version of it stays in the history.
+/// here nothing is destroyed — the line's revisions stay, and so does
+/// every commit that ever held it.
 async fn gone(
     instance: &Instance,
     who: &crate::store::users::User,
     group: &Group,
     name: &Name,
-) -> Result<(), WebError> {
-    let path = instance.repositories().personal(&group.id, &who.id);
+) -> Result<lines::Started, WebError> {
+    let line = own_line(instance, who, &group.id, name).await?;
 
-    if !crate::git::holds_line(&path, name) {
-        return Err(WebError::NotFound);
-    }
+    crate::history::settle(instance, line.id).await?;
 
-    {
-        let path = path.clone();
-        let name = name.clone();
-        let author_name = who.display_name.clone();
-        let author_email = who.email.clone();
+    let (group_id, author, named) = (group.id.clone(), who.id.clone(), name.clone());
+    let (author_name, author_email) = (who.display_name.clone(), who.email.clone());
 
-        instance
-            .blocking(move || {
+    instance
+        .writing_git(move |repositories| {
+            let path = repositories.personal(&group_id, &author);
+
+            if crate::git::holds_line(&path, &named) {
                 crate::git::drop_line(
                     &path,
-                    &name,
+                    &named,
                     &crate::git::Author {
                         name: &author_name,
                         email: &author_email,
                     },
+                    &format!("Delete {named}"),
                 )?;
-
-                Ok(())
-            })
-            .await?;
-    }
-
-    let id = group.id.clone();
-    let named = name.clone();
-    let author = who.id.clone();
-
-    instance
-        .write(move |connection| {
-            lines::forget(connection, &id, Side::Private, &named, &author)?;
+            }
 
             Ok(())
         })
         .await?;
 
-    Ok(())
+    let by = who.id.clone();
+    instance
+        .write(move |connection| {
+            let deleted = lines::delete(connection, &line.id, &by)?;
+            lines::committed(connection, &deleted.id, deleted.revision)?;
+
+            Ok(deleted)
+        })
+        .await
 }
 
-/// The line's source in this person's own repository.
+/// The line's source as it is now, in this person's own repository.
 async fn mine(
     instance: &Instance,
     who: &crate::store::users::User,
     group: &GroupId,
     name: &Name,
 ) -> Result<String, WebError> {
-    let path = instance.repositories().personal(group, &who.id);
-    let inside = format!("{}/{}/{}", repository::LINES, name, repository::ENTRY);
+    let line = own_line(instance, who, group, name).await?;
 
     instance
-        .blocking(move || {
-            let head =
-                crate::git::head_commit(&path).ok_or_else(|| anyhow::anyhow!("nothing here"))?;
-
-            crate::git::show(&path, &head, &inside)
-        })
-        .await
-        .map_err(|_| WebError::NotFound)
+        .read(move |connection| crate::store::revisions::current(connection, &line))
+        .await?
+        .map(|revision| revision.source)
+        .ok_or(WebError::NotFound)
 }
 
 /// What the line leans on that the group cannot see.
@@ -667,7 +719,7 @@ pub async fn api_start(
         _ => Side::Private,
     };
 
-    let name = born(
+    let started = born(
         &instance,
         &credential.user,
         &group,
@@ -677,12 +729,7 @@ pub async fn api_start(
     )
     .await?;
 
-    Ok(axum::Json(serde_json::json!({
-        "group": group.slug().as_str(),
-        "side": side.as_str(),
-        "line": name.as_str(),
-    }))
-    .into_response())
+    Ok(axum::Json(placed(&started)).into_response())
 }
 
 /// Moves a line to the group from a machine.
@@ -697,7 +744,7 @@ pub async fn api_share(
         return Err(WebError::NotFound);
     };
 
-    moved(
+    let shared = moved(
         &instance,
         &credential.user,
         &group,
@@ -707,12 +754,18 @@ pub async fn api_share(
     )
     .await?;
 
-    Ok(axum::Json(serde_json::json!({
-        "group": group.slug().as_str(),
-        "side": "shared",
-        "line": name.as_str(),
-    }))
-    .into_response())
+    Ok(axum::Json(placed(&shared)).into_response())
+}
+
+/// Where a line is now, as a machine is told after changing it.
+fn placed(line: &lines::Started) -> serde_json::Value {
+    serde_json::json!({
+        "id": line.id.to_string(),
+        "group": line.group.slug().as_str(),
+        "side": line.side.as_str(),
+        "line": line.name.as_str(),
+        "revision": line.revision,
+    })
 }
 
 /// What a machine sends to start a line.

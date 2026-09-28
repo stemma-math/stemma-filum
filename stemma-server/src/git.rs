@@ -295,6 +295,55 @@ pub fn start_line(path: &Path, name: &Name, source: &str, author: &Author<'_>) -
     })
 }
 
+/// The most a root file may weigh to be handed to a machine.
+const LARGEST_ROOT_FILE: u64 = 256 * 1024;
+
+/// The most root files handed over.
+const MOST_ROOT_FILES: usize = 200;
+
+/// Every text file of a repository outside its lines, as it is now: the
+/// manifest and whatever the group keeps beside it. A file too large to
+/// be configuration, or not text, is left out.
+pub fn root_files(path: &Path) -> Result<Vec<(String, String)>> {
+    let Some(head) = head_commit(path) else {
+        return Ok(Vec::new());
+    };
+
+    let listed = run(path, &["ls-tree", "-r", "-l", "-z", &head])?;
+    let mut found = Vec::new();
+
+    for entry in listed.split('\0').filter(|entry| !entry.is_empty()) {
+        let Some((about, file)) = entry.split_once('\t') else {
+            continue;
+        };
+        let mut parts = about.split_whitespace();
+        let (Some(_mode), Some(kind), Some(_object), Some(size)) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+
+        if kind != "blob"
+            || file.starts_with(&format!("{}/", repository::LINES))
+            || size
+                .parse::<u64>()
+                .map_or(true, |size| size > LARGEST_ROOT_FILE)
+        {
+            continue;
+        }
+
+        if let Ok(content) = show(path, &head, file) {
+            found.push((file.to_owned(), content));
+        }
+
+        if found.len() >= MOST_ROOT_FILES {
+            break;
+        }
+    }
+
+    Ok(found)
+}
+
 /// Whether a repository already has a line by this name.
 pub fn holds_line(path: &Path, name: &Name) -> bool {
     let Some(head) = head_commit(path) else {
@@ -387,16 +436,88 @@ pub fn bring_line(to: &Path, from: &Path, name: &Name, history: bool) -> Result<
     Ok(())
 }
 
-/// Takes a line out of a repository.
-pub fn drop_line(path: &Path, name: &Name, author: &Author<'_>) -> Result<String> {
+/// Takes a line out of a repository, saying why in `message`.
+pub fn drop_line(path: &Path, name: &Name, author: &Author<'_>, message: &str) -> Result<String> {
     let inside = format!("{}/{}", repository::LINES, name);
 
-    write_commit(
-        path,
-        author,
-        &format!("Move {name} to the group"),
-        |index| remove_prefix(path, index, &inside),
-    )
+    write_commit(path, author, message, |index| {
+        remove_prefix(path, index, &inside)
+    })
+}
+
+/// Commits what a line says now: its source, and its Lean module or the
+/// absence of one. Nothing is committed when git already has exactly
+/// that, and then there is no commit to return.
+pub fn write_line(
+    path: &Path,
+    name: &Name,
+    source: &str,
+    lean: Option<&str>,
+    author: &Author<'_>,
+    message: &str,
+) -> Result<Option<String>> {
+    let entry = format!("{}/{}/{}", repository::LINES, name, repository::ENTRY);
+    let module = format!("{}/{}/{}", repository::LINES, name, repository::LEAN_ENTRY);
+
+    let head = head_commit(path).context("the repository has no branch yet")?;
+    let before = run(path, &["rev-parse", &format!("{head}^{{tree}}")])?;
+    let index = path.join(format!("stemma-index-{}", uuid()));
+    let _ = std::fs::remove_file(&index);
+
+    let built = (|| {
+        index_git(path, &index, &["read-tree", &head])?;
+
+        let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], source)?;
+        index_git(
+            path,
+            &index,
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("100644,{blob},{entry}"),
+            ],
+        )?;
+
+        match lean {
+            Some(lean) => {
+                let blob = run_with_input(path, &["hash-object", "-w", "--stdin"], lean)?;
+                index_git(
+                    path,
+                    &index,
+                    &[
+                        "update-index",
+                        "--add",
+                        "--cacheinfo",
+                        &format!("100644,{blob},{module}"),
+                    ],
+                )?;
+            }
+            None => {
+                index_git(path, &index, &["update-index", "--force-remove", &module])?;
+            }
+        }
+
+        let tree = index_git(path, &index, &["write-tree"])?;
+        if tree == before {
+            return Ok(None);
+        }
+
+        let commit = run_with(
+            path,
+            &["commit-tree", &tree, "-p", &head, "-m", message],
+            None,
+            &author.environment(),
+        )?;
+        run(path, &["update-ref", "refs/heads/main", &commit, &head])?;
+
+        Ok(Some(commit))
+    })();
+
+    let _ = std::fs::remove_file(&index);
+    let _ = std::fs::remove_dir_all(index.with_extension("worktree"));
+
+    built
 }
 
 /// Who wrote a commit: their name and their address.
@@ -774,7 +895,7 @@ mod tests {
         start_line(&mine, &quotients(), &source("A better question"), &ana()).unwrap();
 
         bring_line(&ours, &mine, &quotients(), false).unwrap();
-        drop_line(&mine, &quotients(), &ana()).unwrap();
+        drop_line(&mine, &quotients(), &ana(), "Move it").unwrap();
 
         assert!(holds_line(&ours, &quotients()));
         assert!(!holds_line(&mine, &quotients()), "a move, not a copy");

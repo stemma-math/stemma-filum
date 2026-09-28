@@ -124,7 +124,7 @@ pub async fn release(
     let id = machine.id;
     let owner = machine.owner.clone();
 
-    instance
+    let released = instance
         .write(move |connection| {
             if let Some(claim) = claims::holder(connection, &group, side, line.as_str(), &owner)?
                 && claim.machine == id
@@ -132,9 +132,15 @@ pub async fn release(
                 claims::release(connection, &claim.id)?;
             }
 
-            Ok(())
+            crate::store::lines::by_name(connection, &group, side, &line, &owner)
         })
         .await?;
+
+    // Letting go ends the writing, and git gets it now rather than when
+    // the stretch would have gone quiet.
+    if let Some(line) = released {
+        crate::history::settle(&instance, line.id).await?;
+    }
 
     Ok(Json(json!({ "standing": "open" })).into_response())
 }
@@ -240,20 +246,25 @@ pub async fn hand_back(
     let (id, chosen, name) = about.read()?;
     let who = signed.user.id.clone();
 
-    instance
+    let released = instance
         .write(move |connection| {
             let Some(claim) = claims::holder(connection, &id, chosen, name.as_str(), &who)? else {
-                return Ok(());
+                return Ok(None);
             };
 
             if claim.owner != who {
                 anyhow::bail!("nothing here");
             }
 
-            claims::release(connection, &claim.id)
+            claims::release(connection, &claim.id)?;
+            crate::store::lines::by_name(connection, &id, chosen, &name, &who)
         })
         .await
         .map_err(nothing_here)?;
+
+    if let Some(line) = released {
+        crate::history::settle(&instance, line.id).await?;
+    }
 
     Ok(Redirect::to(&format!("/g/{group}/{side}/{line}")).into_response())
 }

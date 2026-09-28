@@ -20,7 +20,6 @@ use stemma_core::job::{Choice, JobState, Outcome, Task};
 use stemma_core::line::Name;
 use stemma_core::machine::{Detected, Presence};
 use stemma_core::proposal::{self, Completion};
-use stemma_core::repository;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -148,7 +147,8 @@ fn handed_over(job: &Job) -> serde_json::Value {
         "group": job.group.slug().as_str(),
         "side": job.side.as_str(),
         "line": job.line.as_str(),
-        "commit": job.commit,
+        "line_id": job.line_id.map(|line| line.to_string()),
+        "revision": job.revision,
         "against": job.against,
         "task": job.task.to_string(),
         "agent": job.agent.as_str(),
@@ -179,18 +179,17 @@ pub async fn finish(
         ));
     }
     if let Some(offer) = &completion.proposal {
-        let repository = match found.side {
-            Side::Shared => instance.repositories().shared(&found.group),
-            Side::Private => instance
-                .repositories()
-                .personal(&found.group, &found.launched_by),
-        };
-        let inside = format!("{}/{}/{}", repository::LINES, found.line, repository::ENTRY);
-        let commit = found.commit.clone();
+        let (line, number) = (found.line_id, found.revision);
         let base = instance
-            .blocking(move || crate::git::show(&repository, &commit, &inside))
-            .await?;
-        proposal::preserves_central_statements(&base, &offer.source)
+            .read(move |connection| match line {
+                Some(line) => crate::store::revisions::at(connection, &line, number),
+                None => Ok(None),
+            })
+            .await?
+            .ok_or_else(|| {
+                WebError::BadRequest("The revision this job was about is not here.".to_owned())
+            })?;
+        proposal::preserves_central_statements(&base.source, &offer.source)
             .map_err(|error| WebError::BadRequest(error.to_string()))?;
     }
 
@@ -226,11 +225,11 @@ pub struct Asking {
     pub side: String,
     /// Which line of work.
     pub line: String,
-    /// The commit to work against.
-    pub commit: String,
-    /// The other version, for a job that brings two of them together.
+    /// The revision of the line to work against.
+    pub revision: u64,
+    /// The other revision, for a job that brings two of them together.
     #[serde(default)]
-    pub against: Option<String>,
+    pub against: Option<u64>,
     /// What is being asked.
     pub task: String,
     /// Which agent.
@@ -328,22 +327,13 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
         None => None,
     };
 
-    if asking.commit.trim().is_empty() {
-        return Err(refuse("A job has to say which commit it is about."));
-    }
-
     let group = GroupId::new(slug);
     let asker = by.clone();
-    let commit = asking.commit.trim().to_owned();
-    let against = asking
-        .against
-        .as_deref()
-        .map(str::trim)
-        .filter(|commit| !commit.is_empty())
-        .map(str::to_owned);
+    let revision = asking.revision;
+    let against = asking.against;
 
     if task == Task::Reconcile && against.is_none() {
-        return Err(refuse("A merge job needs the other version's commit."));
+        return Err(refuse("A merge job needs the other version's revision."));
     }
 
     instance
@@ -353,6 +343,20 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
             // business.
             if groups::role_of(connection, &group, &asker)?.is_none() {
                 anyhow::bail!("nothing here");
+            }
+
+            // The line is the one this person means, at a revision it has
+            // had: a job about a revision nobody wrote is about nothing.
+            let Some(found) =
+                crate::store::lines::by_name(connection, &group, side, &line, &asker)?
+            else {
+                anyhow::bail!("nothing here");
+            };
+            if revision == 0
+                || revision > found.revision
+                || against.is_some_and(|against| against == 0 || against > found.revision)
+            {
+                anyhow::bail!("that revision of the line does not exist");
             }
 
             if let Some(machine) = &chosen {
@@ -383,8 +387,9 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                     group: group.clone(),
                     side,
                     line: line.clone(),
-                    commit: commit.clone(),
-                    against: against.clone(),
+                    line_id: Some(found.id),
+                    revision,
+                    against,
                     task: task.clone(),
                     agent: agent.clone(),
                     choice: match chosen {
@@ -422,8 +427,8 @@ pub struct Launched {
     pub on: String,
     /// What is being asked.
     pub task: String,
-    /// The commit the reader was looking at.
-    pub commit: String,
+    /// The revision the reader was looking at.
+    pub revision: u64,
     /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
@@ -449,7 +454,7 @@ pub async fn launch(
             group: group.clone(),
             side: side.clone(),
             line: line.clone(),
-            commit: form.commit.clone(),
+            revision: form.revision,
             against: None,
             task: form.task.clone(),
             agent: agent.to_owned(),
@@ -563,7 +568,7 @@ pub fn launcher(
     group: &Slug,
     side: Side,
     line: &Name,
-    commit: &str,
+    revision: u64,
     task: &Task,
     offers: &[Offer],
 ) -> Markup {
@@ -581,7 +586,7 @@ pub fn launcher(
                          action={ "/g/" (group) "/" (side) "/" (line) "/jobs" } {
                         (signature(signed))
                         input type="hidden" name="task" value=(task.to_string());
-                        input type="hidden" name="commit" value=(commit);
+                        input type="hidden" name="revision" value=(revision);
 
                         @for offer in offers {
                             (choices(

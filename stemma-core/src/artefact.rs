@@ -143,6 +143,10 @@ pub struct LineDigest {
     /// What the pinned Lean environment established for this line.
     #[serde(default)]
     pub lean: Option<LeanDigest>,
+    /// The revision of the line that was read, where the build knew it:
+    /// a build is about a line exactly while the line is at that revision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u64>,
 }
 
 /// Reconstructible output of checking one line's Lean module.
@@ -292,6 +296,7 @@ mod tests {
             })
             .unwrap(),
             lean: None,
+            revision: None,
         });
 
         nodes
@@ -321,6 +326,7 @@ mod tests {
             description: None,
             line: Line { nodes: Vec::new() },
             lean: None,
+            revision: None,
         };
 
         assert_eq!(digest.shown_as(), "untitled");

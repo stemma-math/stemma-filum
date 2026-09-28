@@ -16,7 +16,6 @@ use serde::Deserialize;
 use serde_json::json;
 use stemma_core::diff::{self, Change};
 use stemma_core::id::ProposalId;
-use stemma_core::repository::{self, Side};
 
 use super::api::Credential;
 use super::layout::{page, signature};
@@ -48,26 +47,17 @@ pub async fn review(
     Ok(page(&chrome, body(&signed, &proposal, stands.as_deref())).into_response())
 }
 
-/// The source the proposal would replace, as the repository has it.
+/// The source the proposal would replace: the revision its job read.
 async fn against(instance: &Instance, proposal: &proposals::Proposal) -> Option<String> {
-    let repositories = instance.repositories();
-    let path = match proposal.job.side {
-        Side::Shared => repositories.shared(&proposal.job.group),
-        Side::Private => repositories.personal(&proposal.job.group, &proposal.job.launched_by),
-    };
-    let inside = format!(
-        "{}/{}/{}",
-        repository::LINES,
-        proposal.job.line,
-        repository::ENTRY
-    );
-    let commit = proposal.job.commit.clone();
+    let line = proposal.job.line_id?;
+    let number = proposal.job.revision;
 
     instance
-        .blocking(move || Ok(crate::git::show(&path, &commit, &inside).ok()))
+        .read(move |connection| crate::store::revisions::at(connection, &line, number))
         .await
         .ok()
         .flatten()
+        .map(|revision| revision.source)
 }
 
 /// The review screen.
@@ -143,12 +133,24 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
             }
             p class="quiet" {
                 "Accepting records you as the reviewer and preserves the model information. "
-                "Apply the proposal to your machine with "
-                code { "stemma proposal apply " (proposal.id) }
-                ", or from the application."
+                "One of your machines then brings it into the line, as a revision of yours."
             }
         } @else {
-            p class="quiet" { "This proposal was " (proposal.state) "." }
+            p class="quiet" {
+                @match (proposal.state.as_str(), proposal.applied_revision) {
+                    ("accepted", Some(revision)) => {
+                        "Accepted, and in the line since revision " (revision) "."
+                    }
+                    ("accepted", None) => {
+                        "Accepted. One of your machines brings it into the line as soon as it is connected."
+                    }
+                    ("outdated", _) => {
+                        "Accepted, but a statement it changes was changed after it was made, "
+                        "so it was not brought into the line. Ask for it again against the line as it is."
+                    }
+                    (state, _) => { "This proposal was " (state.replace('_', " ")) "." }
+                }
+            }
         }
     }
 }
@@ -300,7 +302,8 @@ async fn settle(
                         group: proposal.job.group,
                         side: proposal.job.side,
                         line: proposal.job.line,
-                        commit: proposal.job.commit,
+                        line_id: proposal.job.line_id,
+                        revision: proposal.job.revision,
                         against: None,
                         task: proposal.job.task,
                         agent: proposal.job.agent,
@@ -371,7 +374,8 @@ pub async fn offered(
         "group": proposal.job.group.slug().as_str(),
         "side": proposal.job.side.as_str(),
         "line": proposal.job.line.as_str(),
-        "commit": proposal.job.commit,
+        "line_id": proposal.job.line_id.map(|line| line.to_string()),
+        "revision": proposal.job.revision,
         "task": proposal.job.task.to_string(),
         "agent": proposal.job.agent.as_str(),
         "vendor": proposal.vendor,
@@ -430,7 +434,85 @@ pub async fn accepted(
         "group": proposal.job.group.slug().as_str(),
         "side": proposal.job.side.as_str(),
         "line": proposal.job.line.as_str(),
-        "commit": proposal.job.commit,
+        "line_id": proposal.job.line_id.map(|line| line.to_string()),
+        "revision": proposal.job.revision,
     }))
     .into_response())
+}
+
+/// What this person accepted and no machine of theirs has applied yet,
+/// with everything a machine needs to apply it.
+pub async fn to_apply(
+    State(instance): State<Instance>,
+    credential: Credential,
+) -> Result<Response, WebError> {
+    let who = credential.user.id.clone();
+    let waiting = instance
+        .read(move |c| proposals::accepted_unapplied(c, &who))
+        .await?;
+
+    let listed: Vec<serde_json::Value> = waiting
+        .iter()
+        .map(|proposal| {
+            json!({
+                "proposal": proposal.id.to_string(),
+                "group": proposal.job.group.slug().as_str(),
+                "side": proposal.job.side.as_str(),
+                "line": proposal.job.line.as_str(),
+                "line_id": proposal.job.line_id.map(|line| line.to_string()),
+                "revision": proposal.job.revision,
+                "source": proposal.source,
+                "lean_source": proposal.lean_source,
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({ "proposals": listed })).into_response())
+}
+
+/// What a machine says when it applied a proposal.
+#[derive(Debug, Deserialize)]
+pub struct Applied {
+    /// The revision the line became with it.
+    pub revision: u64,
+}
+
+/// Records that an accepted proposal was applied, and as which revision.
+pub async fn applied(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(id): Path<String>,
+    Json(applied): Json<Applied>,
+) -> Result<Response, WebError> {
+    let id: ProposalId = id.parse().map_err(|_| WebError::NotFound)?;
+    let who = credential.user.id.clone();
+
+    let recorded = instance
+        .read(move |c| proposals::applied(c, &id, &who, applied.revision))
+        .await?;
+
+    match recorded {
+        true => Ok(Json(json!({ "applied": true })).into_response()),
+        false => Err(WebError::NotFound),
+    }
+}
+
+/// Records that an accepted proposal came too late: a block it changes
+/// was changed since the revision it was made from.
+pub async fn outdated(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(id): Path<String>,
+) -> Result<Response, WebError> {
+    let id: ProposalId = id.parse().map_err(|_| WebError::NotFound)?;
+    let who = credential.user.id.clone();
+
+    let recorded = instance
+        .read(move |c| proposals::outdated(c, &id, &who))
+        .await?;
+
+    match recorded {
+        true => Ok(Json(json!({ "outdated": true })).into_response()),
+        false => Err(WebError::NotFound),
+    }
 }

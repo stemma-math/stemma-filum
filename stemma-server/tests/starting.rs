@@ -271,32 +271,10 @@ async fn nothing_shared_may_lean_on_something_only_its_author_can_see() {
     start(&mut harness, "Quotient groups", "Does it split?", "me").await;
 
     // She reaches into her other line, which the group cannot see.
-    let group = harness.instance.repositories();
-    harness
-        .instance
-        .read(move |connection| {
-            let user = users::by_login(connection, "ana")?.expect("the account");
-            let found =
-                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
-            let mine = group.personal(&found.id, &user.id);
-            let leaning = Document::new("Quotient groups", None)
-                .with(Block::prose("#import \"../notation/main.typ\": *"))
-                .to_text();
-
-            stemma_server::git::start_line(
-                &mine,
-                &Name::parse("quotient-groups").unwrap(),
-                &leaning,
-                &stemma_server::git::Author {
-                    name: "Ana",
-                    email: "ana@example.org",
-                },
-            )?;
-
-            Ok(())
-        })
-        .await
-        .unwrap();
+    let leaning = Document::new("Quotient groups", None)
+        .with(Block::prose("#import \"../notation/main.typ\": *"))
+        .to_text();
+    write(&harness, Some("ana"), "quotient-groups", &leaning).await;
 
     let form = harness
         .get("/g/algebra/private/quotient-groups/share")
@@ -486,6 +464,7 @@ async fn publish(harness: &mut Harness, built: &str) {
                 description: document.description.clone(),
                 line: stemma_core::line::Line::of(&document).expect("a line that reads"),
                 lean: None,
+                revision: None,
             });
 
             let text = nodes.to_text();
@@ -598,71 +577,56 @@ async fn a_line_can_be_read_the_moment_it_exists_and_says_what_is_missing() {
     assert!(line.says("This line does not contain any declarations yet"));
 }
 
-/// Writes a line on a machine and pushes it, as synchronising does.
+/// Writes a revision of a line, as the machine holding it does.
 async fn write(harness: &Harness, who: Option<&str>, line: &str, text: &str) {
-    let who = who.map(str::to_owned);
-    let repositories = harness.instance.repositories();
+    use stemma_server::store::revisions::{self, Content, Offered};
+    use stemma_server::store::{claims, lines, machines};
 
-    let bare = harness
+    let side = match who {
+        Some(_) => Side::Private,
+        None => Side::Shared,
+    };
+    let who = who.unwrap_or("ana").to_owned();
+    let (line, text) = (line.to_owned(), text.to_owned());
+
+    harness
         .instance
-        .read(move |connection| {
+        .write(move |connection| {
+            let user = users::by_login(connection, &who)?.expect("the account");
             let group =
                 groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
+            let name = Name::parse(&line)?;
+            let found =
+                lines::by_name(connection, &group.id, side, &name, &user.id)?.expect("the line");
 
-            Ok(match &who {
-                Some(who) => {
-                    let user = users::by_login(connection, who)?.expect("the account");
+            connection.execute(
+                "INSERT OR IGNORE INTO client_tokens (id, user_id, label, token_hash)
+                 VALUES ('tok:writer', ?1, 'writer', 'writer')",
+                [user.id.to_string()],
+            )?;
+            let machine = machines::register(connection, &user.id, "tok:writer", "Ana's laptop")?;
+            claims::take(connection, &group.id, side, &line, &machine.id, &user.id)?;
 
-                    repositories.personal(&group.id, &user.id)
-                }
-                None => repositories.shared(&group.id),
-            })
+            revisions::write(
+                connection,
+                &found.id,
+                &Offered {
+                    base: found.revision,
+                    content: Content {
+                        source: text,
+                        lean_source: None,
+                        page: "<p>The page.</p>".to_owned(),
+                    },
+                },
+                &machine.id,
+                &user.id,
+            )?
+            .map_err(|refused| anyhow::anyhow!("{refused}"))?;
+
+            Ok(())
         })
         .await
         .unwrap();
-
-    let work = bare.with_extension("work");
-    let _ = std::fs::remove_dir_all(&work);
-
-    let git = |at: &std::path::Path, arguments: &[&str]| {
-        let output = std::process::Command::new("git")
-            .current_dir(at)
-            .args(arguments)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .env("GIT_AUTHOR_NAME", "Ana")
-            .env("GIT_AUTHOR_EMAIL", "ana@example.org")
-            .env("GIT_COMMITTER_NAME", "Ana")
-            .env("GIT_COMMITTER_EMAIL", "ana@example.org")
-            .output()
-            .expect("git runs");
-        assert!(
-            output.status.success(),
-            "git {arguments:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    };
-
-    git(
-        bare.parent().unwrap(),
-        &[
-            "clone",
-            "-q",
-            bare.to_str().unwrap(),
-            work.to_str().unwrap(),
-        ],
-    );
-    std::fs::write(
-        work.join(repository::LINES)
-            .join(line)
-            .join(repository::ENTRY),
-        text,
-    )
-    .unwrap();
-    git(&work, &["commit", "-q", "-am", &format!("Write {line}")]);
-    git(&work, &["push", "-q", "origin", "main"]);
-
-    std::fs::remove_dir_all(&work).unwrap();
 }
 
 #[tokio::test]

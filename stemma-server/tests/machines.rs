@@ -110,6 +110,21 @@ async fn publish(harness: &mut Harness, who: &str) {
                 groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
             let scope = Scope::of(Side::Shared, &user.id);
 
+            // The line itself, at its first revision, as starting it
+            // leaves it.
+            stemma_server::store::lines::start(
+                connection,
+                &group.id,
+                Side::Shared,
+                &stemma_core::line::Name::parse("quotient-groups").unwrap(),
+                &user.id,
+                &stemma_server::store::revisions::Content {
+                    source: source().to_text(),
+                    lean_source: None,
+                    page: "<p>The page.</p>".to_owned(),
+                },
+            )?;
+
             let mut nodes = Nodes::new(group.id.clone(), Side::Shared, COMMIT.to_owned());
             nodes.lines.push(support::digest(&source()));
 
@@ -280,7 +295,7 @@ async fn a_job_launched_from_a_line_is_taken_by_the_machine_that_was_chosen() {
             &[
                 ("on", &format!("{machine}|claude")),
                 ("task", "fill@thm:first"),
-                ("commit", COMMIT),
+                ("revision", "1"),
                 ("form_token", &form_token(&line)),
             ],
         )
@@ -300,7 +315,7 @@ async fn a_job_launched_from_a_line_is_taken_by_the_machine_that_was_chosen() {
     let handed = parsed(&taken);
     assert_eq!(handed["task"].as_str(), Some("fill@thm:first"));
     assert_eq!(handed["agent"].as_str(), Some("claude"));
-    assert_eq!(handed["commit"].as_str(), Some(COMMIT));
+    assert_eq!(handed["revision"].as_u64(), Some(1));
     assert_eq!(handed["line"].as_str(), Some("quotient-groups"));
 
     // And there is nothing else waiting.
@@ -347,7 +362,7 @@ async fn a_machine_that_could_not_try_says_so_on_the_machine() {
             &[
                 ("on", &format!("{machine}|claude")),
                 ("task", "fill"),
-                ("commit", COMMIT),
+                ("revision", "1"),
                 ("form_token", &form_token(&line)),
             ],
         )
@@ -424,7 +439,7 @@ async fn somebody_elses_machine_is_never_handed_a_job_that_named_mine() {
             &[
                 ("on", &format!("{her_machine}|claude")),
                 ("task", "refute@thm:first"),
-                ("commit", COMMIT),
+                ("revision", "1"),
                 ("form_token", &form_token(&line)),
             ],
         )
@@ -470,7 +485,7 @@ async fn a_machine_nobody_chose_takes_work_only_where_the_agent_is_there() {
             &[
                 ("on", &on),
                 ("task", &task),
-                ("commit", COMMIT),
+                ("revision", "1"),
                 ("form_token", &form),
             ],
         )
@@ -495,7 +510,7 @@ async fn a_machine_nobody_chose_takes_work_only_where_the_agent_is_there() {
             &[
                 ("on", &on),
                 ("task", &task),
-                ("commit", COMMIT),
+                ("revision", "1"),
                 ("form_token", &form),
             ],
         )
