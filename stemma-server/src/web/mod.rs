@@ -23,6 +23,7 @@ pub mod lines;
 pub mod machines;
 pub mod proposals;
 pub mod reset;
+pub mod revisions;
 pub mod starting;
 pub mod transport;
 pub mod vault;
@@ -54,6 +55,9 @@ pub struct Instance {
     /// Rung whenever the database may have changed, so that whoever is
     /// waiting for events looks again instead of on a timer.
     pub changed: Arc<tokio::sync::Notify>,
+    /// Held while anything writes to the repositories, so two writers
+    /// never race for the same branch.
+    pub git: Arc<Mutex<()>>,
 }
 
 impl Instance {
@@ -64,6 +68,7 @@ impl Instance {
             database: Arc::new(Mutex::new(database)),
             key,
             changed: Arc::new(tokio::sync::Notify::new()),
+            git: Arc::new(Mutex::new(())),
         }
     }
 
@@ -138,6 +143,25 @@ impl Instance {
         self.changed.notify_waiters();
 
         done
+    }
+
+    /// Runs work that writes to the repositories, one writer at a time.
+    pub async fn writing_git<T, F>(&self, work: F) -> Result<T, WebError>
+    where
+        F: FnOnce(&crate::git::Repositories) -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let repositories = self.repositories();
+        let git = self.git.clone();
+
+        self.blocking(move || {
+            let _held = git
+                .lock()
+                .map_err(|_| anyhow::anyhow!("a writer to the repositories failed"))?;
+
+            work(&repositories)
+        })
+        .await
     }
 
     /// Where this instance keeps its repositories.
@@ -243,6 +267,7 @@ fn pages() -> Router<Instance> {
         .route("/g/{slug}/vault/obligations", post(vault::assign))
         .route("/audit-obligations/{id}/decide", post(vault::decide))
         .route("/g/{slug}/{side}/{line}", get(lines::view))
+        .route("/g/{slug}/{side}/{line}/page", get(revisions::page))
         .route("/g/{slug}/{side}/{line}/jobs", post(jobs::launch))
         .route(
             "/g/{slug}/{side}/{line}/claim/release",
@@ -273,7 +298,19 @@ fn api() -> Router<Instance> {
         .route("/api/events", get(events::stream))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))
-        .route("/api/lines", post(starting::api_start))
+        .route(
+            "/api/lines",
+            get(revisions::listing).post(starting::api_start),
+        )
+        .route(
+            "/api/lines/{id}",
+            get(revisions::read)
+                .put(revisions::write)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    revisions::LARGEST_WRITE,
+                )),
+        )
+        .route("/api/repositories/{group}/{side}", get(revisions::root))
         .route("/api/lines/{slug}/{line}/share", post(starting::api_share))
         .route(
             "/api/lines/{slug}/{line}/delete",
@@ -292,7 +329,10 @@ fn api() -> Router<Instance> {
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/jobs/{id}/finish", post(jobs::finish))
         .route("/api/proposals", get(proposals::listing))
+        .route("/api/proposals/accepted", get(proposals::to_apply))
         .route("/api/proposals/{id}", get(proposals::accepted))
+        .route("/api/proposals/{id}/applied", post(proposals::applied))
+        .route("/api/proposals/{id}/outdated", post(proposals::outdated))
         .route("/api/proposals/{id}/review", get(proposals::offered))
         .route("/api/proposals/{id}/decide", post(proposals::api_decide))
         .route("/api/groups/{group}/machines", get(jobs::machine_choices))

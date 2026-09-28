@@ -115,6 +115,19 @@ impl Harness {
         self.send(request).await
     }
 
+    /// Replaces something as a machine would, carrying a credential.
+    pub async fn put_json_with_token(&mut self, path: &str, token: &str, body: &str) -> Page {
+        let request = Request::builder()
+            .method("PUT")
+            .uri(path)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned()))
+            .expect("a request");
+
+        self.send(request).await
+    }
+
     /// A credential for an account, made the way a signed-in machine
     /// collects one.
     pub async fn credential(&self, account: &str) -> String {
@@ -332,5 +345,6 @@ pub fn digest(document: &stemma_core::document::Document) -> stemma_core::artefa
         description: document.description.clone(),
         line: stemma_core::line::Line::of(document).expect("a line that reads"),
         lean: None,
+        revision: None,
     }
 }

@@ -13,7 +13,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
 use stemma_core::event::Event;
-use stemma_core::id::{GroupId, JobId, MachineId, Slug, UserId};
+use stemma_core::id::{GroupId, JobId, LineId, MachineId, Slug, UserId};
 use stemma_core::job::{Choice, JobState, Outcome, Task};
 use stemma_core::line::Name;
 use stemma_core::repository::Side;
@@ -31,10 +31,12 @@ pub struct Job {
     pub side: Side,
     /// Which line of work.
     pub line: Name,
-    /// The commit it was launched against.
-    pub commit: String,
-    /// The other version, when the job is to bring two of them together.
-    pub against: Option<String>,
+    /// The line, by identifier, where the job knows it.
+    pub line_id: Option<LineId>,
+    /// The revision of the line it was launched against.
+    pub revision: u64,
+    /// The other revision, when the job is to bring two of them together.
+    pub against: Option<u64>,
     /// What it asks for, and where the answer lands.
     pub task: Task,
     /// Which agent was chosen.
@@ -85,8 +87,11 @@ impl Job {
                 .parse()
                 .map_err(|_| unreadable("a repository", &side))?,
             line: Name::parse(&line).map_err(|_| unreadable("a line", &line))?,
-            commit: row.get("commit_id")?,
-            against: row.get("against")?,
+            line_id: row
+                .get::<_, Option<String>>("line_id")?
+                .and_then(|raw| raw.parse().ok()),
+            revision: revision_at(row, "revision")?.unwrap_or_default(),
+            against: revision_at(row, "against")?,
             task: task.parse().map_err(|_| unreadable("a task", &task))?,
             agent: Slug::parse(&agent).map_err(|_| unreadable("an agent", &agent))?,
             choice: match chosen {
@@ -135,8 +140,15 @@ impl Job {
     }
 }
 
+/// A revision, which the table keeps as text.
+fn revision_at(row: &Row<'_>, column: &str) -> rusqlite::Result<Option<u64>> {
+    Ok(row
+        .get::<_, Option<String>>(column)?
+        .and_then(|raw| raw.trim().parse().ok()))
+}
+
 /// The columns every read asks for.
-const COLUMNS: &str = "id, group_id, side, line, commit_id, against, task, agent,
+const COLUMNS: &str = "id, group_id, side, line, line_id, revision, against, task, agent,
                        chosen_machine, launched_by, launched_at, state, taken_by, taken_at,
                        finished_at, outcome, code, reason, cleared_at";
 
@@ -149,10 +161,12 @@ pub struct Launch {
     pub side: Side,
     /// Which line of work.
     pub line: Name,
-    /// The commit to work against.
-    pub commit: String,
-    /// The other version, for a job that brings two of them together.
-    pub against: Option<String>,
+    /// The line, by identifier.
+    pub line_id: Option<LineId>,
+    /// The revision to work against.
+    pub revision: u64,
+    /// The other revision, for a job that brings two of them together.
+    pub against: Option<u64>,
     /// What is being asked.
     pub task: Task,
     /// Which agent.
@@ -169,20 +183,21 @@ pub fn launch(connection: &Connection, asked: &Launch) -> Result<Job> {
 
     connection
         .execute(
-            "INSERT INTO jobs (id, group_id, side, line, commit_id, against, task, agent,
-                               chosen_machine, launched_by, state)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'queued')",
+            "INSERT INTO jobs (id, group_id, side, line, revision, against, task, agent,
+                               chosen_machine, launched_by, state, line_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'queued', ?11)",
             params![
                 id.to_string(),
                 asked.group.to_string(),
                 asked.side.as_str(),
                 asked.line.as_str(),
-                asked.commit,
-                asked.against,
+                asked.revision.to_string(),
+                asked.against.map(|against| against.to_string()),
                 asked.task.to_string(),
                 asked.agent.as_str(),
                 asked.choice.machine().map(MachineId::to_string),
                 asked.by.to_string(),
+                asked.line_id.map(|line| line.to_string()),
             ],
         )
         .context("cannot add the job to the queue")?;
@@ -501,7 +516,8 @@ mod tests {
             group: group.clone(),
             side: Side::Shared,
             line: Name::parse("quotients").unwrap(),
-            commit: "0123456789abcdef".to_owned(),
+            line_id: None,
+            revision: 1,
             against: None,
             task: Task::Fill { after: None },
             agent: claude(),

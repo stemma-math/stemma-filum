@@ -1,4 +1,4 @@
-//! Cloning and pushing with git itself.
+//! Cloning with git itself, and being refused a push.
 //!
 //! These drive the real `git` binary against a listening instance,
 //! because the thing being tested is whether git is happy — and only git
@@ -203,7 +203,7 @@ fn git_with(token: &str, directory: &Path, arguments: &[&str]) -> Ran {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_member_clones_the_group_and_pushes_back_to_it() {
+async fn a_member_clones_the_group_and_cannot_push_to_it() {
     let listening = Listening::start("shared").await;
     listening.group_with_owner("ana", "algebra").await;
     let token = listening.credential("ana").await;
@@ -218,20 +218,23 @@ async fn a_member_clones_the_group_and_pushes_back_to_it() {
         "nothing was cloned"
     );
 
-    // Writing, committing and pushing, as a person would.
+    // Writing and committing as a person might, and trying to push: lines
+    // are written through the instance, and git here only reads.
     std::fs::write(work.join("shared/line.typ"), "= A line of work\n").unwrap();
 
     let clone = work.join("shared");
     for arguments in [
         vec!["add", "line.typ"],
         vec!["commit", "-q", "-m", "Start a line"],
-        vec!["push", "-q", "origin", "main"],
     ] {
         let ran = git_with(&token, &clone, &arguments);
         assert!(ran.worked, "git {arguments:?} failed: {}", ran.said);
     }
 
-    // Somebody else in the group gets what was pushed.
+    let pushed = git_with(&token, &clone, &["push", "-q", "origin", "main"]);
+    assert!(!pushed.worked, "a push was taken");
+
+    // Nobody else gets what was never taken.
     listening
         .add_member("enric", "algebra", GroupRole::Member)
         .await;
@@ -240,10 +243,7 @@ async fn a_member_clones_the_group_and_pushes_back_to_it() {
 
     let cloned = git_with(&other, &elsewhere, &["clone", &url, "shared"]);
     assert!(cloned.worked, "the second clone failed: {}", cloned.said);
-    assert!(
-        elsewhere.join("shared/line.typ").is_file(),
-        "the push did not arrive"
-    );
+    assert!(!elsewhere.join("shared/line.typ").exists());
 
     listening.finish();
 }

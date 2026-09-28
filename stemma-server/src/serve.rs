@@ -107,15 +107,25 @@ async fn run(instance: Instance) -> Result<()> {
 /// Housekeeping nobody asks for, on a timer, for as long as the server
 /// runs. A round that fails is logged and the next one tries again.
 async fn maintain(instance: Instance) {
-    let mut every = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+    let mut every = tokio::time::interval(std::time::Duration::from_secs(30));
+    let mut rounds: u64 = 0;
 
     loop {
         every.tick().await;
+        rounds += 1;
 
-        match instance.read(crate::store::events::forget_old).await {
-            Ok(0) => {}
-            Ok(forgotten) => tracing::info!("forgot {forgotten} old events"),
-            Err(error) => tracing::warn!("cannot forget old events: {error}"),
+        // Writing that went quiet is committed within a minute of the
+        // ten it is allowed.
+        if let Err(error) = crate::history::tidy(&instance).await {
+            tracing::warn!("cannot commit the writing that went quiet: {error}");
+        }
+
+        if rounds % 120 == 1 {
+            match instance.read(crate::store::events::forget_old).await {
+                Ok(0) => {}
+                Ok(forgotten) => tracing::info!("forgot {forgotten} old events"),
+                Err(error) => tracing::warn!("cannot forget old events: {error}"),
+            }
         }
     }
 }

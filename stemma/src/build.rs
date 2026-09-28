@@ -152,6 +152,7 @@ pub fn read(clone: &Path) -> Result<Built> {
                     description: document.description,
                     line,
                     lean,
+                    revision: None,
                 });
             }
             Err(found) => faults.push(Faulty {

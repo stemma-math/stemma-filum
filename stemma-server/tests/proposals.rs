@@ -100,14 +100,26 @@ async fn awaiting(harness: &mut Harness) -> String {
                 },
             )?;
 
-            let commit = stemma_server::git::head_commit(&mine).expect("a branch");
+            let line = stemma_server::store::lines::start(
+                connection,
+                &group.id,
+                Side::Private,
+                &Name::parse("quotient-groups").unwrap(),
+                &user.id,
+                &stemma_server::store::revisions::Content {
+                    source: stands(),
+                    lean_source: None,
+                    page: "<p>The page.</p>".to_owned(),
+                },
+            )?;
             let job = jobs::launch(
                 connection,
                 &jobs::Launch {
                     group: group.id.clone(),
                     side: Side::Private,
                     line: Name::parse("quotient-groups").unwrap(),
-                    commit,
+                    line_id: Some(line.id),
+                    revision: line.revision,
                     against: None,
                     task: Task::Fill {
                         after: Some("thm:main".parse().unwrap()),
