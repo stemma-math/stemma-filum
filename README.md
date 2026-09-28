@@ -50,6 +50,15 @@ the store, and the edited version is kept aside.
 `stemma sync` runs one round at once, and `stemma status` says which lines are
 not sent yet or need a decision.
 
+The same engine runs in the application and in the daemon (`stemma daemon
+run`), one at a time: the application keeps the machine while it is open, and
+the daemon takes over when it closes. Once a stretch of writing is over, the
+machine that wrote it builds the repository and publishes what it holds, each
+line named by its revision; when nothing arrives a few minutes after the
+writing ended, the server queues a `build` job for another machine of the
+group. `stemma export GROUP` makes a read-only git clone of a repository, for
+anyone who can read it.
+
 ## Requirements
 
 - macOS 12 or newer to build the macOS application

@@ -81,7 +81,15 @@ pub enum Task {
     /// What comes back is a proposal like any other: an agent may offer
     /// a reconciliation, and a person signs it or does not.
     Reconcile,
+    /// Build the line's repository and publish what it holds, for the
+    /// web to show. The instance asks for this itself, of any machine of
+    /// the group, when the machine that wrote the line did not; no agent
+    /// takes part.
+    Build,
 }
+
+/// What a build job names in place of an agent.
+pub const BUILDER: &str = "stemma";
 
 impl Task {
     /// What is being asked, in the words the launcher offers it in.
@@ -97,6 +105,7 @@ impl Task {
             Self::Develop { .. } => "develop this prose into mathematics",
             Self::Explore => "say where the line could go next",
             Self::Reconcile => "bring the two versions together",
+            Self::Build => "build its pages",
         }
     }
 
@@ -110,7 +119,7 @@ impl Task {
             Self::Promote { statement } => Some(statement),
             Self::Prove { statement } => Some(statement),
             Self::Rewrite { statement } => Some(statement),
-            Self::Develop { .. } | Self::Explore | Self::Reconcile => None,
+            Self::Develop { .. } | Self::Explore | Self::Reconcile | Self::Build => None,
         }
     }
 
@@ -138,6 +147,7 @@ impl fmt::Display for Task {
             Self::Develop { block } => write!(f, "develop@{block}"),
             Self::Explore => f.write_str("explore"),
             Self::Reconcile => f.write_str("reconcile"),
+            Self::Build => f.write_str("build"),
         }
     }
 }
@@ -201,6 +211,7 @@ impl FromStr for Task {
             ("prove" | "rewrite" | "develop", None) => Err(BadTask::Unanchored(input.to_owned())),
             ("explore", _) => Ok(Self::Explore),
             ("reconcile", _) => Ok(Self::Reconcile),
+            ("build", _) => Ok(Self::Build),
             _ => Err(BadTask::Unknown(verb.to_owned())),
         }
     }

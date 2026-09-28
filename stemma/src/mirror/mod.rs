@@ -20,6 +20,7 @@
 //! which to keep. Nothing is ever dropped: what a machine had of a line
 //! deleted or hidden meanwhile is kept aside, and said.
 
+pub mod engine;
 mod remote;
 mod store;
 
@@ -41,8 +42,9 @@ use crate::config::Config;
 use crate::home::Home;
 
 pub use remote::{Instance, Remote};
+pub use store::Store;
+use store::now;
 pub use store::{Record, There};
-use store::{Store, now};
 
 /// How long after the last save a line is sent.
 pub const PAUSE: Duration = Duration::from_secs(2);
@@ -251,6 +253,65 @@ impl Mirror {
     /// Every line here, as the engine keeps it.
     pub fn records(&self) -> Result<Vec<Record>> {
         self.store.all()
+    }
+
+    /// Every repository this machine has a line in.
+    pub fn repositories(&self) -> Result<Vec<(String, Side)>> {
+        let mut found: Vec<(String, Side)> = self
+            .store
+            .all()?
+            .into_iter()
+            .map(|record| (record.group, record.side))
+            .collect();
+        found.sort_by(|one, other| (&one.0, one.1.as_str()).cmp(&(&other.0, other.1.as_str())));
+        found.dedup();
+
+        Ok(found)
+    }
+
+    /// The repositories whose writing here is over and was not built: a
+    /// line of theirs was sent and then let go, or nothing was sent for
+    /// `quiet`. `released` names the lines just let go, by identifier.
+    pub fn due_builds(&self, released: &[String], quiet: Duration) -> Result<Vec<(String, Side)>> {
+        let now = now();
+        let mut due: Vec<(String, Side)> = Vec::new();
+
+        for record in self.store.all()? {
+            let Some(sent) = record.unbuilt else {
+                continue;
+            };
+            let over = released.contains(&record.id)
+                || now.saturating_sub(sent) >= quiet.as_millis() as u64;
+            let place = (record.group.clone(), record.side);
+
+            if over && !due.contains(&place) {
+                due.push(place);
+            }
+        }
+
+        Ok(due)
+    }
+
+    /// Notes that what was built covers every line it names at the
+    /// revision this machine is at.
+    pub fn built(&self, nodes: &stemma_core::artefact::Nodes) -> Result<()> {
+        let _locked = self.store.lock()?;
+        let group = nodes.group.slug().as_str();
+
+        for mut record in self.store.all()? {
+            let covered = record.group == group
+                && record.side == nodes.side
+                && nodes.lines.iter().any(|line| {
+                    line.name.as_str() == record.name && line.revision == Some(record.base)
+                });
+
+            if covered && record.unbuilt.is_some() {
+                record.unbuilt = None;
+                self.store.put(&record)?;
+            }
+        }
+
+        Ok(())
     }
 
     /// The record of one line.
@@ -570,6 +631,7 @@ impl Mirror {
             saved_at: None,
             there: None,
             trouble: None,
+            unbuilt: None,
         };
 
         self.show(None, &record, report)?;
@@ -715,6 +777,7 @@ impl Mirror {
                     current.base_source = outgoing.source;
                     current.base_lean = outgoing.lean_source;
                     current.trouble = None;
+                    current.unbuilt = Some(now());
                     self.store.put(&current)?;
                 }
                 report.sent.push(record.label());

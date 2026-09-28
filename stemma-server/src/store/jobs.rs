@@ -282,7 +282,8 @@ pub fn take_next(
             &format!(
                 "SELECT {COLUMNS} FROM jobs
                   WHERE state = 'queued'
-                    AND (chosen_machine = ?1 OR ({anyone}))
+                    AND (chosen_machine = ?1 OR ({anyone})
+                         OR (chosen_machine IS NULL AND task = 'build'))
                     AND group_id IN (SELECT group_id FROM machine_groups
                                       WHERE machine_id = ?1)
                     AND group_id IN (SELECT group_id FROM memberships

@@ -14,7 +14,7 @@ use stemma::cli::{
 use stemma::credentials::Credentials;
 use stemma::home::{Environment, Home};
 use stemma::{
-    build, claims, conflicts, daemon, git_credential, jobs, lines, machines, mirror, node,
+    build, claims, conflicts, daemon, export, git_credential, jobs, lines, machines, mirror, node,
     proposals, session, vault,
 };
 use stemma_core::proposal::Verdict;
@@ -68,6 +68,13 @@ fn run(cli: Cli) -> Result<bool> {
             build::run(home, &here(), out)?;
         }
         Command::Where => where_things_are(home, out)?,
+        Command::Export {
+            group,
+            private,
+            into,
+        } => {
+            export::run(home, &group, private, into.as_deref(), out)?;
+        }
         Command::Machines { group } => machines::list(home, &here(), group.as_deref(), out)?,
 
         Command::Line { command } => match command {

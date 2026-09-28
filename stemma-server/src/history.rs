@@ -6,10 +6,16 @@
 //! commits it, as the person who wrote it, in the repository the line was
 //! in. Whatever fails is tried again the next time, because nothing is
 //! marked committed until git has the commit.
+//!
+//! A stretch that is over is also owed a build, by a machine: the one
+//! that wrote it builds it, and when nothing arrives the instance asks
+//! another machine of the group for it.
 
-use stemma_core::id::LineId;
+use stemma_core::id::{LineId, Slug};
+use stemma_core::job::{Choice, Task};
 use stemma_core::repository::Side;
 
+use crate::store::jobs;
 use crate::store::revisions::{self, Uncommitted};
 use crate::store::users;
 use crate::web::{Instance, WebError};
@@ -42,6 +48,39 @@ pub async fn settle(instance: &Instance, line: LineId) -> Result<(), WebError> {
 pub async fn tidy(instance: &Instance) -> Result<usize, WebError> {
     instance.read(revisions::end_quiet).await?;
     commit_ended(instance).await
+}
+
+/// Asks a machine of the group to build every stretch of writing that
+/// ended a while ago and that nothing published covers: the machine that
+/// wrote it was switched off, or could not. Says how many it asked for.
+pub async fn ask_for_builds(instance: &Instance) -> Result<usize, WebError> {
+    instance
+        .read(|connection| {
+            let owed = revisions::unbuilt(connection)?;
+            let builder = Slug::parse(stemma_core::job::BUILDER)?;
+
+            for one in &owed {
+                let job = jobs::launch(
+                    connection,
+                    &jobs::Launch {
+                        group: one.line.group.clone(),
+                        side: one.line.side,
+                        line: one.line.name.clone(),
+                        line_id: Some(one.line.id),
+                        revision: one.line.revision,
+                        against: None,
+                        task: Task::Build,
+                        agent: builder.clone(),
+                        choice: Choice::Anyone,
+                        by: one.writer.clone(),
+                    },
+                )?;
+                revisions::build_asked(connection, &one.session, &job.id.to_string())?;
+            }
+
+            Ok(owed.len())
+        })
+        .await
 }
 
 /// Commits one stretch.
