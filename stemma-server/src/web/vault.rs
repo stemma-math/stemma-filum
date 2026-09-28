@@ -7,7 +7,7 @@ use maud::{Markup, html};
 use serde::Deserialize;
 use serde_json::json;
 use stemma_core::artefact::Scope;
-use stemma_core::id::{BridgeId, Slug, UserId, VaultEntryId};
+use stemma_core::id::{BridgeId, UserId, VaultEntryId};
 use stemma_core::line::{NodeKind, Siglum};
 use stemma_core::model::Correspondence;
 use stemma_core::vault::{Bridge, BridgeKind, DownstreamDecision, Entry};
@@ -114,7 +114,7 @@ pub async fn api_view(
     credential: Credential,
     Path(slug): Path<String>,
 ) -> Result<Response, WebError> {
-    let group = credential_group(&instance, &credential, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &credential.user.id).await?;
     let id = group.id;
     let (entries, bridges) = instance
         .read(move |connection| {
@@ -147,7 +147,7 @@ pub async fn api_admit(
     Path(slug): Path<String>,
     Json(form): Json<ApiAdmission>,
 ) -> Result<Response, WebError> {
-    let group = credential_group(&instance, &credential, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &credential.user.id).await?;
     let siglum: Siglum = form
         .siglum
         .parse()
@@ -175,7 +175,7 @@ pub async fn api_bridge(
     Path(slug): Path<String>,
     Json(form): Json<ApiBridge>,
 ) -> Result<Response, WebError> {
-    let group = credential_group(&instance, &credential, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &credential.user.id).await?;
     let left: VaultEntryId = form
         .left
         .parse()
@@ -207,7 +207,9 @@ pub async fn api_bridge(
                     .is_some_and(|entry| entry.entry.group == group_id)
             });
             if !both_here {
-                anyhow::bail!("both definitions must be in this group's vault")
+                anyhow::bail!(WebError::BadRequest(
+                    "Both definitions must be in this group's vault.".to_owned()
+                ))
             }
             vault::admit_bridge(connection, &group_id, &bridge, &by)
         })
@@ -222,7 +224,7 @@ pub async fn api_audit(
     Path(slug): Path<String>,
     Json(form): Json<ApiAudit>,
 ) -> Result<Response, WebError> {
-    let group = credential_group(&instance, &credential, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &credential.user.id).await?;
     let group_id = group.id;
     let by = credential.user.id;
     let id = instance
@@ -243,7 +245,9 @@ pub async fn api_audit(
                 _ => false,
             };
             if !belongs {
-                anyhow::bail!("the audit target is not in this group's vault")
+                anyhow::bail!(WebError::BadRequest(
+                    "The audit target is not in this group's vault.".to_owned()
+                ))
             }
             match form.action.as_str() {
                 "attest" => {
@@ -252,7 +256,9 @@ pub async fn api_audit(
                 "withdraw" => {
                     vault::withdraw(connection, &form.target_kind, &form.target, &by, &form.note)
                 }
-                _ => anyhow::bail!("that is not an audit action"),
+                _ => anyhow::bail!(WebError::BadRequest(
+                    "That is not an audit action.".to_owned()
+                )),
             }
         })
         .await?;
@@ -265,7 +271,7 @@ pub async fn page_view(
     signed: SignedIn,
     Path(slug): Path<String>,
 ) -> Result<Response, WebError> {
-    let group = member_group(&instance, &signed, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &signed.user.id).await?;
     let id = group.id.clone();
     let (entries, bridges) = instance
         .read(move |connection| {
@@ -293,7 +299,7 @@ pub async fn admit(
     axum::Form(form): axum::Form<Admission>,
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
-    let group = member_group(&instance, &signed, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &signed.user.id).await?;
     let siglum: Siglum = form
         .siglum
         .parse()
@@ -338,7 +344,7 @@ pub async fn bridge(
     axum::Form(form): axum::Form<Bridging>,
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
-    let group = member_group(&instance, &signed, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &signed.user.id).await?;
     let left: VaultEntryId = form
         .left
         .parse()
@@ -361,26 +367,32 @@ pub async fn bridge(
     instance
         .read(move |connection| {
             let bridge = if form.first_parent.trim().is_empty() {
-                Bridge::direct(left, right, kind, form.theorem)?
+                Bridge::direct(left, right, kind, form.theorem)
+                    .map_err(|error| WebError::BadRequest(error.to_string()))?
             } else {
                 let first: BridgeId = form
                     .first_parent
                     .parse()
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    .map_err(|_| WebError::BadRequest("That is not a bridge.".to_owned()))?;
                 let second: BridgeId = form
                     .second_parent
                     .parse()
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    .map_err(|_| WebError::BadRequest("That is not a bridge.".to_owned()))?;
                 let existing = vault::bridges(connection, &group_id)?;
                 let first = existing
                     .iter()
                     .find(|item| item.bridge.id == first)
-                    .context("the first parent is not in this vault")?;
+                    .ok_or_else(|| {
+                        WebError::BadRequest("The first parent is not in this vault.".to_owned())
+                    })?;
                 let second = existing
                     .iter()
                     .find(|item| item.bridge.id == second)
-                    .context("the second parent is not in this vault")?;
-                Bridge::compose(&first.bridge, &second.bridge, form.theorem)?
+                    .ok_or_else(|| {
+                        WebError::BadRequest("The second parent is not in this vault.".to_owned())
+                    })?;
+                Bridge::compose(&first.bridge, &second.bridge, form.theorem)
+                    .map_err(|error| WebError::BadRequest(error.to_string()))?
             };
             let both_here = [bridge.left, bridge.right].into_iter().all(|entry| {
                 vault::entry(connection, &entry)
@@ -389,7 +401,9 @@ pub async fn bridge(
                     .is_some_and(|entry| entry.entry.group == group_id)
             });
             if !both_here {
-                anyhow::bail!("both definitions must be in this group's vault")
+                anyhow::bail!(WebError::BadRequest(
+                    "Both definitions must be in this group's vault.".to_owned()
+                ))
             }
             vault::admit_bridge(connection, &group_id, &bridge, &by)
         })
@@ -405,7 +419,7 @@ pub async fn audit(
     axum::Form(form): axum::Form<Auditing>,
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
-    let group = member_group(&instance, &signed, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &signed.user.id).await?;
     let group_id = group.id.clone();
     let shared = if form.action == "withdraw" && form.target_kind == "bridge" {
         super::lines::read(&instance, &group_id, &Scope::Shared).await?
@@ -431,7 +445,9 @@ pub async fn audit(
                 _ => false,
             };
             if !belongs {
-                anyhow::bail!("the audit target is not in this group's vault")
+                anyhow::bail!(WebError::BadRequest(
+                    "The audit target is not in this group's vault.".to_owned()
+                ))
             }
             match form.action.as_str() {
                 "attest" => {
@@ -441,8 +457,9 @@ pub async fn audit(
                 "withdraw" => {
                     vault::withdraw(connection, &form.target_kind, &form.target, &by, &form.note)?;
                     if form.target_kind == "bridge" {
-                        let target: BridgeId =
-                            form.target.parse().map_err(|e| anyhow::anyhow!("{e}"))?;
+                        let target: BridgeId = form.target.parse().map_err(|_| {
+                            WebError::BadRequest("That is not a bridge.".to_owned())
+                        })?;
                         let bridges = vault::bridges(connection, &group_id)?;
                         let mut affected = vec![target];
                         loop {
@@ -495,7 +512,9 @@ pub async fn audit(
                     }
                     Ok(())
                 }
-                _ => anyhow::bail!("that is not an audit action"),
+                _ => anyhow::bail!(WebError::BadRequest(
+                    "That is not an audit action.".to_owned()
+                )),
             }
         })
         .await?;
@@ -510,7 +529,7 @@ pub async fn assign(
     axum::Form(form): axum::Form<Assignment>,
 ) -> Result<Response, WebError> {
     signed.check_form(&form.form_token)?;
-    let group = member_group(&instance, &signed, &slug).await?;
+    let group = super::membership::group_of(&instance, &slug, &signed.user.id).await?;
     let bridge: BridgeId = form
         .bridge
         .parse()
@@ -523,7 +542,9 @@ pub async fn assign(
     instance
         .read(move |connection| {
             if groups::role_of(connection, &group_id, &assigned_to)?.is_none() {
-                anyhow::bail!("that person is not in the group")
+                anyhow::bail!(WebError::BadRequest(
+                    "That person is not in the group.".to_owned()
+                ))
             }
             let withdrawn = vault::bridges(connection, &group_id)?
                 .into_iter()
@@ -532,7 +553,9 @@ pub async fn assign(
                         && item.bridge.correspondence == Correspondence::AuditWithdrawn
                 });
             if !withdrawn {
-                anyhow::bail!("only a withdrawn bridge creates this obligation")
+                anyhow::bail!(WebError::BadRequest(
+                    "Only a withdrawn bridge creates this obligation.".to_owned()
+                ))
             }
             vault::assign(
                 connection,
@@ -573,44 +596,6 @@ pub async fn decide(
         return Err(WebError::NotFound);
     }
     Ok(Redirect::to("/").into_response())
-}
-
-async fn member_group(
-    instance: &Instance,
-    signed: &SignedIn,
-    slug: &str,
-) -> Result<groups::Group, WebError> {
-    let slug = Slug::parse(slug).map_err(|_| WebError::NotFound)?;
-    let user = signed.user.id.clone();
-    instance
-        .read(move |connection| {
-            let group = groups::by_slug(connection, &slug)?.context("group not found")?;
-            if groups::role_of(connection, &group.id, &user)?.is_none() {
-                anyhow::bail!("not a member")
-            }
-            Ok(group)
-        })
-        .await
-        .map_err(|_| WebError::NotFound)
-}
-
-async fn credential_group(
-    instance: &Instance,
-    credential: &Credential,
-    slug: &str,
-) -> Result<groups::Group, WebError> {
-    let slug = Slug::parse(slug).map_err(|_| WebError::NotFound)?;
-    let user = credential.user.id.clone();
-    instance
-        .read(move |connection| {
-            let group = groups::by_slug(connection, &slug)?.context("group not found")?;
-            if groups::role_of(connection, &group.id, &user)?.is_none() {
-                anyhow::bail!("not a member")
-            }
-            Ok(group)
-        })
-        .await
-        .map_err(|_| WebError::NotFound)
 }
 
 async fn require_published_verification(

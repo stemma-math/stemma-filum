@@ -6,7 +6,7 @@
 //! instance has it, only delivers what the link already is.
 
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
@@ -14,11 +14,11 @@ use stemma_core::id::Slug;
 
 use super::layout::{Chrome, page, signature};
 use super::visitor::Visitor;
-use super::{Instance, WebError, cookies};
+use super::{Instance, WebError};
 use crate::password;
 use crate::store::groups::{self, Group};
 use crate::store::invitations::{self, Invitation, Refusal};
-use crate::store::sessions::{self, LIFETIME_DAYS};
+use crate::store::sessions;
 use crate::store::users::{self, NotCreated};
 
 /// What the form of somebody who already has an account sends.
@@ -105,15 +105,13 @@ pub async fn join(
         .await?;
 
     if !joined {
-        return Err(WebError::BadRequest(
-            "That invitation cannot be used any more.".to_owned(),
-        ));
+        return Err(used_up());
     }
 
     let joining = signed.user.clone();
     let joined_group = group.clone();
     instance
-        .with_repositories(move |repositories| {
+        .writing_git(move |repositories| {
             crate::repositories::for_member(repositories, &joined_group, &joining)
         })
         .await?;
@@ -183,11 +181,13 @@ pub async fn join_and_register(
 
             let user = match users::create(&transaction, &slug, &email, &display_name, &hash)? {
                 Ok(user) => user,
-                Err(problem) => return Ok(Err(problem)),
+                Err(problem) => return Ok(Err(Some(problem))),
             };
 
+            // Somebody else used the link while this form was open; the
+            // account goes with the transaction.
             if !invitations::accept(&transaction, &id, &user.id)? {
-                return Ok(Err(NotCreated::SlugTaken(slug)));
+                return Ok(Err(None));
             }
 
             groups::add_member(&transaction, &group_id, &user.id, role)?;
@@ -199,22 +199,23 @@ pub async fn join_and_register(
 
     let user = match outcome {
         Ok(user) => user,
-        Err(NotCreated::SlugTaken(slug)) => {
+        Err(Some(NotCreated::SlugTaken(slug))) => {
             return Ok(refuse(format!("`{slug}` is taken. Choose another name.")));
         }
-        Err(NotCreated::EmailTaken(_)) => {
+        Err(Some(NotCreated::EmailTaken(_))) => {
             return Ok(refuse(
                 "There is already an account for that address. Log in, then open the \
                  link again."
                     .to_owned(),
             ));
         }
+        Err(None) => return Err(used_up()),
     };
 
     let joining = user.clone();
     let joined_group = group.clone();
     instance
-        .with_repositories(move |repositories| {
+        .writing_git(move |repositories| {
             crate::repositories::for_member(repositories, &joined_group, &joining)
         })
         .await?;
@@ -225,18 +226,16 @@ pub async fn join_and_register(
         .read(move |connection| sessions::start(connection, &key, &id))
         .await?;
 
-    let mut headers = HeaderMap::new();
-    cookies::attach(
-        &mut headers,
-        cookies::set(
-            cookies::SESSION,
-            &cookie,
-            i64::from(LIFETIME_DAYS) * 24 * 60 * 60,
-            instance.settings.public_url.is_secure(),
-        ),
-    );
+    Ok(super::auth::signed_in(
+        &instance,
+        &cookie,
+        &format!("/g/{}", group.slug()),
+    ))
+}
 
-    Ok((headers, Redirect::to(&format!("/g/{}", group.slug()))).into_response())
+/// What a link somebody already used says when it is used again.
+fn used_up() -> WebError {
+    WebError::BadRequest("That invitation cannot be used any more.".to_owned())
 }
 
 /// The invitation a link names, and the group it leads into.

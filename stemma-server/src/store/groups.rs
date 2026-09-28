@@ -1,13 +1,13 @@
 //! Groups, who is in them, and the requests that create them.
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use stemma_core::access::GroupRole;
 use stemma_core::event::{Event, GroupChange};
 use stemma_core::id::{GroupId, GroupRequestId, Slug, UserId};
 
 use super::events::{self, Audience};
-use super::{Role, id_at};
+use super::{Role, id_at, optional_id_at};
 use crate::store::users::{self, User};
 
 /// A research group.
@@ -76,25 +76,33 @@ pub fn create(
     name: &str,
     owner: &UserId,
 ) -> Result<Group> {
-    let id = GroupId::new(slug.clone());
     let transaction = connection.transaction()?;
+    let group = found(&transaction, slug, name, owner)?;
+    transaction.commit()?;
 
-    transaction
+    Ok(group)
+}
+
+/// Writes a group and its first owner down, inside the caller's
+/// transaction.
+fn found(connection: &Connection, slug: &Slug, name: &str, owner: &UserId) -> Result<Group> {
+    let id = GroupId::new(slug.clone());
+
+    connection
         .execute(
             "INSERT INTO groups (id, slug, name) VALUES (?1, ?2, ?3)",
             params![id.to_string(), slug.as_str(), name.trim()],
         )
         .context("cannot create the group")?;
 
-    transaction
+    connection
         .execute(
             "INSERT INTO memberships (group_id, user_id, role) VALUES (?1, ?2, ?3)",
             params![id.to_string(), owner.to_string(), Role(GroupRole::Owner)],
         )
         .context("cannot make the requester the owner")?;
 
-    tell(&transaction, &id, GroupChange::Created)?;
-    transaction.commit()?;
+    tell(connection, &id, GroupChange::Created)?;
 
     by_id(connection, &id)?.context("the group was created and cannot be read back")
 }
@@ -155,37 +163,32 @@ pub fn by_slug(connection: &Connection, slug: &Slug) -> Result<Option<Group>> {
 
 /// Every group, oldest first.
 pub fn all(connection: &Connection) -> Result<Vec<Group>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {COLUMNS} FROM groups ORDER BY created_at, id"
-    ))?;
-    let groups = statement
-        .query_map([], Group::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the groups")?;
-
-    Ok(groups)
+    super::rows(
+        connection,
+        &format!("SELECT {COLUMNS} FROM groups ORDER BY created_at, id"),
+        [],
+        Group::from_row,
+    )
+    .context("cannot list the groups")
 }
 
 /// The groups somebody belongs to.
 pub fn for_user(connection: &Connection, user: &UserId) -> Result<Vec<Membership>> {
-    let mut statement = connection.prepare(
+    super::rows(
+        connection,
         "SELECT g.id, g.slug, g.name, g.description, g.created_at, g.archived_at, m.role
            FROM memberships m JOIN groups g ON g.id = m.group_id
           WHERE m.user_id = ?1
           ORDER BY g.name",
-    )?;
-
-    let memberships = statement
-        .query_map([user.to_string()], |row| {
+        [user.to_string()],
+        |row| {
             Ok(Membership {
                 group: Group::from_row(row)?,
                 role: row.get::<_, Role>("role")?.0,
             })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the groups")?;
-
-    Ok(memberships)
+        },
+    )
+    .context("cannot list the groups")
 }
 
 /// What somebody may do in a group, if anything.
@@ -206,34 +209,27 @@ pub fn role_of(
     Ok(role.map(|role| role.0))
 }
 
-/// Everybody in a group.
+/// Everybody in a group, those with the most authority first.
 pub fn members(connection: &Connection, group: &GroupId) -> Result<Vec<Member>> {
-    let mut statement = connection.prepare(
+    // Roles are stored as words, and the words do not sort by authority.
+    super::rows(
+        connection,
         "SELECT u.id, u.slug, u.email, u.display_name, u.created_at, u.suspended_at,
                 m.role, m.joined_at
            FROM memberships m JOIN users u ON u.id = m.user_id
           WHERE m.group_id = ?1
-          ORDER BY m.role DESC, u.display_name",
-    )?;
-
-    let members = statement
-        .query_map([group.to_string()], |row| {
+          ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+                   u.display_name",
+        [group.to_string()],
+        |row| {
             Ok(Member {
-                user: User {
-                    id: id_at(row, "id")?,
-                    email: row.get("email")?,
-                    display_name: row.get("display_name")?,
-                    created_at: row.get("created_at")?,
-                    suspended_at: row.get("suspended_at")?,
-                },
+                user: User::from_row(row)?,
                 role: row.get::<_, Role>("role")?.0,
                 joined_at: row.get("joined_at")?,
             })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the members")?;
-
-    Ok(members)
+        },
+    )
+    .context("cannot list the members")
 }
 
 /// Puts somebody in a group, or leaves their role alone if they are in it.
@@ -336,9 +332,7 @@ impl Request {
                 _ => None,
             },
             decided_at: row.get("decided_at")?,
-            decided_by: row
-                .get::<_, Option<String>>("decided_by")?
-                .and_then(|raw| raw.parse().ok()),
+            decided_by: optional_id_at(row, "decided_by")?,
             note: row.get("note")?,
         })
     }
@@ -392,73 +386,90 @@ pub fn request_by_id(connection: &Connection, id: &str) -> Result<Option<Request
 
 /// Every request nobody has answered yet, oldest first.
 pub fn open_requests(connection: &Connection) -> Result<Vec<Request>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {REQUEST_COLUMNS} FROM group_requests
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {REQUEST_COLUMNS} FROM group_requests
           WHERE outcome IS NULL ORDER BY requested_at"
-    ))?;
-
-    let requests = statement
-        .query_map([], Request::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the requests")?;
-
-    Ok(requests)
+        ),
+        [],
+        Request::from_row,
+    )
+    .context("cannot list the requests")
 }
 
 /// Somebody's own requests, newest first.
 pub fn requests_by(connection: &Connection, user: &UserId) -> Result<Vec<Request>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {REQUEST_COLUMNS} FROM group_requests
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {REQUEST_COLUMNS} FROM group_requests
           WHERE requested_by = ?1 ORDER BY requested_at DESC"
-    ))?;
-
-    let requests = statement
-        .query_map([user.to_string()], Request::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the requests")?;
-
-    Ok(requests)
+        ),
+        [user.to_string()],
+        Request::from_row,
+    )
+    .context("cannot list the requests")
 }
 
 /// Approves a request, creating the group and making the requester its
 /// owner.
+///
+/// The decision and the group are written together, so a request is never
+/// approved without its group nor a group made from a request that had
+/// already been answered.
 pub fn approve(
     connection: &mut Connection,
     request: &Request,
     maintainer: &UserId,
     note: Option<&str>,
 ) -> Result<Group> {
-    let group = create(
-        connection,
+    let transaction = connection.transaction()?;
+
+    if !decide(
+        &transaction,
+        &request.id,
+        Outcome::Approved,
+        maintainer,
+        note,
+    )? {
+        bail!("the request has already been answered");
+    }
+
+    let group = found(
+        &transaction,
         &request.slug,
         &request.name,
         &request.requested_by,
     )?;
-    describe(connection, &group.id, &request.reason)?;
-    decide(connection, &request.id, Outcome::Approved, maintainer, note)?;
+    describe(&transaction, &group.id, &request.reason)?;
+    let group = by_id(&transaction, &group.id)?
+        .context("the group was described and cannot be read back")?;
+    transaction.commit()?;
 
-    by_id(connection, &group.id)?.context("the group was described and cannot be read back")
+    Ok(group)
 }
 
-/// Declines a request, saying who decided and why.
+/// Declines a request, saying who decided and why. Says whether it was
+/// still open to decline.
 pub fn decline(
     connection: &Connection,
     request: &Request,
     maintainer: &UserId,
     note: Option<&str>,
-) -> Result<()> {
+) -> Result<bool> {
     decide(connection, &request.id, Outcome::Declined, maintainer, note)
 }
 
-/// Writes the decision down.
+/// Writes the decision down, unless one already was.
 fn decide(
     connection: &Connection,
     id: &str,
     outcome: Outcome,
     maintainer: &UserId,
     note: Option<&str>,
-) -> Result<()> {
-    connection
+) -> Result<bool> {
+    let decided = connection
         .execute(
             "UPDATE group_requests
                 SET outcome = ?2, decided_at = datetime('now'), decided_by = ?3, note = ?4
@@ -467,7 +478,7 @@ fn decide(
         )
         .context("cannot record the decision")?;
 
-    Ok(())
+    Ok(decided > 0)
 }
 
 /// Somebody's account, for the screens that show who asked for what.
@@ -656,6 +667,85 @@ mod tests {
         assert_eq!(members.len(), 2);
         assert_eq!(members[0].role, GroupRole::Owner);
         assert_eq!(members[1].role, GroupRole::Member);
+    }
+
+    #[test]
+    fn an_admin_is_listed_before_a_member_and_after_the_owner() {
+        let mut database = test_database();
+        let ana = account(database.connection(), "ana");
+        let bo = account(database.connection(), "bo");
+        let cai = account(database.connection(), "cai");
+        let group = create(
+            database.connection_mut(),
+            &slug("algebra"),
+            "Algebra",
+            &ana.id,
+        )
+        .unwrap();
+
+        // Named so that the names alone would put the member first.
+        add_member(database.connection(), &group.id, &bo.id, GroupRole::Member).unwrap();
+        add_member(database.connection(), &group.id, &cai.id, GroupRole::Admin).unwrap();
+
+        let roles: Vec<_> = members(database.connection(), &group.id)
+            .unwrap()
+            .into_iter()
+            .map(|member| member.role)
+            .collect();
+        assert_eq!(
+            roles,
+            vec![GroupRole::Owner, GroupRole::Admin, GroupRole::Member]
+        );
+    }
+
+    #[test]
+    fn a_request_is_answered_once() {
+        let mut database = test_database();
+        let ana = account(database.connection(), "ana");
+        let root = account(database.connection(), "root-user");
+        let asked = request(
+            database.connection(),
+            &slug("algebra"),
+            "Algebra",
+            "Rings.",
+            &ana.id,
+        )
+        .unwrap();
+
+        assert!(decline(database.connection(), &asked, &root.id, None).unwrap());
+        assert!(!decline(database.connection(), &asked, &root.id, None).unwrap());
+        assert!(approve(database.connection_mut(), &asked, &root.id, None).is_err());
+        assert!(
+            by_slug(database.connection(), &slug("algebra"))
+                .unwrap()
+                .is_none(),
+            "a declined request made a group"
+        );
+    }
+
+    #[test]
+    fn a_request_for_a_name_taken_since_leaves_the_request_open() {
+        let mut database = test_database();
+        let ana = account(database.connection(), "ana");
+        let bo = account(database.connection(), "bo");
+        let root = account(database.connection(), "root-user");
+        let first = request(
+            database.connection(),
+            &slug("algebra"),
+            "A",
+            "One.",
+            &ana.id,
+        )
+        .unwrap();
+        let second = request(database.connection(), &slug("algebra"), "B", "Two.", &bo.id).unwrap();
+
+        approve(database.connection_mut(), &first, &root.id, None).unwrap();
+        assert!(approve(database.connection_mut(), &second, &root.id, None).is_err());
+
+        let second = request_by_id(database.connection(), &second.id)
+            .unwrap()
+            .unwrap();
+        assert!(second.is_open(), "the failed approval was recorded");
     }
 
     #[test]

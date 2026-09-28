@@ -145,21 +145,17 @@ pub fn latest(
 
 /// Everything built for one repository, newest first.
 pub fn for_scope(connection: &Connection, group: &GroupId, scope: &Scope) -> Result<Vec<Built>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {COLUMNS} FROM artefacts
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {COLUMNS} FROM artefacts
           WHERE group_id = ?1 AND scope = ?2
           ORDER BY built_at DESC, rowid DESC"
-    ))?;
-
-    let built = statement
-        .query_map(
-            params![group.to_string(), scope.to_string()],
-            Built::from_row,
-        )?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the artefacts")?;
-
-    Ok(built)
+        ),
+        params![group.to_string(), scope.to_string()],
+        Built::from_row,
+    )
+    .context("cannot list the artefacts")
 }
 
 /// Forgets one, for when it has been taken off the shelf.

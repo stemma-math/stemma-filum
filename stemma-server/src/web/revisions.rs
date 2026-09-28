@@ -50,6 +50,11 @@ pub struct Which {
 }
 
 /// One revision of one line.
+///
+/// A line that was its author's before it was shared keeps the revisions
+/// it had then, and those stay its author's: sharing hands the group the
+/// line as it stands, and whatever history travelled with it did so by
+/// the author's choice, not to everybody who can ask for a number.
 pub async fn read(
     State(instance): State<Instance>,
     credential: Credential,
@@ -63,6 +68,7 @@ pub async fn read(
     let revision = instance
         .read(move |connection| revisions::at(connection, &at, number))
         .await?
+        .filter(|revision| revision.side == Side::Shared || line.author == credential.user.id)
         .ok_or(WebError::NotFound)?;
 
     Ok(Json(revision_json(&line, &revision)).into_response())
@@ -154,7 +160,9 @@ pub async fn root(
     credential: Credential,
     Path((group, side)): Path<(String, String)>,
 ) -> Result<Response, WebError> {
-    let group = member(&instance, &credential, &group).await?;
+    let group = super::membership::group_of(&instance, &group, &credential.user.id)
+        .await?
+        .id;
     let side: Side = side.parse().map_err(|_| WebError::NotFound)?;
     let path = match side {
         Side::Shared => instance.repositories().shared(&group),
@@ -332,21 +340,4 @@ async fn seen(instance: &Instance, credential: &Credential, id: &str) -> Result<
         })
         .await?
         .ok_or(WebError::NotFound)
-}
-
-/// The group a machine names, when its owner is in it.
-async fn member(
-    instance: &Instance,
-    credential: &Credential,
-    slug: &str,
-) -> Result<GroupId, WebError> {
-    let group = GroupId::new(Slug::parse(slug).map_err(|_| WebError::NotFound)?);
-    let reader = credential.user.id.clone();
-    let asked = group.clone();
-
-    let member = instance
-        .read(move |connection| Ok(groups::role_of(connection, &asked, &reader)?.is_some()))
-        .await?;
-
-    member.then_some(group).ok_or(WebError::NotFound)
 }

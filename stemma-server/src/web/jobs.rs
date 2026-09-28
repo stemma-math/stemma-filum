@@ -20,10 +20,19 @@ use stemma_core::job::{Choice, JobState, Outcome, Task};
 use stemma_core::line::Name;
 use stemma_core::machine::{Detected, Presence};
 use stemma_core::proposal::{self, Completion};
+use stemma_core::repository::Side;
 
+use super::api::Credential;
+use super::layout::signature;
+use super::visitor::SignedIn;
+use super::{Instance, WebError};
+use crate::store::groups;
+use crate::store::jobs::{self, Job, Launch};
+use crate::store::machines::{self, Machine};
+
+/// A completion report, with or without a proposal.
 #[derive(Deserialize)]
 #[serde(untagged)]
-/// A completion report, including the phase-five form without a proposal.
 pub enum Report {
     /// Current atomic report.
     Complete(Box<Completion>),
@@ -42,15 +51,6 @@ impl Report {
         }
     }
 }
-use stemma_core::repository::Side;
-
-use super::api::Credential;
-use super::layout::signature;
-use super::visitor::SignedIn;
-use super::{Instance, WebError};
-use crate::store::groups;
-use crate::store::jobs::{self, Job, Launch};
-use crate::store::machines::{self, Machine};
 
 /// How many jobs a listing shows.
 const RECENT: u32 = 20;
@@ -89,19 +89,8 @@ pub async fn machine_choices(
     credential: Credential,
     Path(group): Path<String>,
 ) -> Result<Response, WebError> {
-    let slug = Slug::parse(&group).map_err(|_| WebError::NotFound)?;
-    let group = GroupId::new(slug);
-    let reader = credential.user.id;
-    let admitted = instance
-        .read({
-            let group = group.clone();
-            move |c| groups::role_of(c, &group, &reader)
-        })
-        .await?;
-    if admitted.is_none() {
-        return Err(WebError::NotFound);
-    }
-    let offers = offers(&instance, &group).await?;
+    let group = super::membership::group_of(&instance, &group, &credential.user.id).await?;
+    let offers = offers(&instance, &group.id).await?;
     Ok(
         Json(json!({ "machines": offers.into_iter().map(|offer| json!({
         "machine": offer.machine.id.to_string(), "label": offer.machine.label,
@@ -487,21 +476,18 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
             // as everywhere else: what a group is working on is its own
             // business.
             if groups::role_of(connection, &group, &asker)?.is_none() {
-                anyhow::bail!("nothing here");
+                anyhow::bail!(WebError::NotFound);
             }
 
             // The line is the one this person means, at a revision it has
             // had: a job about a revision nobody wrote is about nothing.
-            let Some(found) =
-                crate::store::lines::by_name(connection, &group, side, &line, &asker)?
-            else {
-                anyhow::bail!("nothing here");
-            };
+            let found = crate::store::lines::by_name(connection, &group, side, &line, &asker)?
+                .ok_or(WebError::NotFound)?;
             if revision == 0
                 || revision > found.revision
                 || against.is_some_and(|against| against == 0 || against > found.revision)
             {
-                anyhow::bail!("that revision of the line does not exist");
+                anyhow::bail!(refuse("That revision of the line does not exist."));
             }
 
             if let Some(machine) = &chosen {
@@ -510,7 +496,7 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                     .any(|serving| &serving.id == machine);
 
                 if !serves {
-                    anyhow::bail!("that machine does not work for this group");
+                    anyhow::bail!(refuse("That machine does not work for this group."));
                 }
                 if let Some(offered) = machines::agents(connection, machine)?
                     .into_iter()
@@ -520,13 +506,13 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                         && !offered.models.is_empty()
                         && !offered.models.contains(model)
                     {
-                        anyhow::bail!("that model is not offered by the chosen machine");
+                        anyhow::bail!(refuse("That model is not offered by the chosen machine."));
                     }
                     if let Some(effort) = &effort
                         && !offered.efforts.is_empty()
                         && !offered.efforts.contains(effort)
                     {
-                        anyhow::bail!("that effort is not offered by the chosen machine");
+                        anyhow::bail!(refuse("That effort is not offered by the chosen machine."));
                     }
                 }
 
@@ -538,7 +524,9 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                         .is_some_and(|found| found.owner == asker);
 
                     if !owned {
-                        anyhow::bail!("only your own machines can work on your own repository");
+                        anyhow::bail!(refuse(
+                            "Only your own machines can work on your own repository."
+                        ));
                     }
                 }
             }
@@ -567,23 +555,6 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
             )
         })
         .await
-        .map_err(|error| match error {
-            WebError::Internal(reason) if reason.to_string() == "nothing here" => {
-                WebError::NotFound
-            }
-            WebError::Internal(reason) => WebError::BadRequest(capitalised(&reason.to_string())),
-            other => other,
-        })
-}
-
-/// A reason, as a sentence.
-fn capitalised(reason: &str) -> String {
-    let mut characters = reason.chars();
-
-    match characters.next() {
-        Some(first) => format!("{}{}.", first.to_uppercase(), characters.as_str()),
-        None => reason.to_owned(),
-    }
 }
 
 /// What the launcher beside a line sends.

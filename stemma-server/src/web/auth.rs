@@ -97,12 +97,20 @@ pub async fn log_in(
     // finding out who has an account here.
     let admitted = instance
         .blocking(move || {
-            Ok(found
-                .filter(|(user, stored)| user.is_active() && password::verify(&offered, stored)))
+            Ok(match found {
+                Some((user, stored)) => {
+                    let right = password::verify(&offered, &stored);
+                    (right && user.is_active()).then_some(user)
+                }
+                None => {
+                    password::waste(&offered);
+                    None
+                }
+            })
         })
         .await?;
 
-    let Some((user, _)) = admitted else {
+    let Some(user) = admitted else {
         let policy = instance.policy().await?;
         let name = super::front::instance_name(&instance, &policy);
         let chrome = Chrome::anonymous("Log in", name)
@@ -266,7 +274,7 @@ pub async fn register(
 }
 
 /// The answer that hands over a session and sends somebody on.
-fn signed_in(instance: &Instance, cookie: &str, destination: &str) -> Response {
+pub(super) fn signed_in(instance: &Instance, cookie: &str, destination: &str) -> Response {
     let mut headers = HeaderMap::new();
     cookies::attach(
         &mut headers,

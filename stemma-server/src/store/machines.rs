@@ -183,17 +183,16 @@ fn list(
     condition: &str,
     parameters: impl rusqlite::Params,
 ) -> Result<Vec<Machine>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {} FROM machines WHERE {condition} ORDER BY registered_at, id",
-        columns()
-    ))?;
-
-    let found = statement
-        .query_map(parameters, Machine::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the machines")?;
-
-    Ok(found)
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {} FROM machines WHERE {condition} ORDER BY registered_at, id",
+            columns()
+        ),
+        parameters,
+        Machine::from_row,
+    )
+    .context("cannot list the machines")
 }
 
 /// Records that a machine is there.
@@ -342,20 +341,17 @@ pub fn disable(connection: &Connection, machine: &MachineId, group: &GroupId) ->
 
 /// The groups a machine serves.
 pub fn groups(connection: &Connection, machine: &MachineId) -> Result<Vec<GroupId>> {
-    let mut statement = connection.prepare(
+    super::rows(
+        connection,
         "SELECT group_id FROM machine_groups
           WHERE machine_id = ?1
             AND group_id IN (SELECT group_id FROM memberships
                               WHERE user_id = (SELECT user_id FROM machines WHERE id = ?1))
           ORDER BY group_id",
-    )?;
-
-    let found = statement
-        .query_map(params![machine.to_string()], |row| id_at(row, "group_id"))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the machine's groups")?;
-
-    Ok(found)
+        params![machine.to_string()],
+        |row| id_at(row, "group_id"),
+    )
+    .context("cannot list the machine's groups")
 }
 
 /// Takes a machine back, and its credential with it.

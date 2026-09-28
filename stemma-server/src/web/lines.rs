@@ -25,7 +25,7 @@ use super::{Instance, WebError};
 use crate::artefacts::Shelf;
 use crate::store::artefacts as index;
 use crate::store::claims::{self, Claim};
-use crate::store::groups::{self, Group};
+use crate::store::groups::Group;
 
 /// One line of work.
 pub async fn view(
@@ -233,33 +233,12 @@ async fn admit(
     group: &str,
     side: &str,
 ) -> Result<(Group, Scope, Side), WebError> {
-    let Ok(slug) = Slug::parse(group) else {
-        return Err(WebError::NotFound);
-    };
-
     let side = match side {
         "shared" => Side::Shared,
         "private" => Side::Private,
         _ => return Err(WebError::NotFound),
     };
-
-    let id = GroupId::new(slug);
-    let asking = signed.user.id.clone();
-    let wanted = id.clone();
-
-    let found = instance
-        .read(move |connection| {
-            let Some(group) = groups::by_id(connection, &wanted)? else {
-                return Ok(None);
-            };
-
-            Ok(groups::role_of(connection, &id, &asking)?.map(|_| group))
-        })
-        .await?;
-
-    // Somebody outside the group is told there is nothing here rather
-    // than that there is something they may not see.
-    let group = found.ok_or(WebError::NotFound)?;
+    let group = super::membership::group_of(instance, group, &signed.user.id).await?;
 
     Ok((group, Scope::of(side, &signed.user.id), side))
 }

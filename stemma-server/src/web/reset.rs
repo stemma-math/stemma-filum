@@ -77,18 +77,25 @@ pub async fn forgotten(
             .public_url
             .link(&format!("reset/{secret}"));
 
-        instance
-            .deliver(
-                &address,
-                "Setting your password",
-                &format!(
-                    "Somebody asked for a way to set the password on this account.\n\n\
-                     Open this link to set one. It works once, and for a couple of \
-                     hours.\n\n{link}\n\n\
-                     If it was not you, nothing has happened and you can ignore this."
-                ),
-            )
-            .await;
+        // Sent in the background: an answer that waited for the mail
+        // server only when there was an account would say, by how long it
+        // took, which addresses have one.
+        let sending = instance.clone();
+        let to = address.clone();
+        tokio::spawn(async move {
+            sending
+                .deliver(
+                    &to,
+                    "Setting your password",
+                    &format!(
+                        "Somebody asked for a way to set the password on this account.\n\n\
+                         Open this link to set one. It works once, and for a couple of \
+                         hours.\n\n{link}\n\n\
+                         If it was not you, nothing has happened and you can ignore this."
+                    ),
+                )
+                .await;
+        });
     }
 
     Ok(page(&chrome, ask(true, Some(&address))).into_response())

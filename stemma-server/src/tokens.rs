@@ -27,14 +27,26 @@ pub fn secret() -> Result<String> {
 }
 
 /// A short code a person can copy from one screen to another.
+///
+/// A random byte is used only when it falls below the largest multiple of
+/// the alphabet's length, so that every letter is equally likely.
 pub fn readable_code(length: usize) -> Result<String> {
-    let mut bytes = vec![0_u8; length];
-    getrandom::fill(&mut bytes).context("cannot read randomness")?;
+    let letters = CODE_ALPHABET.len();
+    let fair = 256 - 256 % letters;
+    let mut code = String::with_capacity(length);
+    let mut bytes = [0_u8; 64];
 
-    Ok(bytes
-        .iter()
-        .map(|byte| CODE_ALPHABET[*byte as usize % CODE_ALPHABET.len()] as char)
-        .collect())
+    while code.len() < length {
+        getrandom::fill(&mut bytes).context("cannot read randomness")?;
+
+        for byte in bytes.iter().map(|byte| *byte as usize) {
+            if byte < fair && code.len() < length {
+                code.push(CODE_ALPHABET[byte % letters] as char);
+            }
+        }
+    }
+
+    Ok(code)
 }
 
 /// Whether two secrets are the same, in a way that does not leak how much

@@ -2,8 +2,8 @@
 //!
 //! Every setting has an environment variable, so an instance can be
 //! provisioned without anybody answering a question at a terminal. Reading
-//! them through this type rather than through [`std::env`] keeps resolution
-//! testable.
+//! them through this type rather than through
+//! [`std::env`](mod@std::env) keeps resolution testable.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
