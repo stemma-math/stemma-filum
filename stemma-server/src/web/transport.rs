@@ -36,8 +36,13 @@ use super::{Instance, WebError};
 use crate::git::Kind;
 use crate::store::{devices, groups, users};
 
-/// The most a single push may carry.
-const MOST_A_PUSH_CARRIES: usize = 256 * 1024 * 1024;
+/// The most one request may carry.
+///
+/// Nothing is pushed, so what arrives is only ever a fetch saying what it
+/// wants and what it has, which git compresses; and the release
+/// repositories answer anybody, so the bound is what a stranger can make
+/// the instance hold.
+const MOST_A_REQUEST_CARRIES: usize = 32 * 1024 * 1024;
 
 /// Answers a request from git.
 pub async fn serve(
@@ -88,9 +93,9 @@ pub async fn serve(
         return Err(WebError::NotFound);
     }
 
-    let body = axum::body::to_bytes(body, MOST_A_PUSH_CARRIES)
+    let body = axum::body::to_bytes(body, MOST_A_REQUEST_CARRIES)
         .await
-        .map_err(|_| WebError::BadRequest("that push is too large".to_owned()))?;
+        .map_err(|_| WebError::BadRequest("that request is too large".to_owned()))?;
 
     let remote_user = asking
         .as_ref()
@@ -110,11 +115,45 @@ pub async fn serve(
 }
 
 /// Whether git is trying to send something rather than to read.
+///
+/// The backend matches the service at the end of the path and decodes
+/// the query before reading it, so both are read here the way it reads
+/// them.
 fn is_a_push(path: &str, query: &str) -> bool {
-    path == "git-receive-pack"
+    const RECEIVE: &str = "git-receive-pack";
+
+    path.rsplit('/').next() == Some(RECEIVE)
         || query
             .split('&')
-            .any(|pair| pair == "service=git-receive-pack")
+            .filter_map(|pair| pair.split_once('='))
+            .any(|(name, value)| decoded(name) == "service" && decoded(value) == RECEIVE)
+}
+
+/// A query parameter with its percent escapes resolved.
+fn decoded(escaped: &str) -> String {
+    let bytes = escaped.as_bytes();
+    let mut plain = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+
+    while at < bytes.len() {
+        let escape = (bytes[at] == b'%')
+            .then(|| escaped.get(at + 1..at + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+
+        match escape {
+            Some(byte) => {
+                plain.push(byte);
+                at += 3;
+            }
+            None => {
+                plain.push(bytes[at]);
+                at += 1;
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&plain).into_owned()
 }
 
 /// Whether this is a shape git uses at all.
@@ -258,6 +297,11 @@ async fn run_backend(
         // so git is told not to ask the question again by looking for a
         // file in the repository.
         .env("GIT_HTTP_EXPORT_ALL", "1")
+        // Pushes are refused before git is asked; the backend is told to
+        // refuse them as well, so no way of spelling one gets through.
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "http.receivepack")
+        .env("GIT_CONFIG_VALUE_0", "false")
         .env("REQUEST_METHOD", method.as_str())
         .env("PATH_INFO", path_info)
         .env("QUERY_STRING", query)
@@ -475,6 +519,22 @@ mod tests {
         assert!(is_a_push("info/refs", "service=git-receive-pack"));
         assert!(!is_a_push("info/refs", "service=git-upload-pack"));
         assert!(!is_a_push("git-upload-pack", ""));
+    }
+
+    #[test]
+    fn a_push_is_recognised_however_it_is_spelled() {
+        for query in [
+            "service=git%2Dreceive-pack",
+            "service=git-receive%2dpack",
+            "%73ervice=git-receive-pack",
+            "other=1&service=git-receive-pack",
+        ] {
+            assert!(is_a_push("info/refs", query), "missed `{query}`");
+        }
+
+        assert!(is_a_push("objects/git-receive-pack", ""));
+        assert!(!is_a_push("info/refs", "service=git-upload-pack%"));
+        assert_eq!(decoded("a%zz%4"), "a%zz%4");
     }
 
     #[test]
