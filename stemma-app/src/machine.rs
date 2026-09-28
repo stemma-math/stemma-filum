@@ -2,10 +2,13 @@
 //! groups.
 
 use serde::Serialize;
+use stemma_core::id::BlockId;
+use stemma_core::proposal::{Grants, LineGrant};
 
 use crate::workspace::LineAt;
-use crate::{Session, carried_out, failed, home, said};
+use crate::{Session, carried_out, failed, home};
 
+/// One agent a machine offers, and whether it can be used.
 #[derive(Serialize)]
 pub struct Agent {
     name: String,
@@ -32,6 +35,7 @@ impl Agent {
     }
 }
 
+/// One job this machine was given.
 #[derive(Serialize)]
 pub struct Job {
     id: String,
@@ -45,6 +49,7 @@ pub struct Job {
     cancel_requested: bool,
 }
 
+/// This machine as a worker, for the settings.
 #[derive(Serialize)]
 pub struct MachinePanel {
     label: String,
@@ -110,7 +115,7 @@ pub fn cancel_job(job: String) -> Result<(), String> {
     session
         .server
         .cancel_job(&session.token, &job)
-        .map_err(said)
+        .map_err(failed)
 }
 
 /// The machines that work for `group`, and what each can run.
@@ -120,7 +125,7 @@ pub fn offers(group: String) -> Result<Vec<Offer>, String> {
     Ok(session
         .server
         .machines(&session.token, &group)
-        .map_err(said)?
+        .map_err(failed)?
         .into_iter()
         .map(|machine| Offer {
             agents: machine.agents.iter().map(Agent::of).collect(),
@@ -155,31 +160,68 @@ pub fn launch(
         here,
         model,
         effort,
-        request: request.clone(),
         grants: request
-            .map(|_| {
-                let mut line = Vec::new();
-                for raw in grant_blocks {
-                    let block = raw
-                        .parse()
-                        .map_err(|error| format!("invalid block grant: {error}"))?;
-                    line.push(stemma_core::proposal::LineGrant::Edit { block });
-                    line.push(stemma_core::proposal::LineGrant::Remove { block });
-                    line.push(stemma_core::proposal::LineGrant::Add { after: Some(block) });
-                }
-                Ok::<_, String>(stemma_core::proposal::Grants {
-                    line,
-                    library: grant_library,
-                    add_only: false,
-                })
-            })
+            .is_some()
+            .then(|| grants(grant_blocks, grant_library))
             .transpose()?,
+        request,
     };
     stemma::jobs::run(&home(), line.directory(), &wanted, &mut Vec::new()).map_err(failed)
+}
+
+/// What a custom request may change: each block granted may be edited,
+/// removed or followed by new blocks, and the Lean library when allowed.
+fn grants(blocks: Vec<String>, library: bool) -> Result<Grants, String> {
+    let mut line = Vec::new();
+    for raw in blocks {
+        let block: BlockId = raw
+            .parse()
+            .map_err(|error| format!("invalid block grant: {error}"))?;
+        line.extend([
+            LineGrant::Edit { block },
+            LineGrant::Remove { block },
+            LineGrant::Add { after: Some(block) },
+        ]);
+    }
+    Ok(Grants {
+        line,
+        library,
+        add_only: false,
+    })
 }
 
 /// Offers this machine to the instance for work in `groups`.
 #[tauri::command(async)]
 pub fn node_init(groups: Vec<String>) -> Result<String, String> {
     carried_out(|home, out| stemma::node::init(home, &groups, out).map(|_| ()))
+}
+
+#[cfg(test)]
+mod tests {
+    use stemma_core::proposal::LineGrant;
+
+    use super::grants;
+
+    #[test]
+    fn a_granted_block_may_be_edited_removed_and_followed() {
+        let block = "blk:01K5YQ4TQ2VZ8H3M9N0P1R2S3T";
+        let granted = grants(vec![block.to_owned()], true).unwrap();
+        let block = block.parse().unwrap();
+
+        assert_eq!(
+            granted.line,
+            [
+                LineGrant::Edit { block },
+                LineGrant::Remove { block },
+                LineGrant::Add { after: Some(block) },
+            ]
+        );
+        assert!(granted.library);
+        assert!(!granted.add_only);
+    }
+
+    #[test]
+    fn a_grant_that_is_not_a_block_is_refused() {
+        assert!(grants(vec!["thm:main".to_owned()], false).is_err());
+    }
 }
