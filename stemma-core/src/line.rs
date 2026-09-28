@@ -167,50 +167,40 @@ impl Name {
         let mut name = String::new();
 
         for character in title.trim().chars() {
-            let plain = plainly(character);
-
-            for character in plain.chars() {
-                match character {
-                    'a'..='z' | '0'..='9' => name.push(character),
-                    'A'..='Z' => name.push(character.to_ascii_lowercase()),
-                    _ if name.ends_with('-') => {}
-                    _ if name.is_empty() => {}
-                    _ => name.push('-'),
+            match plainly(character) {
+                Some(letters) => name.push_str(letters),
+                None if character.is_ascii_alphanumeric() => {
+                    name.push(character.to_ascii_lowercase());
                 }
+                // Anything else separates words, once, and never leads.
+                None if name.is_empty() || name.ends_with('-') => {}
+                None => name.push('-'),
             }
         }
 
-        while name.len() > LONGEST_NAME {
-            name.pop();
-        }
+        // Every character is ASCII by now, so any length is a boundary.
+        name.truncate(LONGEST_NAME);
 
         Self::parse(name.trim_end_matches('-')).ok()
     }
 }
 
-/// One letter without whatever is written over it.
+/// One accented letter without whatever is written over it, in lowercase.
 ///
 /// Enough of Latin-1 for the languages this is written in; anything
 /// else becomes a hyphen, which is honest and still a usable name.
-fn plainly(character: char) -> String {
-    match character {
-        'á' | 'à' | 'ä' | 'â' | 'ã' | 'å' => "a".to_owned(),
-        'é' | 'è' | 'ë' | 'ê' => "e".to_owned(),
-        'í' | 'ì' | 'ï' | 'î' => "i".to_owned(),
-        'ó' | 'ò' | 'ö' | 'ô' | 'õ' => "o".to_owned(),
-        'ú' | 'ù' | 'ü' | 'û' => "u".to_owned(),
-        'ñ' => "n".to_owned(),
-        'ç' => "c".to_owned(),
-        'ß' => "ss".to_owned(),
-        'Á' | 'À' | 'Ä' | 'Â' | 'Ã' | 'Å' => "A".to_owned(),
-        'É' | 'È' | 'Ë' | 'Ê' => "E".to_owned(),
-        'Í' | 'Ì' | 'Ï' | 'Î' => "I".to_owned(),
-        'Ó' | 'Ò' | 'Ö' | 'Ô' | 'Õ' => "O".to_owned(),
-        'Ú' | 'Ù' | 'Ü' | 'Û' => "U".to_owned(),
-        'Ñ' => "N".to_owned(),
-        'Ç' => "C".to_owned(),
-        other => other.to_string(),
-    }
+fn plainly(character: char) -> Option<&'static str> {
+    Some(match character {
+        'á' | 'à' | 'ä' | 'â' | 'ã' | 'å' | 'Á' | 'À' | 'Ä' | 'Â' | 'Ã' | 'Å' => "a",
+        'é' | 'è' | 'ë' | 'ê' | 'É' | 'È' | 'Ë' | 'Ê' => "e",
+        'í' | 'ì' | 'ï' | 'î' | 'Í' | 'Ì' | 'Ï' | 'Î' => "i",
+        'ó' | 'ò' | 'ö' | 'ô' | 'õ' | 'Ó' | 'Ò' | 'Ö' | 'Ô' | 'Õ' => "o",
+        'ú' | 'ù' | 'ü' | 'û' | 'Ú' | 'Ù' | 'Ü' | 'Û' => "u",
+        'ñ' | 'Ñ' => "n",
+        'ç' | 'Ç' => "c",
+        'ß' => "ss",
+        _ => return None,
+    })
 }
 
 impl fmt::Display for Name {
@@ -777,12 +767,7 @@ fn walk<'a>(
 
         // One cycle has as many spellings as it has members, and they are
         // all the same cycle: it is reported from its smallest name.
-        let smallest = cycle
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, one)| (*one).clone())
-            .map(|(at, _)| at)
-            .unwrap_or(0);
+        let smallest = (0..cycle.len()).min_by_key(|at| &cycle[*at]).unwrap_or(0);
 
         cycle.rotate_left(smallest);
 
@@ -975,6 +960,10 @@ mod tests {
             Some("algebra-se-parte".to_owned())
         );
         assert_eq!(named("Two  spaces"), Some("two-spaces".to_owned()));
+        assert_eq!(
+            named("Über die Straße, ÑANDÚ 2"),
+            Some("uber-die-strasse-nandu-2".to_owned())
+        );
         assert_eq!(named("§§§"), None);
         assert_eq!(named(""), None);
         assert!(named(&"a very long title ".repeat(10)).unwrap().len() <= LONGEST_NAME);
