@@ -29,7 +29,7 @@ impl User {
     }
 
     /// Reads an account out of a row.
-    fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
+    pub(super) fn from_row(row: &Row<'_>) -> rusqlite::Result<Self> {
         Ok(Self {
             id: id_at(row, "id")?,
             email: row.get("email")?,
