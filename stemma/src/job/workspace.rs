@@ -306,4 +306,37 @@ mod tests {
         assert!(grants.line.contains(&LineGrant::Add { after: Some(block) }));
         assert!(!grants.library);
     }
+
+    #[test]
+    fn a_job_is_kept_in_a_directory_of_its_own_and_never_elsewhere() {
+        let root = root_of("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T");
+        assert!(root.ends_with("stemma-jobs/job-01K5YQ4TQ2VZ8H3M9N0P1R2S3T"));
+        assert!(
+            root_of("job:../../elsewhere").starts_with(std::env::temp_dir().join("stemma-jobs"))
+        );
+    }
+
+    #[test]
+    fn a_job_naming_a_line_that_cannot_be_a_directory_is_refused() {
+        let handed: Handed = serde_json::from_value(serde_json::json!({
+            "job": "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T",
+            "group": "algebra",
+            "side": "shared",
+            "line": "../../outside",
+            "revision": 1,
+            "task": "explore",
+            "agent": "claude",
+            "launched_by": "usr:ana",
+        }))
+        .unwrap();
+
+        let error = prepare(&handed, &Task::Explore, "", None, None)
+            .err()
+            .unwrap();
+
+        assert!(
+            error.to_string().contains("cannot be a directory"),
+            "{error}"
+        );
+    }
 }

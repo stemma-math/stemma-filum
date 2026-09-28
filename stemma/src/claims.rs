@@ -45,7 +45,9 @@ pub fn take(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) ->
 pub fn release(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
     let (server, token, about) = addressed(home, at, line)?;
 
-    if let Some(waiting) = send_before_release(home, &about)? {
+    let waiting =
+        send_before_release(home, &about).unwrap_or_else(|error| Some(format!("{error:#}")));
+    if let Some(waiting) = waiting {
         writeln!(out, "  not sent yet: {waiting}")?;
     }
 

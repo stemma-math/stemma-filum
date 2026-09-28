@@ -47,14 +47,10 @@ pub fn install() -> Result<PathBuf> {
         return Ok(directory);
     }
 
-    std::fs::create_dir_all(&directory)
-        .with_context(|| format!("cannot create {}", directory.display()))?;
-
+    // Each file is replaced whole, so a document compiled while another
+    // program installs the package never reads half of one.
     for (name, contents) in [("typst.toml", MANIFEST), ("lib.typ", LIBRARY)] {
-        let path = directory.join(name);
-
-        std::fs::write(&path, contents)
-            .with_context(|| format!("cannot write {}", path.display()))?;
+        crate::storage::replace(&directory.join(name), contents)?;
     }
 
     Ok(directory)
