@@ -1753,7 +1753,16 @@ button.block__label:disabled {
 /* ── Dialogs and settings ──────────────────────────────────────────── */
 
 .dialog--wide {
-    width: min(820px, calc(100vw - 48px));
+    --dialog-width: min(820px, calc(100vw - 48px));
+    width: var(--dialog-width);
+}
+
+/* Beside the sidebar a dialog is centred on the stage, as the toasts are,
+ * rather than on the window. In a narrow window the stage is narrower than
+ * the dialog, so it moves only as far as keeps 24px clear on the right.
+ * The fallback is the identity's own dialog width. */
+.app-shell .dialog {
+    translate: min(var(--sidebar-desktop) / 2, max(0px, (100vw - var(--dialog-width, min(520px, 100vw - 32px))) / 2 - 24px)) 0;
 }
 
 .dialog__form {
