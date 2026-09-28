@@ -275,6 +275,21 @@ impl Block {
         }
     }
 
+    /// The label its Typst document gives it, which `@` and a proof point
+    /// at.
+    ///
+    /// Its siglum when its author named it, so that `@thm:main` in the
+    /// text finds it; its block identifier when nobody did.
+    pub(crate) fn label(&self) -> String {
+        match self
+            .statement()
+            .and_then(|statement| statement.siglum.as_ref())
+        {
+            Some(siglum) => siglum.to_string(),
+            None => self.id().to_string(),
+        }
+    }
+
     /// The siglum it answers to, when it is a definition or a theorem.
     pub fn siglum(&self) -> Option<Siglum> {
         match self {

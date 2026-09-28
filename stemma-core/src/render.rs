@@ -102,7 +102,7 @@ pub fn typst(document: &Document) -> Rendered {
             Block::Proof(proof) => {
                 arguments.push(("of", quoted(&proof.of.to_string())));
                 if let Some(proved) = document.block(&proof.of) {
-                    arguments.push(("target", quoted(&label_of(proved))));
+                    arguments.push(("target", quoted(&proved.label())));
                 }
                 // A proof straight after what it proves needs to say no
                 // more than that it is one.
@@ -136,7 +136,7 @@ pub fn typst(document: &Document) -> Rendered {
 
         if block.statement().is_some() {
             source.push_str(" <");
-            source.push_str(&label_of(block));
+            source.push_str(&block.label());
             source.push('>');
         }
 
@@ -157,20 +157,6 @@ pub fn readable(source: &str) -> String {
     match Document::parse(source) {
         Ok(document) => typst(&document).source,
         Err(_) => source.to_owned(),
-    }
-}
-
-/// The label a statement is given, which `@` and its proof point at.
-///
-/// Its siglum when its author named it, so that `@thm:main` in the text
-/// finds it; its block identifier when nobody did.
-fn label_of(block: &Block) -> String {
-    match block
-        .statement()
-        .and_then(|statement| statement.siglum.as_ref())
-    {
-        Some(siglum) => siglum.to_string(),
-        None => block.id().to_string(),
     }
 }
 

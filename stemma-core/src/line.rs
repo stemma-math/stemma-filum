@@ -669,15 +669,21 @@ fn check_proofs(document: &Document, nodes: &mut [Node], faults: &mut Vec<Fault>
 /// what its text and its proofs cite, in the order they cite it. A
 /// citation of something that is not a statement of this line — an
 /// equation, a figure, a line elsewhere — is not a dependency.
+///
+/// A statement is cited by its siglum, or by the label its document gives
+/// it, which for one nobody named is its block identifier.
 fn lean(document: &Document, nodes: &mut [Node], faults: &mut Vec<Fault>) {
     let by_block: BTreeMap<BlockId, Siglum> = nodes
         .iter()
         .map(|node| (node.block, node.siglum.clone()))
         .collect();
-    let by_label: BTreeMap<String, Siglum> = nodes
-        .iter()
-        .map(|node| (node.siglum.to_string(), node.siglum.clone()))
-        .collect();
+    let mut by_label: BTreeMap<String, Siglum> = BTreeMap::new();
+    for node in nodes.iter() {
+        by_label.insert(node.siglum.to_string(), node.siglum.clone());
+        if let Some(block) = document.block(&node.block) {
+            by_label.insert(block.label(), node.siglum.clone());
+        }
+    }
 
     for node in nodes.iter_mut() {
         let Some(statement) = document.block(&node.block).and_then(Block::statement) else {
@@ -1194,6 +1200,17 @@ mod tests {
         let line = Line::read(&written(vec![lemma, theorem, proof])).unwrap();
 
         assert_eq!(line.nodes[1].uses, [siglum("lem:step")]);
+    }
+
+    #[test]
+    fn a_statement_nobody_named_is_cited_by_the_label_its_document_gives_it() {
+        let mut lemma = Block::theorem("Lemma", None, "A step.");
+        lemma.statement_mut().unwrap().proof = false;
+        let cited = format!("By @{}.", lemma.id());
+        let theorem = stated("thm:main", &cited);
+        let line = Line::read(&written(vec![lemma.clone(), theorem])).unwrap();
+
+        assert_eq!(line.nodes[1].uses, [lemma.siglum().unwrap()]);
     }
 
     #[test]
