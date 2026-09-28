@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
-use stemma::api::{About, Claimed, Server};
+use stemma::api::{About, Claimed, Server, Writing};
 use stemma_core::id::BlockId;
 use stemma_core::reconcile::Keep;
 
@@ -11,15 +11,80 @@ use stemma::mirror::Mirror;
 
 use crate::engine::{self, Nudge};
 use crate::workspace::LineAt;
-use crate::{Session, failed, home, said};
+use crate::{Session, failed, home};
 
+/// Who writes a line, as the window shows it.
 #[derive(Serialize)]
 pub struct Claim {
+    /// `writing`, `waiting` or `open`.
     standing: String,
+    /// What the machine holding it calls itself, when one does.
     label: Option<String>,
+    /// How long the claim has left, in seconds.
     left: Option<u64>,
+    /// Whether it has been asked for.
     asked: bool,
+    /// The whole of it, in words.
     said: String,
+}
+
+impl Claim {
+    /// A claim as the instance described it. When the instance gave no
+    /// words for it, they are said from where it stands.
+    fn new(
+        standing: String,
+        label: Option<String>,
+        left: Option<u64>,
+        asked: bool,
+        said: Option<String>,
+    ) -> Self {
+        let said = said.unwrap_or_else(|| words(&standing, label.as_deref(), asked));
+        Self {
+            standing,
+            label,
+            left,
+            asked,
+            said,
+        }
+    }
+}
+
+impl From<Claimed> for Claim {
+    fn from(claimed: Claimed) -> Self {
+        Self::new(
+            claimed.standing,
+            claimed.label,
+            claimed.left,
+            claimed.asked,
+            claimed.said,
+        )
+    }
+}
+
+impl From<Option<Writing>> for Claim {
+    fn from(held: Option<Writing>) -> Self {
+        match held {
+            None => Self::new("open".to_owned(), None, None, false, None),
+            Some(held) => Self::new(
+                if held.mine { "writing" } else { "waiting" }.to_owned(),
+                Some(held.label),
+                Some(held.left),
+                held.asked,
+                None,
+            ),
+        }
+    }
+}
+
+/// Where a claim stands, in words.
+fn words(standing: &str, label: Option<&str>, asked: bool) -> String {
+    let holder = label.unwrap_or("another machine");
+    match standing {
+        "writing" => "this machine is writing it".to_owned(),
+        "waiting" if asked => format!("{holder} is writing it, and has been asked for it"),
+        "waiting" => format!("{holder} is writing it"),
+        _ => "nobody is writing this line".to_owned(),
+    }
 }
 
 /// Takes the line for this machine; renews the claim when already held.
@@ -34,12 +99,7 @@ pub fn claim(path: String) -> Result<Claim, String> {
 #[tauri::command(async)]
 pub fn release(path: String) -> Result<Claim, String> {
     if let Ok(line) = LineAt::admit(&path) {
-        let about = About {
-            group: line.group,
-            side: line.side,
-            line: line.name,
-        };
-        let _ = stemma::claims::send_before_release(&home(), &about);
+        let _ = stemma::claims::send_before_release(&home(), &line.about());
     }
     with_claim(&path, Server::release_claim)
 }
@@ -50,33 +110,14 @@ pub fn release(path: String) -> Result<Claim, String> {
 pub fn claim_status(path: String) -> Result<Claim, String> {
     let line = LineAt::admit(&path)?;
     let session = Session::open()?;
-    let found = session
+    let held = session
         .server
         .claims(&session.token)
-        .map_err(said)?
+        .map_err(failed)?
         .into_iter()
         .find(|held| held.group == line.group && held.side == line.side && held.line == line.name);
 
-    Ok(match found {
-        None => Claim {
-            standing: "open".to_owned(),
-            label: None,
-            left: None,
-            asked: false,
-            said: "nobody is writing this line".to_owned(),
-        },
-        Some(held) => Claim {
-            standing: if held.mine { "writing" } else { "waiting" }.to_owned(),
-            said: match (held.mine, held.asked) {
-                (true, _) => "this machine is writing it".to_owned(),
-                (false, false) => format!("{} is writing it", held.label),
-                (false, true) => format!("{} is writing it, and has been asked for it", held.label),
-            },
-            label: Some(held.label),
-            left: Some(held.left),
-            asked: held.asked,
-        },
-    })
+    Ok(Claim::from(held))
 }
 
 /// Asks the machine holding the claim to release it.
@@ -91,22 +132,9 @@ fn with_claim(
 ) -> Result<Claim, String> {
     let line = LineAt::admit(path)?;
     let session = Session::open()?;
-    let about = About {
-        group: line.group,
-        side: line.side,
-        line: line.name,
-    };
-    let claimed = speak(&session.server, &session.token, &about).map_err(said)?;
+    let claimed = speak(&session.server, &session.token, &line.about()).map_err(failed)?;
 
-    Ok(Claim {
-        said: claimed
-            .said
-            .unwrap_or_else(|| "nobody is writing this line".to_owned()),
-        standing: claimed.standing,
-        label: claimed.label,
-        left: claimed.left,
-        asked: claimed.asked,
-    })
+    Ok(Claim::from(claimed))
 }
 
 /// One block on which the two versions conflict.
@@ -163,4 +191,44 @@ pub fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, Str
     engine::nudge(Nudge::Now);
 
     Ok(vec![line.name])
+}
+
+#[cfg(test)]
+mod tests {
+    use stemma::api::Writing;
+
+    use super::Claim;
+
+    fn held(mine: bool, asked: bool) -> Option<Writing> {
+        Some(Writing {
+            group: "algebra".to_owned(),
+            side: "shared".to_owned(),
+            line: "quotients".to_owned(),
+            label: "Office iMac".to_owned(),
+            mine,
+            left: 240,
+            asked,
+        })
+    }
+
+    #[test]
+    fn a_claim_says_who_is_writing() {
+        let said = |held| Claim::from(held).said;
+
+        assert_eq!(said(None), "nobody is writing this line");
+        assert_eq!(said(held(true, false)), "this machine is writing it");
+        assert_eq!(said(held(false, false)), "Office iMac is writing it");
+        assert_eq!(
+            said(held(false, true)),
+            "Office iMac is writing it, and has been asked for it"
+        );
+    }
+
+    #[test]
+    fn a_claim_this_machine_holds_is_one_it_writes() {
+        let claim = Claim::from(held(true, false));
+
+        assert_eq!(claim.standing, "writing");
+        assert_eq!(claim.left, Some(240));
+    }
 }
