@@ -66,7 +66,7 @@
           {#if group === app.group}<span class="menu__hint"><Glyph name="check" small /></span>{/if}
         </button>
       {:else}
-        <p class="menu__heading">No groups on this machine.</p>
+        <p class="menu__empty">No groups on this machine.</p>
       {/each}
     </Bubble>
   </div>

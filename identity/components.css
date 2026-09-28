@@ -721,6 +721,19 @@
         color: var(--ink-3);
     }
 
+    /* A menu with nothing in it says so in the place of its items, as
+     * tall as one of them. */
+    .menu__empty {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        min-height: 36px;
+        margin: 0;
+        padding: 0 10px;
+        font: 400 13px / 1.3 var(--font-ui);
+        color: var(--ink-3);
+    }
+
     /* ── Dialog ────────────────────────────────────────────────────────
      *
      * On a `dialog` opened with `showModal()`: a title in a sentence, what
