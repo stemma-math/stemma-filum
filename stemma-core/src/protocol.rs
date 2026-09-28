@@ -92,13 +92,13 @@ pub struct ProtocolMismatch {
 
 impl ProtocolMismatch {
     /// Which side is behind, and so which one to update.
+    ///
+    /// Only an older major number puts the client behind: with equal majors
+    /// the client is refused for using what the server has never heard of.
     pub fn who_is_behind(&self) -> Behind {
-        if self.client.major == self.server.major && self.client.minor > self.server.minor {
-            Behind::Server
-        } else if self.client.major < self.server.major {
-            Behind::Client
-        } else {
-            Behind::Server
+        match self.client.major < self.server.major {
+            true => Behind::Client,
+            false => Behind::Server,
         }
     }
 }
@@ -140,6 +140,26 @@ mod tests {
             .check_against(ProtocolVersion::new(2, 0))
             .unwrap_err();
         assert_eq!(mismatch.who_is_behind(), Behind::Client);
+    }
+
+    #[test]
+    fn a_client_with_a_newer_major_leaves_the_server_behind() {
+        let mismatch = ProtocolVersion::new(3, 0)
+            .check_against(ProtocolVersion::new(2, 9))
+            .unwrap_err();
+        assert_eq!(mismatch.who_is_behind(), Behind::Server);
+        assert_eq!(
+            mismatch.to_string(),
+            "this build speaks protocol 3.0 and the server speaks 2.9"
+        );
+    }
+
+    #[test]
+    fn versions_travel_as_two_numbers() {
+        assert_eq!(
+            serde_json::to_value(ProtocolVersion::new(3, 1)).unwrap(),
+            serde_json::json!({ "major": 3, "minor": 1 })
+        );
     }
 
     #[test]

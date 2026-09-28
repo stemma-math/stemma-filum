@@ -64,15 +64,10 @@ impl Slug {
             return Err(SlugError::TooLong);
         }
 
-        let mut previous_was_hyphen = false;
-        for character in input.chars() {
-            match character {
-                'a'..='z' | '0'..='9' => previous_was_hyphen = false,
-                '-' if previous_was_hyphen => return Err(SlugError::DoubleHyphen),
-                '-' => previous_was_hyphen = true,
-                other => return Err(SlugError::BadChar(other)),
-            }
-        }
+        check_word(input).map_err(|fault| match fault {
+            WordFault::Character(character) => SlugError::BadChar(character),
+            WordFault::DoubleHyphen => SlugError::DoubleHyphen,
+        })?;
 
         // Both ends are checked after the character set, so that an uppercase
         // first letter is reported as the wrong character and not as a bad
@@ -105,6 +100,36 @@ impl FromStr for Slug {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         Self::parse(input)
     }
+}
+
+serde_as_text!(Slug);
+
+/// What keeps a string from being a run of lowercase letters, digits and
+/// single hyphens.
+pub(crate) enum WordFault {
+    /// A character outside that set.
+    Character(char),
+    /// Two hyphens in a row.
+    DoubleHyphen,
+}
+
+/// Checks the characters a slug or a siglum's name may be made of.
+///
+/// Only the characters: how long the word is and how it may begin or end
+/// differ between the two, and each checks that itself.
+pub(crate) fn check_word(input: &str) -> Result<(), WordFault> {
+    let mut previous_was_hyphen = false;
+
+    for character in input.chars() {
+        match character {
+            'a'..='z' | '0'..='9' => previous_was_hyphen = false,
+            '-' if previous_was_hyphen => return Err(WordFault::DoubleHyphen),
+            '-' => previous_was_hyphen = true,
+            other => return Err(WordFault::Character(other)),
+        }
+    }
+
+    Ok(())
 }
 
 /// The kind of entity an identifier names, and the prefix that announces it.
@@ -287,19 +312,6 @@ macro_rules! impl_serde_via_string {
 impl_serde_via_string!(NamedId, "an identifier");
 impl_serde_via_string!(UniqueId, "a unique identifier");
 
-impl Serialize for Slug {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for Slug {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = String::deserialize(deserializer)?;
-        Self::parse(&raw).map_err(de::Error::custom)
-    }
-}
-
 /// Declares the marker types and the aliases for every kind of identifier.
 macro_rules! id_kinds {
     (
@@ -426,6 +438,48 @@ mod tests {
     fn a_bare_slug_is_not_an_identifier() {
         let error = "enric".parse::<UserId>().unwrap_err();
         assert_eq!(error, IdError::MissingPrefix { expected: "usr" });
+    }
+
+    #[test]
+    fn identifiers_travel_as_the_string_they_are_shown_as() {
+        let user: UserId = "usr:enric".parse().unwrap();
+        let job = JobId::generate();
+        let slug = Slug::parse("algebra").unwrap();
+
+        assert_eq!(serde_json::to_value(&user).unwrap(), "usr:enric");
+        assert_eq!(serde_json::to_value(job).unwrap(), job.to_string());
+        assert_eq!(serde_json::to_value(&slug).unwrap(), "algebra");
+
+        assert_eq!(
+            serde_json::from_str::<UserId>("\"usr:enric\"").unwrap(),
+            user
+        );
+        assert_eq!(
+            serde_json::from_value::<JobId>(job.to_string().into()).unwrap(),
+            job
+        );
+        assert_eq!(serde_json::from_str::<Slug>("\"algebra\"").unwrap(), slug);
+    }
+
+    #[test]
+    fn what_is_not_an_identifier_is_never_read_as_one() {
+        assert!(serde_json::from_str::<UserId>("\"grp:algebra\"").is_err());
+        assert!(serde_json::from_str::<UserId>("\"usr:Enric\"").is_err());
+        assert!(serde_json::from_str::<JobId>("\"job:nothing\"").is_err());
+        assert!(serde_json::from_str::<Slug>("\"-lead\"").is_err());
+        assert!(serde_json::from_str::<UserId>("42").is_err());
+    }
+
+    #[test]
+    fn an_identifier_can_be_a_map_key() {
+        let job = JobId::generate();
+        let map = std::collections::BTreeMap::from([(job, 1)]);
+        let text = serde_json::to_string(&map).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<std::collections::BTreeMap<JobId, u8>>(&text).unwrap(),
+            map
+        );
     }
 
     #[test]

@@ -101,6 +101,30 @@ mod tests {
     }
 
     #[test]
+    fn a_failure_travels_under_its_code() {
+        let failures = [
+            AgentFailure::AgentNotFound { agent: claude() },
+            AgentFailure::AgentNotAuthenticated { agent: claude() },
+            AgentFailure::AgentRateLimited { agent: claude() },
+            AgentFailure::AgentError {
+                agent: claude(),
+                summary: "it stopped".to_owned(),
+            },
+        ];
+
+        for failure in failures {
+            let json = serde_json::to_value(&failure).unwrap();
+            assert_eq!(json["code"], failure.code());
+            assert_eq!(json["agent"], "claude");
+            assert_eq!(failure.agent(), &claude());
+            assert_eq!(
+                serde_json::from_value::<AgentFailure>(json).unwrap(),
+                failure
+            );
+        }
+    }
+
+    #[test]
     fn an_agent_that_broke_did_try() {
         let failure = AgentFailure::AgentError {
             agent: claude(),

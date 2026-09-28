@@ -22,12 +22,11 @@
 //! What a block's content says is Typst markup, exactly what goes
 //! between the brackets of the environment it becomes.
 
-use std::fmt;
-
 use serde::{Deserialize, Serialize};
 
 use crate::id::{BlockId, BridgeId, UserId};
-use crate::line::{NodeKind, Siglum};
+use crate::line::{Name, NodeKind, Siglum};
+use crate::markup::Scanner;
 
 /// The shape of a line's source this build writes and reads.
 pub const FORMAT: u32 = 1;
@@ -276,6 +275,21 @@ impl Block {
         }
     }
 
+    /// The label its Typst document gives it, which `@` and a proof point
+    /// at.
+    ///
+    /// Its siglum when its author named it, so that `@thm:main` in the
+    /// text finds it; its block identifier when nobody did.
+    pub(crate) fn label(&self) -> String {
+        match self
+            .statement()
+            .and_then(|statement| statement.siglum.as_ref())
+        {
+            Some(siglum) => siglum.to_string(),
+            None => self.id().to_string(),
+        }
+    }
+
     /// The siglum it answers to, when it is a definition or a theorem.
     pub fn siglum(&self) -> Option<Siglum> {
         match self {
@@ -300,23 +314,12 @@ pub enum BlockKind {
     Proof,
 }
 
-impl BlockKind {
-    /// What it is called in the source.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Prose => "prose",
-            Self::Definition => "definition",
-            Self::Theorem => "theorem",
-            Self::Proof => "proof",
-        }
-    }
-}
-
-impl fmt::Display for BlockKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+spelled!(BlockKind {
+    Prose => "prose",
+    Definition => "definition",
+    Theorem => "theorem",
+    Proof => "proof",
+});
 
 /// Prose between the mathematics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -405,10 +408,7 @@ impl Statement {
         };
         let name = self.id.ulid().to_string().to_ascii_lowercase();
 
-        Siglum::new(
-            node,
-            crate::line::Name::parse(&name).expect("a ULID is a valid name"),
-        )
+        Siglum::new(node, Name::parse(&name).expect("a ULID is a valid name"))
     }
 }
 
@@ -505,53 +505,37 @@ impl From<Written> for Block {
 
 /// Every label a piece of Typst markup refers to with `@`, in order.
 ///
-/// What is inside raw text, a comment or a string is not a reference,
-/// and neither is an `@` in the middle of a word, which is an address.
+/// What is inside raw text or a comment is not a reference, and neither
+/// is an escaped `@` or one in the middle of a word, which is an address.
 pub fn references(content: &str) -> Vec<String> {
-    let bytes = content.as_bytes();
     let mut found = Vec::new();
-    let mut at = 0;
+    let mut scanner = Scanner::new(content);
 
-    while at < bytes.len() {
-        match bytes[at] {
-            b'\\' => at += 2,
-            b'`' => {
-                let start = at;
-                while at < bytes.len() && bytes[at] == b'`' {
-                    at += 1;
-                }
-                let fence = &content[start..at];
-                at = content[at..]
-                    .find(fence)
-                    .map_or(bytes.len(), |offset| at + offset + fence.len());
-            }
-            b'/' if bytes.get(at + 1) == Some(&b'/') => {
-                at = content[at..]
-                    .find('\n')
-                    .map_or(bytes.len(), |offset| at + offset);
-            }
-            b'/' if bytes.get(at + 1) == Some(&b'*') => {
-                at = content[at + 2..]
-                    .find("*/")
-                    .map_or(bytes.len(), |offset| at + 2 + offset + 2);
-            }
-            b'@' if at == 0 || !bytes[at - 1].is_ascii_alphanumeric() => {
-                let start = at + 1;
-                let mut end = start;
-                while end < bytes.len()
-                    && (bytes[end].is_ascii_alphanumeric()
-                        || matches!(bytes[end], b'_' | b'-' | b':' | b'.'))
-                {
-                    end += 1;
-                }
-                // A sentence may end right after a reference.
-                let label = content[start..end].trim_end_matches(['.', ':']);
-                if !label.is_empty() {
-                    found.push(label.to_owned());
-                }
-                at = end.max(at + 1);
-            }
-            _ => at += 1,
+    while !scanner.is_done() {
+        if scanner.skip_inert() {
+            continue;
+        }
+
+        let starts_a_reference = scanner.peek(0) == Some(b'@')
+            && !scanner
+                .previous()
+                .is_some_and(|byte| byte.is_ascii_alphanumeric());
+        scanner.at += 1;
+        if !starts_a_reference {
+            continue;
+        }
+
+        let start = scanner.at;
+        while scanner
+            .peek(0)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || b"_-:.".contains(&byte))
+        {
+            scanner.at += 1;
+        }
+        // A sentence may end right after a reference.
+        let label = scanner.since(start).trim_end_matches(['.', ':']);
+        if !label.is_empty() {
+            found.push(label.to_owned());
         }
     }
 
@@ -677,5 +661,19 @@ mod tests {
                        /* @lem:block */ \\@lem:escaped then @lem:last:";
 
         assert_eq!(references(content), ["def:group", "thm:main", "lem:last"]);
+    }
+
+    #[test]
+    fn a_reference_inside_a_nested_comment_is_not_one() {
+        let content = "/* outer /* inner */ @lem:hidden */ @lem:seen";
+
+        assert_eq!(references(content), ["lem:seen"]);
+    }
+
+    #[test]
+    fn references_are_read_out_of_text_that_is_not_ascii() {
+        let content = "Según @thm:main, y por \\é también @lem:b.";
+
+        assert_eq!(references(content), ["thm:main", "lem:b"]);
     }
 }

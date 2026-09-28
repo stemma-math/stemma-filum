@@ -180,6 +180,11 @@ impl Bridge {
         if first.right != second.left {
             return Err(VaultError::DisconnectedBridges);
         }
+        // Going there and back again licenses nothing: a bridge relates two
+        // different definitions however it was obtained.
+        if first.left == second.right {
+            return Err(VaultError::SameDefinition);
+        }
         if first.correspondence != Correspondence::Audited
             || second.correspondence != Correspondence::Audited
         {
@@ -287,17 +292,21 @@ pub enum VaultError {
     UnauditedParent,
 }
 
+/// Whether a name says what is mathematically different about a definition,
+/// rather than numbering it or naming whose it is.
 fn distinguishes(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     let numbered = lower
         .split_whitespace()
         .last()
         .is_some_and(|word| word.chars().all(|character| character.is_ascii_digit()));
-    !name.is_empty()
-        && name.chars().any(char::is_alphabetic)
+    // Both apostrophes, since a keyboard that curls quotes writes the second.
+    let possessive = lower.ends_with("'s") || lower.ends_with("\u{2019}s");
+
+    name.chars().any(char::is_alphabetic)
         && !lower.starts_with("definition")
         && !lower.starts_with("version")
-        && !lower.ends_with("'s")
+        && !possessive
         && !numbered
 }
 
@@ -369,5 +378,63 @@ mod tests {
         second.correspondence = Correspondence::Audited;
         let composed = Bridge::compose(&first, &second, "composed").unwrap();
         assert!(matches!(composed.origin, BridgeOrigin::Derived { .. }));
+        assert_eq!((composed.left, composed.right), (one.id, three.id));
+
+        assert_eq!(
+            Bridge::compose(&second, &first, "composed"),
+            Err(VaultError::DisconnectedBridges)
+        );
+        let mut other = Bridge::direct(one.id, two.id, BridgeKind::Predicate, "other").unwrap();
+        other.correspondence = Correspondence::Audited;
+        assert_eq!(
+            Bridge::compose(&other, &second, "composed"),
+            Err(VaultError::DifferentBridgeKinds)
+        );
+        assert_eq!(
+            Bridge::compose(&first, &second, "  "),
+            Err(VaultError::MissingProof)
+        );
+    }
+
+    #[test]
+    fn a_bridge_there_and_back_again_is_not_a_bridge() {
+        let one = entry("Additive group");
+        let two = entry("Multiplicative group");
+        let mut there = Bridge::direct(one.id, two.id, BridgeKind::Structure, "there").unwrap();
+        let mut back = Bridge::direct(two.id, one.id, BridgeKind::Structure, "back").unwrap();
+        there.correspondence = Correspondence::Audited;
+        back.correspondence = Correspondence::Audited;
+
+        assert_eq!(
+            Bridge::compose(&there, &back, "composed"),
+            Err(VaultError::SameDefinition)
+        );
+        assert_eq!(
+            Bridge::direct(one.id, one.id, BridgeKind::Structure, "itself"),
+            Err(VaultError::SameDefinition)
+        );
+    }
+
+    #[test]
+    fn a_name_has_to_say_what_is_different() {
+        for undistinguished in [
+            "",
+            "   ",
+            "Definition 2",
+            "definition of a group",
+            "Version B",
+            "Group 3",
+            "Enric's",
+            "Enric\u{2019}s",
+            "42",
+        ] {
+            assert!(
+                !distinguishes(undistinguished),
+                "accepted `{undistinguished}`"
+            );
+        }
+        for distinguished in ["Topological group", "Group with involution", "Lie group"] {
+            assert!(distinguishes(distinguished), "refused `{distinguished}`");
+        }
     }
 }

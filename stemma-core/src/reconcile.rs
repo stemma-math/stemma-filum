@@ -97,7 +97,7 @@ pub fn between(base: &str, here: &str, there: &str) -> Result<Vec<Conflict>, Tro
     let mut found: Vec<Conflict> = versions
         .ids()
         .into_iter()
-        .filter(|id| !versions.settled(id))
+        .filter(|id| versions.settled(id).is_none())
         .map(|id| Conflict {
             block: id,
             label: versions.label(&id),
@@ -124,27 +124,20 @@ pub fn merge(
     decisions: &BTreeMap<BlockId, Keep>,
 ) -> Result<String, Trouble> {
     let versions = Versions::read(base, here, there)?;
-    let mut kept: BTreeMap<BlockId, Option<&Block>> = BTreeMap::new();
+    let mut kept: BTreeMap<BlockId, &Block> = BTreeMap::new();
 
     for id in versions.ids() {
-        let (was, mine, theirs) = (
-            versions.base.get(&id),
-            versions.here.get(&id),
-            versions.there.get(&id),
-        );
-
-        let chosen = if mine == theirs || was == theirs {
-            mine
-        } else if was == mine {
-            theirs
-        } else {
-            match decisions.get(&id) {
-                Some(Keep::Here) => mine,
-                Some(Keep::There) => theirs,
+        let chosen = match versions.settled(&id) {
+            Some(settled) => settled,
+            None => match decisions.get(&id) {
+                Some(Keep::Here) => versions.here.get(&id),
+                Some(Keep::There) => versions.there.get(&id),
                 None => return Err(Trouble::Undecided(versions.label(&id))),
-            }
+            },
         };
-        kept.insert(id, chosen);
+        if let Some(block) = chosen {
+            kept.insert(id, block);
+        }
     }
 
     // This machine's order, less what goes, plus what arrives from the
@@ -155,21 +148,22 @@ pub fn merge(
         .blocks
         .iter()
         .map(|block| *block.id())
-        .filter(|id| kept.get(id).copied().flatten().is_some())
+        .filter(|id| kept.contains_key(id))
         .collect();
 
     let mut previous: Option<BlockId> = None;
     for block in &versions.there.document.blocks {
         let id = *block.id();
-        if !order.contains(&id) && kept.get(&id).copied().flatten().is_some() {
+        if !kept.contains_key(&id) {
+            continue;
+        }
+        if !order.contains(&id) {
             let at = previous
                 .and_then(|previous| order.iter().position(|one| one == &previous))
                 .map_or(0, |position| position + 1);
             order.insert(at, id);
         }
-        if order.contains(&id) {
-            previous = Some(id);
-        }
+        previous = Some(id);
     }
 
     let merged = Document {
@@ -186,10 +180,7 @@ pub fn merge(
             &versions.there.document.description,
         )
         .clone(),
-        blocks: order
-            .iter()
-            .filter_map(|id| kept.get(id).copied().flatten().cloned())
-            .collect(),
+        blocks: order.iter().map(|id| kept[id].clone()).collect(),
     };
 
     Ok(merged.to_text())
@@ -286,10 +277,21 @@ impl Versions {
             .collect()
     }
 
-    /// Whether a block needs nobody's decision.
-    fn settled(&self, id: &BlockId) -> bool {
+    /// The version of a block that stands without anybody deciding, or
+    /// `None` when both machines changed it and differently.
+    ///
+    /// What stands is itself optional: a block one machine deleted and
+    /// the other left alone stands deleted.
+    fn settled(&self, id: &BlockId) -> Option<Option<&Block>> {
         let (was, mine, theirs) = (self.base.get(id), self.here.get(id), self.there.get(id));
-        mine == theirs || was == mine || was == theirs
+
+        if mine == theirs || was == theirs {
+            Some(mine)
+        } else if was == mine {
+            Some(theirs)
+        } else {
+            None
+        }
     }
 
     /// What to call a block: its siglum, the statement a proof is of, or
@@ -471,6 +473,18 @@ mod tests {
         )
         .unwrap();
 
+        assert!(!merged.contains("def:group"));
+    }
+
+    #[test]
+    fn a_block_both_machines_deleted_stays_deleted_without_asking() {
+        let original = base();
+        let mut gone = original.clone();
+        gone.blocks.remove(0);
+        let (base, gone) = (original.to_text(), gone.to_text());
+
+        assert_eq!(between(&base, &gone, &gone).unwrap(), Vec::new());
+        let merged = merge(&base, &gone, &gone, &BTreeMap::new()).unwrap();
         assert!(!merged.contains("def:group"));
     }
 

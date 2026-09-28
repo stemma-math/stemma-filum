@@ -208,6 +208,86 @@ mod tests {
     }
 
     #[test]
+    fn every_event_is_filed_under_the_kind_it_is_sent_as() {
+        let group = || "algebra".to_owned();
+        let line = || "quotients".to_owned();
+        let events = [
+            Event::Line {
+                group: group(),
+                side: Side::Private,
+                line: line(),
+                change: LineChange::Started,
+                revision: None,
+            },
+            Event::Claim {
+                group: group(),
+                side: Side::Shared,
+                line: line(),
+                change: ClaimChange::Asked,
+            },
+            Event::Group {
+                group: group(),
+                change: GroupChange::Joined,
+            },
+            Event::Job {
+                group: group(),
+                job: "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned(),
+                state: "queued".to_owned(),
+            },
+            Event::Proposal {
+                group: group(),
+                proposal: "prp:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned(),
+                state: "awaiting_review".to_owned(),
+            },
+            Event::Machine {
+                machine: "mch:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned(),
+            },
+            Event::Library {
+                group: group(),
+                side: Side::Shared,
+                commit: "0123456".to_owned(),
+                change: LibraryChange::PinsChanged,
+            },
+            Event::Check {
+                group: group(),
+                side: Side::Shared,
+                line: line(),
+                revision: 2,
+                block: BlockId::generate(),
+                state: Verification::Refuted,
+                diagnostic: String::new(),
+            },
+            Event::FormalAudit {
+                group: group(),
+                line: line(),
+                block: BlockId::generate(),
+                state: "audited".to_owned(),
+            },
+            Event::Reset,
+        ];
+
+        for event in events {
+            let json = serde_json::to_value(&event).unwrap();
+            assert_eq!(json["kind"], event.kind(), "for {event:?}");
+            assert_eq!(serde_json::from_value::<Event>(json).unwrap(), event);
+        }
+    }
+
+    #[test]
+    fn what_is_absent_from_an_event_is_left_out_of_it() {
+        let started = Event::Line {
+            group: "algebra".to_owned(),
+            side: Side::Private,
+            line: "quotients".to_owned(),
+            change: LineChange::Started,
+            revision: None,
+        };
+        let json = serde_json::to_value(&started).unwrap();
+
+        assert!(json.get("revision").is_none());
+    }
+
+    #[test]
     fn a_reset_carries_nothing_but_itself() {
         assert_eq!(
             serde_json::to_string(&Event::Reset).unwrap(),
