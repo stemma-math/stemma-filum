@@ -22,6 +22,7 @@ pub mod id;
 pub mod job;
 pub mod line;
 pub mod machine;
+mod markup;
 pub mod model;
 pub mod package;
 pub mod proposal;
