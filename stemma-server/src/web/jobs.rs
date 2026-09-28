@@ -30,7 +30,7 @@ use crate::store::groups;
 use crate::store::jobs::{self, Job, Launch};
 use crate::store::machines::{self, Machine};
 
-/// A completion report, including the phase-five form without a proposal.
+/// A completion report, with or without a proposal.
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub enum Report {
