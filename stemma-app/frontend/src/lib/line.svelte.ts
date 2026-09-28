@@ -7,7 +7,7 @@ import { api, said } from "./api";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
 import { fail, tell } from "./status.svelte";
-import type { Claim, Diagnostic, LeanDigest, LineDocument, Node, Offer, OpenLine, Preview } from "./types";
+import type { BlockCheck, Claim, CustomTask, Diagnostic, LineDocument, Node, Offer, OpenLine, Preview } from "./types";
 
 const SAVE_AFTER = 450;
 const PREVIEW_AFTER = 650;
@@ -15,6 +15,20 @@ const PREVIEW_AFTER = 650;
 const STEP_AFTER = 600;
 
 export type SaveState = "saved" | "saving" | "not saved";
+
+/** One agent that can be asked, on the machine that offers it. */
+export type AgentChoice = {
+  /** `machine|agent`, as `LineSession.agent` holds it. */
+  value: string;
+  /** What the agent is called. */
+  agent: string;
+  /** What its machine is called. */
+  machine: string;
+  /** Why it cannot be used now, when it cannot. */
+  reason: string | null;
+  models: string[];
+  efforts: string[];
+};
 
 export class LineSession {
   opened = $state<OpenLine>() as OpenLine;
@@ -60,29 +74,45 @@ export class LineSession {
     this.document = opened.document ? structuredClone(opened.document) : null;
     this.#history = new History(this.#text() ?? "");
     this.#remember(opened);
-    const first = this.agents.find((one) => !one.reason) ?? this.agents[0];
-    this.agent = first?.value ?? "";
-    this.chooseDefaults();
+    this.choose(this.#usable());
   }
 
   /** Every agent on every machine that works for this group. */
-  get agents(): { value: string; label: string; reason: string | null }[] {
+  get agents(): AgentChoice[] {
     return this.offers.flatMap((machine) =>
       machine.agents.map((agent) => ({
         value: `${machine.machine}|${agent.name}`,
-        label: `${machine.label} · ${agent.called}`,
+        agent: agent.called,
+        machine: machine.label,
         reason: agent.reason,
+        models: agent.models,
+        efforts: agent.efforts,
       })),
     );
+  }
+
+  /** The agent that is asked, when there is one. */
+  get chosenAgent(): AgentChoice | undefined {
+    return this.agents.find((one) => one.value === this.agent);
+  }
+
+  /** The first agent that can be used, or else the first there is. */
+  #usable(): string {
+    return (this.agents.find((one) => !one.reason) ?? this.agents[0])?.value ?? "";
+  }
+
+  /** Asks `agent` from now on, with the first model and effort it declares. */
+  choose(agent: string) {
+    this.agent = agent;
+    const chosen = this.chosenAgent;
+    this.model = chosen?.models[0] ?? "";
+    this.effort = chosen?.efforts[0] ?? "";
   }
 
   /** Asks the chosen agent to do each task, one job per task. Everything
    * is saved first, because the job works on what the server has, and
    * what is saved is sent before the job is asked for. */
-  async ask(
-    tasks: string[],
-    custom?: { request: string; blocks: string[]; library: boolean },
-  ): Promise<number> {
+  async ask(tasks: string[], custom?: CustomTask): Promise<number> {
     const [machine, agent] = this.agent.split("|");
     if (!machine || !agent) {
       tell("Choose an agent first.");
@@ -92,17 +122,7 @@ export class LineSession {
     let started = 0;
     for (const task of tasks) {
       try {
-        await api.launch(
-          this.path,
-          task,
-          agent,
-          machine,
-          this.model || null,
-          this.effort || null,
-          custom?.request ?? null,
-          custom?.blocks ?? [],
-          custom?.library ?? false,
-        );
+        await api.launch(this.path, task, agent, machine, this.model || null, this.effort || null, custom ?? null);
         started += 1;
       } catch (error) {
         fail(error);
@@ -111,16 +131,6 @@ export class LineSession {
     }
     tell(started === 1 ? "Job started." : `${started} jobs started.`);
     return started;
-  }
-
-  /** Chooses the first declared model and effort when the agent changes. */
-  chooseDefaults() {
-    const [machine, agent] = this.agent.split("|");
-    const offered = this.offers
-      .find((one) => one.machine === machine)
-      ?.agents.find((one) => one.name === agent);
-    this.model = offered?.models[0] ?? "";
-    this.effort = offered?.efforts[0] ?? "";
   }
 
   get path() {
@@ -146,7 +156,7 @@ export class LineSession {
   }
 
   /** Lean's current printed result for one stable block. */
-  formalOf(block: string): LeanDigest["blocks"][number] | undefined {
+  formalOf(block: string): BlockCheck | undefined {
     return this.opened.lean?.blocks.find((result) => result.block === block);
   }
 
@@ -252,7 +262,13 @@ export class LineSession {
   /** Writes the line to disk if it differs from what is saved. */
   async save() {
     const text = this.#text();
-    if (text === null || (text === this.#saved && this.#savesInFlight === 0)) return;
+    if (text === null) return;
+    if (text === this.#saved && this.#savesInFlight === 0) {
+      // Edits that came back to what is on disk leave nothing to save.
+      window.clearTimeout(this.#saveTimer);
+      this.saveState = "saved";
+      return;
+    }
     const path = this.path;
     const document = $state.snapshot(this.document) as LineDocument;
     window.clearTimeout(this.#saveTimer);
@@ -346,9 +362,7 @@ export class LineSession {
   /** The machines working for the group changed what they offer. */
   offersChanged(offers: Offer[]) {
     this.offers = offers;
-    if (!this.agents.some((one) => one.value === this.agent && !one.reason)) {
-      this.agent = (this.agents.find((one) => !one.reason) ?? this.agents[0])?.value ?? "";
-    }
+    if (this.chosenAgent?.reason !== null) this.choose(this.#usable());
   }
 
   async #claimWith(ask: () => Promise<Claim>) {

@@ -4,6 +4,7 @@
 import { api } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
+import { lineLabel, sameLine, statesChanged, touchedLines, type Named } from "./lines";
 import { touchedBlocks } from "./review";
 import { fail, tell } from "./status.svelte";
 import type { Known, LineDocument, LineState, Mirrored, Review, Signed, Waiting } from "./types";
@@ -42,6 +43,10 @@ class App {
   mirrored = $state<Mirrored | null>(null);
 
   #openRequest = latestRequest();
+  #groupsRequest = latestRequest();
+  #linesRequest = latestRequest();
+  #waitingRequest = latestRequest();
+  #touchedRequest = latestRequest();
   #renewal = 0;
 
   /** Lines of the current group, split by who can see them. */
@@ -65,9 +70,16 @@ class App {
     return this.lines.find((line) => line.path === entry.path)?.title ?? entry.name;
   }
 
-  /** Reads who this machine acts for and, when signed in, loads the rail. */
+  /** The line open in the editor, if the editor is showing. */
+  get #openLine(): LineSession | null {
+    return this.stage === "editor" ? this.line : null;
+  }
+
+  /** Reads who this machine acts for and, when signed in, loads the rail
+   * and opens a proposal a link asked for meanwhile. */
   async boot() {
     this.ready = false;
+    window.clearInterval(this.#renewal);
     try { this.signed = await api.whoami(); } catch { this.signed = null; }
     if (this.signed) {
       try { await this.refreshWaiting(); } catch { this.waiting = []; this.recent = []; }
@@ -75,12 +87,12 @@ class App {
       await this.#loadGroups();
       await this.#loadLines();
       this.stage = "welcome";
-      window.clearInterval(this.#renewal);
       this.#renewal = window.setInterval(() => {
-        if (this.stage === "editor" && this.line?.writing) void this.line.takeClaim();
+        if (this.#openLine?.writing) void this.#openLine.takeClaim();
       }, RENEW);
     }
     this.ready = true;
+    await this.openPendingReview();
   }
 
   async signOut() {
@@ -98,20 +110,34 @@ class App {
   }
 
   async #loadGroups() {
-    try { this.groups = await api.groups(); } catch { this.groups = []; }
+    const active = this.#groupsRequest();
     // Offline, nothing is offered: the page it opens is on the server.
-    try { this.managed = await api.managedGroups(); } catch { this.managed = []; }
-    if (this.group && !this.groups.includes(this.group)) this.group = null;
-    this.group ??= this.groups[0] ?? null;
+    const [groups, managed] = await Promise.all([
+      api.groups().catch((): string[] => []),
+      api.managedGroups().catch((): string[] => []),
+    ]);
+    if (!active()) return;
+    this.groups = groups;
+    this.managed = managed;
+    if (this.group && !groups.includes(this.group)) this.group = null;
+    this.group ??= groups[0] ?? null;
   }
 
   async #loadLines() {
+    const active = this.#linesRequest();
     try {
-      this.lines = await api.lines();
+      const lines = await api.lines();
+      if (active()) this.lines = lines;
     } catch (error) {
+      if (!active()) return;
       fail(error);
       this.lines = [];
     }
+  }
+
+  /** The path of a line on this machine, if it is here. */
+  #pathOf(line: Named): string | undefined {
+    return this.lines.find((known) => sameLine(known, line))?.path;
   }
 
   /** Moves to another view, putting the open line down first. False when
@@ -122,8 +148,10 @@ class App {
       this.line = null;
     }
     this.#openRequest();
-    if (next !== "editor") this.review = null;
-    if (next !== "editor") this.proposalBlocks = [];
+    if (next !== "editor") {
+      this.review = null;
+      this.proposalBlocks = [];
+    }
     this.stage = next;
     return true;
   }
@@ -140,7 +168,7 @@ class App {
   async open(path: string) {
     const active = this.#openRequest();
     this.review = null;
-    const leaving = this.stage === "editor" ? this.line : null;
+    const leaving = this.#openLine;
     try {
       await leaving?.save();
       const opened = await api.openLine(path);
@@ -163,18 +191,40 @@ class App {
     try {
       this.panel = null;
       const offered = await api.proposal(proposal);
-      let path = this.lines.find((line) => line.group === offered.group && line.side === offered.side && line.name === offered.line)?.path;
+      const where = { group: offered.group, side: offered.side, name: offered.line };
+      let path = this.#pathOf(where);
       if (!path) {
         await this.lookAgain();
-        path = this.lines.find((line) => line.group === offered.group && line.side === offered.side && line.name === offered.line)?.path;
+        path = this.#pathOf(where);
       }
       if (!path) throw new Error(`The line ${offered.line} is not on this machine yet.`);
-      if (this.stage !== "editor" || this.line?.path !== path) await this.open(path);
-      else await this.line.flush();
-      if (this.line?.path === path) this.review = await api.proposal(proposal, this.line.opened.source);
+      if (this.#openLine?.path !== path) await this.open(path);
+      else await this.#openLine.flush();
+
+      const line = this.#openLine;
+      if (line?.path !== path) return;
+      const review = await api.proposal(proposal, line.opened.source);
+      if (this.#openLine === line) this.review = review;
     } catch (error) {
       fail(error);
     }
+  }
+
+  /** Opens the proposal a `stemma://` link asked for, if one is waiting
+   * and somebody is signed in to review it. */
+  async openPendingReview() {
+    if (!this.ready || !this.signed) return;
+    const proposal = await api.takeOpenReview().catch(() => null);
+    if (proposal) await this.openReview(proposal);
+  }
+
+  /** Reads the review being shown again, against the open line as it is
+   * now. A review closed meanwhile stays closed. */
+  async refreshReview() {
+    const shown = this.review;
+    if (!shown) return;
+    const review = await api.proposal(shown.proposal, this.line?.opened.source ?? null);
+    if (this.review?.proposal === shown.proposal) this.review = review;
   }
 
   /** Runs a command that changes which lines exist; it brings the change
@@ -200,22 +250,19 @@ class App {
    * the open line too when it was one of them. */
   async mirror(said: Mirrored) {
     this.mirrored = said;
-    const report = said.report;
-    const touched = [...report.arrived, ...report.merged, ...report.gone];
-    const states = new Map(said.lines.map((line) => [`${line.group}/${line.side}/${line.name}`, line.state]));
-    const stale = this.lines.some((line) => (states.get(`${line.group}/${line.side}/${line.name}`) ?? "sent") !== line.state);
-    if (touched.length || stale) await this.lookAgain();
+    const touched = touchedLines(said);
+    if (touched.size || statesChanged(this.lines, said)) await this.lookAgain();
 
-    const open = this.stage === "editor" ? this.line : null;
-    const entry = open?.opened.entry;
-    if (open && entry && touched.includes(`${entry.group}/${entry.side}/${entry.name}`)) {
-      if (this.lines.some((line) => line.path === entry.path)) await open.reread();
+    const open = this.#openLine;
+    if (open && touched.has(lineLabel(open.opened.entry))) {
+      if (this.lines.some((line) => line.path === open.path)) await open.reread();
       else await this.goTo("welcome");
+      if (this.#openLine === open) {
+        // A review that cannot be read now stays until the next round.
+        await this.refreshReview().catch(() => {});
+      }
     }
-    if (this.review && open && entry && touched.includes(`${entry.group}/${entry.side}/${entry.name}`)) {
-      try { this.review = await api.proposal(this.review.proposal, open.opened.source); } catch { /* Keep the last review until the next event. */ }
-    }
-    for (const aside of report.aside) {
+    for (const aside of said.report.aside) {
       tell(`${aside.line}: a version was kept at ${aside.path}, because ${aside.why}.`);
     }
   }
@@ -233,19 +280,28 @@ class App {
     }
   }
 
-  async refreshWaiting() {
+  /** Reads the proposals waiting for this person again, and answers them.
+   * When reads overlap, only the latest is shown. */
+  async refreshWaiting(): Promise<Waiting[]> {
+    const active = this.#waitingRequest();
     const reviews = await api.proposals();
-    this.waiting = reviews.waiting;
-    this.recent = reviews.recent;
-    await this.refreshTouched();
+    if (active()) {
+      this.waiting = reviews.waiting;
+      this.recent = reviews.recent;
+      await this.refreshTouched();
+    }
+    return reviews.waiting;
   }
 
   /** Marks the standing blocks affected by any waiting offer for this line. */
   async refreshTouched() {
-    const line = this.stage === "editor" ? this.line : null;
-    const entry = line?.opened.entry;
-    if (!line?.document || !entry) { this.proposalBlocks = []; return; }
-    const relevant = this.waiting.filter((one) => one.group === entry.group && one.side === entry.side && one.line === entry.name);
+    const active = this.#touchedRequest();
+    const line = this.#openLine;
+    if (!line?.document) {
+      this.proposalBlocks = [];
+      return;
+    }
+    const relevant = this.waiting.filter((one) => sameLine(line.opened.entry, { ...one, name: one.line }));
     const marks = new Set<string>();
     await Promise.all(relevant.map(async (one) => {
       try {
@@ -253,17 +309,18 @@ class App {
         if (!review.stands) return;
         const base = JSON.parse(review.stands) as LineDocument;
         const offered = JSON.parse(review.source) as LineDocument;
-        for (const id of touchedBlocks(base, offered, line.document!)) marks.add(id);
+        if (!line.document) return;
+        for (const id of touchedBlocks(base, offered, line.document)) marks.add(id);
       } catch { /* A pending review may have been decided meanwhile. */ }
     }));
-    if (this.line === line) this.proposalBlocks = [...marks];
+    if (active() && this.line === line) this.proposalBlocks = [...marks];
   }
 
   /** Saves the open line and sends what can be sent before the window
    * closes. Throws when the edits could not be saved, so the close can be
    * refused; what cannot be sent now is kept here and leaves later. */
   async beforeClose() {
-    const line = this.stage === "editor" ? this.line : null;
+    const line = this.#openLine;
     if (line) {
       line.lock(true);
       try {

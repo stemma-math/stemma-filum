@@ -74,7 +74,7 @@
         await app.lookAgain();
       }
       await app.refreshWaiting();
-      app.review = await api.proposal(review.proposal, line.opened.source);
+      await app.refreshReview();
     } catch (error) {
       fail(error);
     } finally {
@@ -88,7 +88,7 @@
     try {
       await api.handoffProposal(review.proposal, handoffTo);
       await app.refreshWaiting();
-      app.review = await api.proposal(review.proposal, line.opened.source);
+      await app.refreshReview();
       tell("Review handed to the group member.");
     } catch (error) { fail(error); }
     finally { acting = false; }

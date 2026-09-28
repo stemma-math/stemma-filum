@@ -6,6 +6,7 @@
   import { app } from "../lib/app.svelte";
   import { latestRequest } from "../lib/lifecycle";
   import { setup } from "../lib/setup.svelte";
+  import { fail } from "../lib/status.svelte";
   import type { Beginning } from "../lib/types";
 
   const attempt = latestRequest();
@@ -71,7 +72,7 @@
     <p class="entrance__code identifier">{beginning.code}</p>
     <p class="entrance__text identifier">{beginning.url}</p>
     <div class="row__actions">
-      <button type="button" class="button button--primary" onclick={() => api.openLink(beginning!.url_complete).catch(() => {})}>Open it in the browser</button>
+      <button type="button" class="button button--primary" onclick={() => api.openLink(beginning!.url_complete).catch(fail)}>Open it in the browser</button>
       <button type="button" class="button" onclick={() => restart()}>Use a different server</button>
     </div>
     <p class="entrance__waiting"><span class="spinner" aria-hidden="true"></span>Waiting for approval in your browser…</p>

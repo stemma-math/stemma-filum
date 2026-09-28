@@ -4,13 +4,16 @@ export type Signed = { server: string; user: string };
 
 export type Beginning = { code: string; url: string; url_complete: string; interval: number };
 
+/** Which of a group's two repositories a line is in. */
+export type Side = "private" | "shared";
+
 /** Where a line stands: everything sent, something here not sent yet, or
  * a block changed here and elsewhere that needs a decision. */
 export type LineState = "sent" | "not_sent" | "needs_decision";
 
 export type Known = {
   group: string;
-  side: string;
+  side: Side;
   name: string;
   title: string | null;
   description: string | null;
@@ -22,7 +25,7 @@ export type Known = {
 export type Standing = {
   id: string;
   group: string;
-  side: string;
+  side: Side;
   name: string;
   state: LineState;
   /** Why it was not sent, the last time that was tried. */
@@ -53,7 +56,7 @@ export type Mirrored = {
   published: string[];
 };
 
-export type Entry = { group: string; side: string; name: string; path: string };
+export type Entry = { group: string; side: Side; name: string; path: string };
 
 /** A block of a line (`stemma_core::document::Block`). */
 export type Prose = { kind: "prose"; id: string; content: string };
@@ -98,30 +101,37 @@ export type Node = {
   at: number;
 };
 
+/** One Lean declaration marked for a block. */
+export type Declaration = {
+  name: string;
+  module: string;
+  statement: string;
+  sorry_free: boolean;
+  axioms: string[];
+  reaches: string[];
+  statement_closure: string;
+};
+
+/** What Lean established about one block. */
+export type BlockCheck = {
+  block: string;
+  state: "verified" | "refuted" | "unverified";
+  diagnostic: string;
+  declarations: Declaration[];
+};
+
+/** The Lean check of a line against the group's pinned toolchain. */
 export type LeanDigest = {
   lean: string;
   mathlib: string;
   compiled: boolean;
-  blocks: {
-    block: string;
-    state: "verified" | "refuted" | "unverified";
-    diagnostic: string;
-    declarations: {
-      name: string;
-      module: string;
-      statement: string;
-      sorry_free: boolean;
-      axioms: string[];
-      reaches: string[];
-      statement_closure: string;
-    }[];
-  }[];
+  blocks: BlockCheck[];
   diagnostic: string;
 };
 
 export type FormalReview = {
   blocks: {
-    check: LeanDigest["blocks"][number];
+    check: BlockCheck;
     reading: string;
   }[];
   impact: {
@@ -148,10 +158,13 @@ export type Diagnostic = { error: boolean; block: string | null; line: number | 
 
 export type Preview = { svg: string | null; diagnostics: Diagnostic[] };
 
+/** Whether an agent can be used (`stemma_core::machine::Availability`). */
+export type Availability = "ready" | "not_installed" | "not_signed_in" | "rate_limited";
+
 export type Agent = {
   name: string;
   called: string;
-  availability: string;
+  availability: Availability;
   reason: string | null;
   models: string[];
   efforts: string[];
@@ -169,7 +182,10 @@ export type Job = {
   cancel_requested: boolean;
 };
 
-export type Machine = { label: string; presence: string; agents: Agent[]; jobs: Job[] };
+/** Whether a machine is connected to the instance. */
+export type Presence = "awake" | "asleep";
+
+export type Machine = { label: string; presence: Presence; agents: Agent[]; jobs: Job[] };
 
 /** Where one item of the machine checklist stands (`stemma-app/src/setup.rs`). */
 export type SetupState = "done" | "attention" | "not_set_up" | "unknown";
@@ -190,9 +206,13 @@ export type Survey = {
 };
 
 /** What trying an agent out found. */
-export type Tried = { availability: string; said: string };
+export type Tried = { availability: Availability; said: string };
 
 export type Offer = { machine: string; label: string; presence: string; agents: Agent[] };
+
+/** A request written by a person rather than one of the offered tasks,
+ * with the blocks it may change and whether the Lean library may change. */
+export type CustomTask = { request: string; blocks: string[]; library: boolean };
 
 export type Claim = {
   standing: "writing" | "waiting" | "open";
@@ -279,12 +299,18 @@ export type Review = {
   note: string | null;
   reviewer: string | null;
   decided_by: string | null;
-  members: { id: string; name: string }[];
+  members: ReviewMember[];
   lean_source: string | null;
   formal_review: FormalReview | null;
-  library_files: { path: string; rows: Moved[] }[];
+  library_files: LibraryFile[];
   findings: string[];
 };
+
+/** A member who may review a shared proposal. */
+export type ReviewMember = { id: string; name: string };
+
+/** One file of the group's Lean library that a proposal changes. */
+export type LibraryFile = { path: string; rows: Moved[] };
 
 export type Verdict = "accept" | "reject" | "ask_again";
 
@@ -294,11 +320,14 @@ export type Vault = {
     id: string;
     left: string;
     right: string;
-    kind: string;
+    kind: BridgeKind;
     correspondence: string;
     derived: boolean;
   }[];
 };
+
+/** What sort of equivalence a bridge proves. */
+export type BridgeKind = "predicate" | "structure";
 
 export type AuditTarget = "entry" | "bridge";
 
@@ -309,13 +338,19 @@ export type SignInState = "signed" | "waiting" | "nothing" | "refused" | "ran_ou
 
 /** What the instance said changed (`stemma_core::event::Event`). */
 export type ServerEvent =
-  | { kind: "line"; group: string; side: string; line: string; change: "started" | "written" | "shared" | "deleted"; revision?: number }
-  | { kind: "claim"; group: string; side: string; line: string; change: "taken" | "released" | "asked" }
+  | { kind: "line"; group: string; side: Side; line: string; change: "started" | "written" | "shared" | "deleted"; revision?: number }
+  | { kind: "claim"; group: string; side: Side; line: string; change: "taken" | "released" | "asked" }
   | { kind: "group"; group: string; change: "created" | "joined" }
   | { kind: "job"; group: string; job: string; state: string }
   | { kind: "proposal"; group: string; proposal: string; state: string }
-  | { kind: "library"; group: string; side: string; commit: string; change: string }
-  | { kind: "check"; group: string; side: string; line: string; revision: number; block: string; state: string; diagnostic?: string }
+  | { kind: "library"; group: string; side: Side; commit: string; change: string }
+  | { kind: "check"; group: string; side: Side; line: string; revision: number; block: string; state: string; diagnostic?: string }
   | { kind: "formal_audit"; group: string; line: string; block: string; state: string }
   | { kind: "machine"; machine: string }
   | { kind: "reset" };
+
+/** What the shell passes on from the instance's stream (`stemma-app/src/live.rs`). */
+export type Heard =
+  | { heard: "connected" }
+  | { heard: "changed"; event: ServerEvent }
+  | { heard: "lost"; reason: string };

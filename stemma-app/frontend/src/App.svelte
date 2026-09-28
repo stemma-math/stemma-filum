@@ -8,8 +8,9 @@
   import Shell from "./components/Shell.svelte";
   import Toasts from "./components/Toasts.svelte";
   import Tooltips from "./components/Tooltips.svelte";
-  import { api, onMachineChosen, onRepaired, onViewChosen, said } from "./lib/api";
+  import { api, onCloseRequested, onMachineChosen, onOpenReview, onRepaired, onViewChosen, said } from "./lib/api";
   import { app } from "./lib/app.svelte";
+  import { subscriptions } from "./lib/lifecycle";
   import { live } from "./lib/live.svelte";
   import { setup } from "./lib/setup.svelte";
   import { fail, setRemedies, tell } from "./lib/status.svelte";
@@ -35,65 +36,40 @@
   });
 
   onMount(() => {
+    const listeners = subscriptions();
     let closing = false;
-    let stop: (() => void) | undefined;
 
     // Closing flushes and records the open line; if that fails the window
     // stays open so nothing is lost.
-    window.__TAURI__?.window
-      ?.getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        if (closing) {
-          event.preventDefault();
-          return;
-        }
-        closing = true;
-        try {
-          await app.beforeClose();
-        } catch (error) {
-          event.preventDefault();
-          fail(`The window remains open because your changes could not be saved: ${said(error)}`);
-        } finally {
-          closing = false;
-        }
-      })
-      .then((unlisten) => (stop = unlisten));
+    listeners.add(onCloseRequested(async (event) => {
+      if (closing) {
+        event.preventDefault();
+        return;
+      }
+      closing = true;
+      try {
+        await app.beforeClose();
+      } catch (error) {
+        event.preventDefault();
+        fail(`The window remains open because your changes could not be saved: ${said(error)}`);
+      } finally {
+        closing = false;
+      }
+    }));
 
-    let unhear: (() => void) | undefined;
-    void onViewChosen((view) => {
+    listeners.add(onViewChosen((view) => {
       if (view === "blocks" || view === "pdf") app.view = view;
-    }).then((stop) => (unhear = stop));
-
-    let unchoose: (() => void) | undefined;
-    void onMachineChosen((action) => {
+    }));
+    listeners.add(onMachineChosen((action) => {
       if (action === "setup") setup.open = true;
       if (action === "remove") setup.removing = true;
-    }).then((stop) => (unchoose = stop));
+    }));
+    listeners.add(onRepaired(() => void setup.load()));
+    listeners.add(onOpenReview(() => void app.openPendingReview()));
+    listeners.add(live.start());
 
-    let unrepair: (() => void) | undefined;
-    void onRepaired(() => void setup.load()).then((stop) => (unrepair = stop));
-
-    let unlisten: (() => void) | undefined;
-    void live.start().then((stop) => (unlisten = stop));
-
-    let stopReviews: (() => void) | undefined;
-    void window.__TAURI__?.event?.listen<string>("stemma:open-review", (event) => {
-      if (app.ready && app.signed) void app.openReview(event.payload);
-    }).then((stop) => (stopReviews = stop));
-
-    void app.boot().then(async () => {
-      if (!app.signed) return;
-      const proposal = await api.takeOpenReview().catch(() => null);
-      if (proposal) await app.openReview(proposal);
-    });
-    return () => {
-      stop?.();
-      unhear?.();
-      unchoose?.();
-      unrepair?.();
-      unlisten?.();
-      stopReviews?.();
-    };
+    void app.boot();
+    return () => listeners.stop();
   });
 </script>
 

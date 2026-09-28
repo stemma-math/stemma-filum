@@ -7,20 +7,20 @@
 // window or to the network looks at everything once, in case the stream
 // missed it.
 
-import { jobs } from "../line/jobs.svelte";
-import { api } from "./api";
+import { api, onHeard, onMirrored } from "./api";
 import { app } from "./app.svelte";
+import { jobs } from "./jobs.svelte";
+import { subscriptions } from "./lifecycle";
+import { sameLine } from "./lines";
 import { tell } from "./status.svelte";
-import type { Mirrored, ServerEvent } from "./types";
-
-type Said =
-  | { heard: "connected" }
-  | { heard: "changed"; event: ServerEvent }
-  | { heard: "lost"; reason: string };
+import type { Heard, ServerEvent } from "./types";
 
 /** How long to gather notices before acting on them: a burst of writing
  * is one look, not one per keystroke that reached the server. */
 const GATHER = 300;
+
+/** What a notice asks to look at again. */
+type Look = "everything" | "lines" | "claim" | "jobs" | "proposals" | "offers";
 
 class Live {
   /** Whether the stream to the instance is open. Null until it has tried. */
@@ -28,19 +28,15 @@ class Live {
   /** Why it is not, when it is not. */
   reason = $state<string | null>(null);
 
-  #pending = new Set<string>();
+  #pending = new Set<Look>();
   #newProposals = new Set<string>();
   #timer = 0;
 
   /** Starts listening; returns how to stop. */
-  async start(): Promise<() => void> {
-    const listen = window.__TAURI__?.event?.listen;
-    const stopHearing = listen
-      ? await listen<Said>("stemma:heard", (event) => this.#hear(event.payload))
-      : () => {};
-    const stopMirroring = listen
-      ? await listen<Mirrored>("stemma:mirror", (event) => void app.mirror(event.payload))
-      : () => {};
+  start(): () => void {
+    const listeners = subscriptions();
+    listeners.add(onHeard((heard) => this.#hear(heard)));
+    listeners.add(onMirrored((mirrored) => void app.mirror(mirrored)));
 
     const everything = () => this.#soon("everything");
     const seen = () => {
@@ -51,16 +47,16 @@ class Live {
     document.addEventListener("visibilitychange", seen);
 
     return () => {
-      stopHearing();
-      stopMirroring();
+      listeners.stop();
+      window.clearTimeout(this.#timer);
       window.removeEventListener("focus", everything);
       window.removeEventListener("online", everything);
       document.removeEventListener("visibilitychange", seen);
     };
   }
 
-  #hear(said: Said) {
-    switch (said.heard) {
+  #hear(heard: Heard) {
+    switch (heard.heard) {
       case "connected":
         this.connected = true;
         this.reason = null;
@@ -68,10 +64,10 @@ class Live {
         break;
       case "lost":
         this.connected = false;
-        this.reason = said.reason;
+        this.reason = heard.reason;
         break;
       case "changed":
-        this.#changed(said.event);
+        this.#changed(heard.event);
         break;
     }
   }
@@ -83,9 +79,7 @@ class Live {
         break;
       case "claim": {
         const open = app.line?.opened.entry;
-        if (open && open.group === event.group && open.side === event.side && open.name === event.line) {
-          this.#soon("claim");
-        }
+        if (open && sameLine(open, { ...event, name: event.line })) this.#soon("claim");
         break;
       }
       case "job":
@@ -118,7 +112,7 @@ class Live {
     }
   }
 
-  #soon(what: string) {
+  #soon(what: Look) {
     if (!app.signed) return;
     this.#pending.add(what);
     window.clearTimeout(this.#timer);
@@ -137,18 +131,19 @@ class Live {
     if (all || wanted.has("claim")) looks.push(app.line?.lookAtClaim() ?? Promise.resolve());
     if (all || wanted.has("jobs")) looks.push(jobs.refresh());
     if (all || wanted.has("proposals")) looks.push((async () => {
-      await app.refreshWaiting();
+      const waiting = await app.refreshWaiting();
       for (const proposal of newProposals) {
-        const waiting = app.waiting.find((one) => one.proposal === proposal);
-        if (waiting) tell(`New proposal for ${waiting.line}.`);
+        const arrived = waiting.find((one) => one.proposal === proposal);
+        if (arrived) tell(`New proposal for ${arrived.line}.`);
       }
-      if (app.review) app.review = await api.proposal(app.review.proposal, app.line?.opened.source ?? null);
-    })().catch(() => {}));
+      await app.refreshReview();
+    })());
     if (all || wanted.has("offers")) {
       const line = app.line;
-      if (line) looks.push(api.offers(line.opened.entry.group).then((offers) => line.offersChanged(offers)).catch(() => {}));
+      if (line) looks.push(api.offers(line.opened.entry.group).then((offers) => line.offersChanged(offers)));
     }
 
+    // Whatever cannot be read now is read again on the next notice.
     await Promise.allSettled(looks);
   }
 }
