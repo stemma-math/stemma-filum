@@ -69,7 +69,7 @@
           {#if group === app.group}<span class="menu__hint"><Glyph name="check" small /></span>{/if}
         </button>
       {:else}
-        <p class="menu__heading">No groups on this machine.</p>
+        <p class="menu__empty">No groups on this machine.</p>
       {/each}
     </Bubble>
   </div>
@@ -109,11 +109,19 @@
     <Connection />
 
     <div class="user-card">
-      <span class="avatar" aria-hidden="true">{initials(signed.user)}</span>
-      <span class="user-card__who">
-        <span class="identifier user-card__id">{signed.user}</span>
-        <span class="identifier user-card__server">{signed.server}</span>
-      </span>
+      <button
+        type="button"
+        class="user-card__me"
+        aria-label="Your profile, on the web"
+        data-tip="Your profile, in your browser"
+        onclick={() => app.openOnWeb("/profile")}
+      >
+        <span class="avatar" aria-hidden="true">{initials(signed.user)}</span>
+        <span class="user-card__who">
+          <span class="identifier user-card__id">{signed.user}</span>
+          <span class="identifier user-card__server">{signed.server}</span>
+        </span>
+      </button>
       <button
         type="button"
         class="user-card__settings"

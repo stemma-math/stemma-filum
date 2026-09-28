@@ -4,6 +4,9 @@ import "@stemma-math/identity/components.css";
 import "./app.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
+// Imported for its effect: the chosen appearance is on the root before
+// anything is drawn.
+import "./lib/appearance.svelte";
 import { fail } from "./lib/status.svelte";
 
 // macOS draws its window buttons over the sidebar, which leaves room.

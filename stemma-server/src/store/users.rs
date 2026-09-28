@@ -188,6 +188,43 @@ pub fn set_password(connection: &Connection, id: &UserId, password_hash: &str) -
     Ok(())
 }
 
+/// Changes what somebody is called on screen.
+pub fn set_display_name(connection: &Connection, id: &UserId, display_name: &str) -> Result<()> {
+    connection
+        .execute(
+            "UPDATE users SET display_name = ?2 WHERE id = ?1",
+            params![id.to_string(), display_name.trim()],
+        )
+        .context("cannot change the name")?;
+
+    Ok(())
+}
+
+/// Moves an account to another address, unless somebody else has it.
+///
+/// The address is also a way to log in, so two accounts can never share
+/// one. Keeping one's own address is not a change and not an error.
+pub fn set_email(
+    connection: &Connection,
+    id: &UserId,
+    email: &str,
+) -> Result<Result<(), NotCreated>> {
+    let email = email.trim().to_lowercase();
+
+    if by_email(connection, &email)?.is_some_and(|holder| holder.id != *id) {
+        return Ok(Err(NotCreated::EmailTaken(email)));
+    }
+
+    connection
+        .execute(
+            "UPDATE users SET email = ?2 WHERE id = ?1",
+            params![id.to_string(), email],
+        )
+        .context("cannot change the address")?;
+
+    Ok(Ok(()))
+}
+
 /// Stops an account being used, or lets it be used again.
 pub fn set_suspended(connection: &Connection, id: &UserId, suspended: bool) -> Result<()> {
     let clause = match suspended {
@@ -393,6 +430,47 @@ mod tests {
             .query_one("SELECT count(*) FROM instance_grants", [], |row| row.get(0))
             .unwrap();
         assert_eq!(records, 1, "the revoked grant left the record");
+    }
+
+    #[test]
+    fn a_name_and_an_address_can_be_changed() {
+        let database = test_database();
+        let connection = database.connection();
+        let user = ana(connection);
+
+        set_display_name(connection, &user.id, "  Ana F. ").unwrap();
+        set_email(connection, &user.id, " Ana.F@Example.org")
+            .unwrap()
+            .unwrap();
+
+        let changed = by_id(connection, &user.id).unwrap().unwrap();
+        assert_eq!(changed.display_name, "Ana F.");
+        assert_eq!(changed.email, "ana.f@example.org");
+        assert_eq!(
+            by_login(connection, "ana.f@example.org").unwrap(),
+            Some(changed)
+        );
+        assert_eq!(by_login(connection, "ana@example.org").unwrap(), None);
+    }
+
+    #[test]
+    fn an_address_somebody_else_has_cannot_be_taken() {
+        let database = test_database();
+        let connection = database.connection();
+        let user = ana(connection);
+        create(connection, &slug("bo"), "bo@example.org", "Bo", "h")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            set_email(connection, &user.id, "BO@example.org").unwrap(),
+            Err(NotCreated::EmailTaken("bo@example.org".to_owned()))
+        );
+        assert_eq!(
+            set_email(connection, &user.id, "ana@example.org").unwrap(),
+            Ok(()),
+            "keeping one's own address is not taking somebody else's"
+        );
     }
 
     #[test]

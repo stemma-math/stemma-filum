@@ -202,6 +202,19 @@ pub fn end_all(connection: &Connection, user: &UserId) -> Result<usize> {
         .context("cannot end the sessions")
 }
 
+/// Ends every session an account holds except the one that asked.
+///
+/// Changing a password from a session keeps that session: the person who
+/// just typed both passwords is the one it belongs to.
+pub fn end_others(connection: &Connection, user: &UserId, keep: &SessionId) -> Result<usize> {
+    connection
+        .execute(
+            "DELETE FROM sessions WHERE user_id = ?1 AND id <> ?2",
+            params![user.to_string(), keep.to_string()],
+        )
+        .context("cannot end the other sessions")
+}
+
 /// Removes sessions nobody can use any more.
 pub fn clear_expired(connection: &Connection) -> Result<usize> {
     connection
@@ -347,6 +360,24 @@ mod tests {
         assert_eq!(end_all(connection, &ana.id).unwrap(), 2);
         assert!(lookup(connection, &key, &laptop).unwrap().is_none());
         assert!(lookup(connection, &key, &desktop).unwrap().is_none());
+    }
+
+    #[test]
+    fn ending_the_other_sessions_keeps_the_one_that_asked() {
+        let database = test_database();
+        let connection = database.connection();
+        let key = Key::for_test();
+        let ana = account(connection, "ana");
+        let bo = account(connection, "bo");
+
+        let (here, kept) = start(connection, &key, &ana.id).unwrap();
+        let (_, elsewhere) = start(connection, &key, &ana.id).unwrap();
+        let (_, somebody_else) = start(connection, &key, &bo.id).unwrap();
+
+        assert_eq!(end_others(connection, &ana.id, &here.id).unwrap(), 1);
+        assert!(lookup(connection, &key, &kept).unwrap().is_some());
+        assert!(lookup(connection, &key, &elsewhere).unwrap().is_none());
+        assert!(lookup(connection, &key, &somebody_else).unwrap().is_some());
     }
 
     #[test]

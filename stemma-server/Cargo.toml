@@ -22,7 +22,7 @@ stemma-identity.workspace = true
 
 anyhow.workspace = true
 argon2.workspace = true
-axum.workspace = true
+axum = { workspace = true, features = ["multipart"] }
 base64.workspace = true
 clap.workspace = true
 futures-util.workspace = true

@@ -52,6 +52,7 @@ export const api = {
   standing: () => call<Mirrored>("standing"),
   sendNow: () => call<void>("send_now"),
   groups: () => call<string[]>("groups"),
+  managedGroups: () => call<string[]>("managed_groups"),
   lines: () => call<Known[]>("lines"),
 
   newLine: (group: string, title: string, description: string | null, shared: boolean) =>

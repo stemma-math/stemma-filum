@@ -121,7 +121,11 @@ STEMMA_HOME="$PWD/.test-state/client" just app-dev
   Dictionary generates `tokens.css` (custom properties) and `tokens.typ`
   (colours and faces for Typst) from it: run `npm run build` in `identity/`
   after editing it; `just check` fails while they are out of date. Neither
-  stylesheet defines tokens of its own.
+  stylesheet defines tokens of its own. Its `dark` group redefines the
+  semantic colours for the dark appearance, which follows the system unless
+  the root says `data-theme="light"` or `data-theme="dark"`: the web sets it
+  from a cookie its appearance switch writes, and the desktop window from
+  the Appearance settings.
 - `components.css` holds the shared components as classes over native HTML,
   in cascade layers so each surface's own rules win: `.button` (with
   `--primary`, `--quiet`, `--danger`, `--link` and `--icon`), `.field`,

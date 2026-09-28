@@ -89,6 +89,7 @@ pub async fn home(
             &proposals,
             &obligations,
             chrome.workspace.may_ask,
+            &chrome.workspace.badges,
         ),
     )
     .into_response())
@@ -132,6 +133,7 @@ fn body(
     proposals: &[Proposal],
     obligations: &[crate::store::vault::Obligation],
     may_ask: bool,
+    badges: &std::collections::HashMap<stemma_core::id::GroupId, String>,
 ) -> Markup {
     // An approved request is a group now, and the group has its own card.
     let requests: Vec<&Request> = requests
@@ -163,7 +165,7 @@ fn body(
             } @else {
                 div class="group-grid" {
                     @for card in cards {
-                        (group_card(card))
+                        (group_card(card, badges.get(&card.membership.group.id).map(String::as_str)))
                     }
                     @for request in &requests {
                         (request_card(request))
@@ -200,7 +202,7 @@ fn body(
 }
 
 /// One group, and the way into it: the whole card is the link.
-fn group_card(card: &Card) -> Markup {
+fn group_card(card: &Card, picture: Option<&str>) -> Markup {
     let group = &card.membership.group;
     let members = match card.members {
         1 => "1 member".to_owned(),
@@ -215,7 +217,7 @@ fn group_card(card: &Card) -> Markup {
     html! {
         a class="card group-card" href={ "/g/" (group.slug()) } {
             span class="group-card__top" {
-                span class="badge" aria-hidden="true" { (initials(&group.name)) }
+                (super::pictures::badge(&group.id, &group.name, picture, "badge"))
                 span class="chip chip--accent" { (super::groups::role_words(card.membership.role)) }
             }
             span class="group-card__name" { (group.name) }
