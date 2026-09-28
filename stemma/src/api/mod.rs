@@ -273,7 +273,11 @@ impl Server {
         let mut response = self.answered(
             self.agent
                 .put(self.url(&format!(
-                    "/api/groups/{group}/{side}/artefacts/{kind}/{commit}"
+                    "/api/groups/{}/{}/artefacts/{}/{}",
+                    segment(group),
+                    segment(side),
+                    segment(kind),
+                    segment(commit)
                 )))
                 .header("authorization", bearer(token))
                 .header("content-type", "application/json")
@@ -344,7 +348,8 @@ impl Server {
 
     /// Machines serving a group, for a conscious launcher choice.
     pub fn machines(&self, token: &str, group: &str) -> Result<Vec<OfferedMachine>> {
-        let choices: MachineChoices = self.read(token, &format!("/api/groups/{group}/machines"))?;
+        let choices: MachineChoices =
+            self.read(token, &format!("/api/groups/{}/machines", segment(group)))?;
 
         Ok(choices.machines)
     }
@@ -371,7 +376,11 @@ impl Server {
         job: &str,
         completion: &stemma_core::proposal::Completion,
     ) -> Result<()> {
-        self.tell(token, &format!("/api/jobs/{job}/finish"), completion)
+        self.tell(
+            token,
+            &format!("/api/jobs/{}/finish", segment(job)),
+            completion,
+        )
     }
 
     /// Reports visible progress and learns whether the launcher cancelled.
@@ -384,7 +393,7 @@ impl Server {
     ) -> Result<bool> {
         let answer: JobControl = self.ask(
             token,
-            &format!("/api/jobs/{job}/progress"),
+            &format!("/api/jobs/{}/progress", segment(job)),
             &serde_json::json!({ "workspace": workspace, "progress": progress }),
         )?;
 
@@ -395,7 +404,7 @@ impl Server {
     pub fn cancel_job(&self, token: &str, job: &str) -> Result<()> {
         self.tell(
             token,
-            &format!("/api/jobs/{job}/cancel"),
+            &format!("/api/jobs/{}/cancel", segment(job)),
             &serde_json::json!({}),
         )
     }
@@ -419,7 +428,7 @@ impl Server {
 
     /// Fetches a proposal this person accepted and may now write locally.
     pub fn accepted_proposal(&self, token: &str, proposal: &str) -> Result<AcceptedProposal> {
-        let mut response = self.get(token, &format!("/api/proposals/{proposal}"))?;
+        let mut response = self.get(token, &format!("/api/proposals/{}", segment(proposal)))?;
 
         if response.status() != 200 {
             bail!(
@@ -453,7 +462,12 @@ impl Server {
         field(
             self.read(
                 token,
-                &format!("/api/proposals/history/{group}/{side}/{line}"),
+                &format!(
+                    "/api/proposals/history/{}/{}/{}",
+                    segment(group),
+                    segment(side),
+                    segment(line)
+                ),
             )?,
             "proposals",
         )
@@ -461,7 +475,10 @@ impl Server {
 
     /// One proposal, with the version it would replace.
     pub fn proposal(&self, token: &str, proposal: &str) -> Result<Offered> {
-        self.read(token, &format!("/api/proposals/{proposal}/review"))
+        self.read(
+            token,
+            &format!("/api/proposals/{}/review", segment(proposal)),
+        )
     }
 
     /// Records a reviewer's decision about a proposal.
@@ -484,7 +501,7 @@ impl Server {
     ) -> Result<()> {
         self.tell(
             token,
-            &format!("/api/proposals/{proposal}/decide"),
+            &format!("/api/proposals/{}/decide", segment(proposal)),
             &serde_json::json!({ "decision": decision.as_str(), "note": note }),
         )
     }
@@ -493,7 +510,7 @@ impl Server {
     pub fn handoff_proposal(&self, token: &str, proposal: &str, reviewer: &str) -> Result<()> {
         self.tell(
             token,
-            &format!("/api/proposals/{proposal}/handoff"),
+            &format!("/api/proposals/{}/handoff", segment(proposal)),
             &serde_json::json!({ "reviewer": reviewer }),
         )
     }
@@ -507,7 +524,7 @@ impl Server {
     pub fn proposal_applied(&self, token: &str, proposal: &str, revision: u64) -> Result<()> {
         self.tell(
             token,
-            &format!("/api/proposals/{proposal}/applied"),
+            &format!("/api/proposals/{}/applied", segment(proposal)),
             &serde_json::json!({ "revision": revision }),
         )
     }
@@ -517,7 +534,7 @@ impl Server {
     pub fn proposal_outdated(&self, token: &str, proposal: &str) -> Result<()> {
         self.tell(
             token,
-            &format!("/api/proposals/{proposal}/outdated"),
+            &format!("/api/proposals/{}/outdated", segment(proposal)),
             &serde_json::json!({}),
         )
     }
@@ -533,8 +550,8 @@ impl Server {
     /// One revision of a line: the one it is at, or the one named.
     pub fn revision(&self, token: &str, line: &str, number: Option<u64>) -> Result<Revision> {
         let path = match number {
-            Some(number) => format!("/api/lines/{line}?revision={number}"),
-            None => format!("/api/lines/{line}"),
+            Some(number) => format!("/api/lines/{}?revision={}", segment(line), number),
+            None => format!("/api/lines/{}", segment(line)),
         };
 
         self.read(token, &path)
@@ -547,7 +564,7 @@ impl Server {
     pub fn write_line(&self, token: &str, line: &str, outgoing: &Outgoing) -> Result<Written> {
         let mut response = self.answered(
             self.agent
-                .put(self.url(&format!("/api/lines/{line}")))
+                .put(self.url(&format!("/api/lines/{}", segment(line))))
                 .header("authorization", bearer(token))
                 .send_json(outgoing),
         )?;
@@ -581,7 +598,10 @@ impl Server {
         side: &str,
     ) -> Result<BTreeMap<String, String>> {
         field(
-            self.read(token, &format!("/api/repositories/{group}/{side}"))?,
+            self.read(
+                token,
+                &format!("/api/repositories/{}/{}", segment(group), segment(side)),
+            )?,
             "files",
         )
     }
@@ -590,7 +610,7 @@ impl Server {
     pub fn delete_line(&self, token: &str, group: &str, line: &str) -> Result<()> {
         self.tell(
             token,
-            &format!("/api/lines/{group}/{line}/delete"),
+            &format!("/api/lines/{}/{}/delete", segment(group), segment(line)),
             &serde_json::json!({}),
         )
     }
@@ -608,7 +628,11 @@ impl Server {
         line: &str,
         sharing: &Sharing,
     ) -> Result<Placed> {
-        self.ask(token, &format!("/api/lines/{group}/{line}/share"), sharing)
+        self.ask(
+            token,
+            &format!("/api/lines/{}/{}/share", segment(group), segment(line)),
+            sharing,
+        )
     }
 
     // ---- Claims ----
@@ -642,7 +666,7 @@ impl Server {
 
     /// Reads one group's immutable mathematical base.
     pub fn vault(&self, token: &str, group: &str) -> Result<Vault> {
-        let mut response = self.get(token, &format!("/api/groups/{group}/vault"))?;
+        let mut response = self.get(token, &format!("/api/groups/{}/vault", segment(group)))?;
 
         if response.status() != 200 {
             bail!(
@@ -662,8 +686,11 @@ impl Server {
         group: &str,
         body: &serde_json::Value,
     ) -> Result<String> {
-        let answer: serde_json::Value =
-            self.ask(token, &format!("/api/groups/{group}/vault/entries"), body)?;
+        let answer: serde_json::Value = self.ask(
+            token,
+            &format!("/api/groups/{}/vault/entries", segment(group)),
+            body,
+        )?;
         answer["entry"]
             .as_str()
             .map(str::to_owned)
@@ -677,8 +704,11 @@ impl Server {
         group: &str,
         body: &serde_json::Value,
     ) -> Result<String> {
-        let answer: serde_json::Value =
-            self.ask(token, &format!("/api/groups/{group}/vault/bridges"), body)?;
+        let answer: serde_json::Value = self.ask(
+            token,
+            &format!("/api/groups/{}/vault/bridges", segment(group)),
+            body,
+        )?;
         answer["bridge"]
             .as_str()
             .map(str::to_owned)
@@ -692,8 +722,11 @@ impl Server {
         group: &str,
         body: &serde_json::Value,
     ) -> Result<String> {
-        let answer: serde_json::Value =
-            self.ask(token, &format!("/api/groups/{group}/vault/audits"), body)?;
+        let answer: serde_json::Value = self.ask(
+            token,
+            &format!("/api/groups/{}/vault/audits", segment(group)),
+            body,
+        )?;
         answer["audit"]
             .as_str()
             .map(str::to_owned)
@@ -905,9 +938,50 @@ fn normalise(address: &str) -> Result<String> {
     Ok(parsed.as_str().trim_end_matches('/').to_owned())
 }
 
+/// A value as one segment of a request's path.
+///
+/// Identifiers, group names and line names never need escaping when they
+/// are well formed, and then come out unchanged; one that is not cannot
+/// reach another path by carrying a `/`, `?` or `..`.
+fn segment(value: impl std::fmt::Display) -> String {
+    let value = value.to_string();
+    if value == "." || value == ".." {
+        return value.replace('.', "%2E");
+    }
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b':' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_well_formed_name_is_its_own_path_segment() {
+        for name in [
+            "algebra",
+            "shared",
+            "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T",
+            "rings-and-fields",
+        ] {
+            assert_eq!(segment(name), name);
+        }
+    }
+
+    #[test]
+    fn a_name_cannot_reach_another_path() {
+        assert_eq!(segment("../admin"), "..%2Fadmin");
+        assert_eq!(segment(".."), "%2E%2E");
+        assert_eq!(segment("a?b=c"), "a%3Fb%3Dc");
+        assert_eq!(segment("über"), "%C3%BCber");
+    }
 
     fn reply_once(
         status: &str,
