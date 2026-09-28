@@ -997,6 +997,17 @@ fn space_body(
                     }
                 }
 
+                section class="card card--vault vault-card" {
+                    div class="vault-card__head" {
+                        span class="vault-card__icon" { (glyph("book")) }
+                        h2 { "Library releases" }
+                    }
+                    p { "Publish reviewed source and permanent citation pages." }
+                    a class="vault-card__open" href={ "/g/" (group.slug()) "/releases" } {
+                        "Open library releases"
+                    }
+                }
+
                 section class="card members-card" aria-labelledby="members-title" {
                     div class="card__head" {
                         h2 class="card__title" id="members-title" {

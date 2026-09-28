@@ -71,14 +71,16 @@ pub async fn serve(
         return Err(WebError::NotFound);
     };
 
-    // Who is asking comes first: a repository nobody may have should not
-    // even confirm it exists.
-    let Some(asking) = who_is_asking(&instance, &headers).await? else {
-        return Ok(ask_for_a_credential());
-    };
-
-    if !may(&instance, &group_slug, kind, repository, &asking).await? {
-        return Err(WebError::NotFound);
+    // Release snapshots are deliberately public. Working repositories still
+    // do not confirm their existence until a credential proves membership.
+    let asking = who_is_asking(&instance, &headers).await?;
+    if kind != Kind::Releases {
+        let Some(asking) = asking.as_ref() else {
+            return Ok(ask_for_a_credential());
+        };
+        if !may(&instance, &group_slug, kind, repository, asking).await? {
+            return Err(WebError::NotFound);
+        }
     }
 
     if !crate::git::exists(&on_disk) {
@@ -89,13 +91,17 @@ pub async fn serve(
         .await
         .map_err(|_| WebError::BadRequest("that push is too large".to_owned()))?;
 
+    let remote_user = asking
+        .as_ref()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "public".to_owned());
     run_backend(
         &instance,
         &method,
         &format!("/{group}/{repository}/{path}"),
         &query,
         &headers,
-        &asking,
+        &remote_user,
         body.to_vec(),
     )
     .await
@@ -212,6 +218,7 @@ async fn may(
 
             Ok(whose.as_ref() == Some(&asking))
         }
+        Kind::Releases => Ok(true),
     }
 }
 
@@ -235,7 +242,7 @@ async fn run_backend(
     path_info: &str,
     query: &str,
     headers: &HeaderMap,
-    asking: &UserId,
+    asking: &str,
     body: Vec<u8>,
 ) -> Result<Response> {
     let root = instance.repositories().root().to_owned();
@@ -253,7 +260,7 @@ async fn run_backend(
         .env("REQUEST_METHOD", method.as_str())
         .env("PATH_INFO", path_info)
         .env("QUERY_STRING", query)
-        .env("REMOTE_USER", asking.to_string())
+        .env("REMOTE_USER", asking)
         .env("CONTENT_LENGTH", body.len().to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

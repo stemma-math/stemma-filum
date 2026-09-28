@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use stemma_core::access::GroupRole;
+use stemma_core::document::Document;
 use stemma_core::id::Slug;
+use stemma_core::line::Name;
 use stemma_server::config::{Listen, Paths, PolicySeed, PublicUrl, Settings};
 use stemma_server::db::Database;
 use stemma_server::store::{devices, groups, users};
@@ -339,6 +341,77 @@ async fn a_machine_with_no_credential_is_asked_for_one() {
         "git was not asked for a credential: {}",
         refused.said
     );
+
+    listening.finish();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn released_source_is_public_without_exposing_later_shared_work() {
+    let listening = Listening::start("release").await;
+    listening.group_with_owner("ana", "algebra").await;
+    let repositories = git::Repositories::new(listening.root.join("git"));
+
+    listening
+        .instance
+        .read(move |connection| {
+            let user = users::by_login(connection, "ana")?.expect("the owner");
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
+            let shared = repositories.shared(&group.id);
+            let author = git::Author {
+                name: "Ana",
+                email: "ana@example.org",
+            };
+            git::start_line(
+                &shared,
+                &Name::parse("published").unwrap(),
+                &Document::new("Published", None).to_text(),
+                &author,
+            )?;
+            let source = git::head_commit(&shared).unwrap();
+            git::publish_release(
+                &shared,
+                &repositories.releases(&group.id),
+                &source,
+                "1.0.0",
+                &author,
+            )?;
+            git::start_line(
+                &shared,
+                &Name::parse("unreleased").unwrap(),
+                &Document::new("Unreleased", None).to_text(),
+                &author,
+            )?;
+            assert_eq!(
+                groups::role_of(connection, &group.id, &user.id)?,
+                Some(GroupRole::Owner)
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let url = listening.repository("git/algebra/releases.git");
+    let work = listening.workspace("public");
+    let cloned = git_with(
+        "",
+        &work,
+        &[
+            "clone",
+            "--branch",
+            "v1.0.0",
+            "--single-branch",
+            &url,
+            "release",
+        ],
+    );
+    assert!(
+        cloned.worked,
+        "the public release did not clone: {}",
+        cloned.said
+    );
+    assert!(work.join("release/lines/published/line.json").is_file());
+    assert!(!work.join("release/lines/unreleased").exists());
 
     listening.finish();
 }

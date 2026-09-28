@@ -23,6 +23,8 @@ pub struct FormalAudit {
     pub block: BlockId,
     /// Line revision the reviewer saw.
     pub revision: u64,
+    /// Exact serialized prose block the reviewer saw.
+    pub block_source: String,
     /// Lean evidence the reviewer saw.
     pub check: BlockCheck,
     /// The proposing agent's prose reading.
@@ -138,7 +140,7 @@ pub fn reconcile_check(connection: &Connection, line: &LineId, check: &BlockChec
 /// Current formal correspondence records for a line, newest block first.
 pub fn for_line(connection: &Connection, line: &LineId) -> Result<Vec<FormalAudit>> {
     let mut statement = connection.prepare(
-        "SELECT id, block_id, revision, check_result, reading, state,
+        "SELECT id, block_id, revision, block_source, check_result, reading, state,
                 withdrawn_reason, audited_by, audited_at
            FROM formal_audits WHERE line_id = ?1
           ORDER BY audited_at DESC, rowid DESC",
@@ -147,22 +149,23 @@ pub fn for_line(connection: &Connection, line: &LineId) -> Result<Vec<FormalAudi
     let rows = statement.query_map([line.to_string()], |row| {
         let id: String = row.get(0)?;
         let block: String = row.get(1)?;
-        let check: String = row.get(3)?;
+        let check: String = row.get(4)?;
         Ok((
             id,
             block,
             row.get::<_, i64>(2)?,
+            row.get::<_, String>(3)?,
             check,
-            row.get::<_, String>(4)?,
             row.get::<_, String>(5)?,
-            row.get::<_, Option<String>>(6)?,
-            row.get::<_, String>(7)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, Option<String>>(7)?,
             row.get::<_, String>(8)?,
+            row.get::<_, String>(9)?,
         ))
     })?;
     let mut audits = Vec::new();
     for row in rows {
-        let (id, block, revision, check, reading, state, reason, by, at) = row?;
+        let (id, block, revision, block_source, check, reading, state, reason, by, at) = row?;
         let block: BlockId = block.parse()?;
         if !seen.insert(block) {
             continue;
@@ -171,6 +174,7 @@ pub fn for_line(connection: &Connection, line: &LineId) -> Result<Vec<FormalAudi
             id: id.parse()?,
             block,
             revision: revision.max(0) as u64,
+            block_source,
             check: serde_json::from_str(&check)?,
             reading,
             state,

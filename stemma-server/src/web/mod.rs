@@ -25,6 +25,7 @@ pub mod machines;
 pub mod pictures;
 pub mod profile;
 pub mod proposals;
+pub mod releases;
 pub mod reset;
 pub mod revisions;
 pub mod starting;
@@ -259,7 +260,21 @@ fn pages() -> Router<Instance> {
         .route("/profile/picture/remove", post(profile::remove_picture))
         .route("/pictures/users/{slug}", get(pictures::user))
         .route("/pictures/groups/{slug}", get(pictures::group))
+        .route("/releases/{slug}", get(releases::public_group))
+        .route("/releases/{slug}/{version}", get(releases::documentation))
+        .route(
+            "/releases/{slug}/{version}/source/{*path}",
+            get(releases::source),
+        )
+        .route(
+            "/releases/{slug}/{version}/{line}/{block}",
+            get(releases::result),
+        )
         .route("/g/{slug}", get(groups::space))
+        .route(
+            "/g/{slug}/releases",
+            get(releases::manage).post(releases::publish),
+        )
         .route("/g/{slug}/edit", get(groups::edit_form).post(groups::edit))
         .route("/g/{slug}/picture", post(groups::picture))
         .route("/g/{slug}/picture/remove", post(groups::remove_picture))
