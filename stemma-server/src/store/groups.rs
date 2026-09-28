@@ -7,7 +7,7 @@ use stemma_core::event::{Event, GroupChange};
 use stemma_core::id::{GroupId, GroupRequestId, Slug, UserId};
 
 use super::events::{self, Audience};
-use super::{Role, id_at};
+use super::{Role, id_at, optional_id_at};
 use crate::store::users::{self, User};
 
 /// A research group.
@@ -163,37 +163,32 @@ pub fn by_slug(connection: &Connection, slug: &Slug) -> Result<Option<Group>> {
 
 /// Every group, oldest first.
 pub fn all(connection: &Connection) -> Result<Vec<Group>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {COLUMNS} FROM groups ORDER BY created_at, id"
-    ))?;
-    let groups = statement
-        .query_map([], Group::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the groups")?;
-
-    Ok(groups)
+    super::rows(
+        connection,
+        &format!("SELECT {COLUMNS} FROM groups ORDER BY created_at, id"),
+        [],
+        Group::from_row,
+    )
+    .context("cannot list the groups")
 }
 
 /// The groups somebody belongs to.
 pub fn for_user(connection: &Connection, user: &UserId) -> Result<Vec<Membership>> {
-    let mut statement = connection.prepare(
+    super::rows(
+        connection,
         "SELECT g.id, g.slug, g.name, g.description, g.created_at, g.archived_at, m.role
            FROM memberships m JOIN groups g ON g.id = m.group_id
           WHERE m.user_id = ?1
           ORDER BY g.name",
-    )?;
-
-    let memberships = statement
-        .query_map([user.to_string()], |row| {
+        [user.to_string()],
+        |row| {
             Ok(Membership {
                 group: Group::from_row(row)?,
                 role: row.get::<_, Role>("role")?.0,
             })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the groups")?;
-
-    Ok(memberships)
+        },
+    )
+    .context("cannot list the groups")
 }
 
 /// What somebody may do in a group, if anything.
@@ -217,27 +212,24 @@ pub fn role_of(
 /// Everybody in a group, those with the most authority first.
 pub fn members(connection: &Connection, group: &GroupId) -> Result<Vec<Member>> {
     // Roles are stored as words, and the words do not sort by authority.
-    let mut statement = connection.prepare(
+    super::rows(
+        connection,
         "SELECT u.id, u.slug, u.email, u.display_name, u.created_at, u.suspended_at,
                 m.role, m.joined_at
            FROM memberships m JOIN users u ON u.id = m.user_id
           WHERE m.group_id = ?1
           ORDER BY CASE m.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
                    u.display_name",
-    )?;
-
-    let members = statement
-        .query_map([group.to_string()], |row| {
+        [group.to_string()],
+        |row| {
             Ok(Member {
                 user: User::from_row(row)?,
                 role: row.get::<_, Role>("role")?.0,
                 joined_at: row.get("joined_at")?,
             })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the members")?;
-
-    Ok(members)
+        },
+    )
+    .context("cannot list the members")
 }
 
 /// Puts somebody in a group, or leaves their role alone if they are in it.
@@ -340,9 +332,7 @@ impl Request {
                 _ => None,
             },
             decided_at: row.get("decided_at")?,
-            decided_by: row
-                .get::<_, Option<String>>("decided_by")?
-                .and_then(|raw| raw.parse().ok()),
+            decided_by: optional_id_at(row, "decided_by")?,
             note: row.get("note")?,
         })
     }
@@ -396,32 +386,30 @@ pub fn request_by_id(connection: &Connection, id: &str) -> Result<Option<Request
 
 /// Every request nobody has answered yet, oldest first.
 pub fn open_requests(connection: &Connection) -> Result<Vec<Request>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {REQUEST_COLUMNS} FROM group_requests
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {REQUEST_COLUMNS} FROM group_requests
           WHERE outcome IS NULL ORDER BY requested_at"
-    ))?;
-
-    let requests = statement
-        .query_map([], Request::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the requests")?;
-
-    Ok(requests)
+        ),
+        [],
+        Request::from_row,
+    )
+    .context("cannot list the requests")
 }
 
 /// Somebody's own requests, newest first.
 pub fn requests_by(connection: &Connection, user: &UserId) -> Result<Vec<Request>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {REQUEST_COLUMNS} FROM group_requests
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {REQUEST_COLUMNS} FROM group_requests
           WHERE requested_by = ?1 ORDER BY requested_at DESC"
-    ))?;
-
-    let requests = statement
-        .query_map([user.to_string()], Request::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the requests")?;
-
-    Ok(requests)
+        ),
+        [user.to_string()],
+        Request::from_row,
+    )
+    .context("cannot list the requests")
 }
 
 /// Approves a request, creating the group and making the requester its

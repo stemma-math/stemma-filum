@@ -338,16 +338,13 @@ fn list(
     condition: &str,
     parameters: impl rusqlite::Params,
 ) -> Result<Vec<Started>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {COLUMNS} FROM lines WHERE {condition} ORDER BY started_at, name"
-    ))?;
-
-    let found = statement
-        .query_map(parameters, Started::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the lines")?;
-
-    Ok(found)
+    super::rows(
+        connection,
+        &format!("SELECT {COLUMNS} FROM lines WHERE {condition} ORDER BY started_at, name"),
+        parameters,
+        Started::from_row,
+    )
+    .context("cannot list the lines")
 }
 
 #[cfg(test)]

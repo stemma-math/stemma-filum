@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use stemma_core::id::{SessionId, UniqueId, UserId};
 
+use super::optional_id_at;
 use crate::tokens::Key;
 
 /// How long a person has to type the code in.
@@ -55,9 +56,7 @@ impl Grant {
             label: row.get("label")?,
             expires_at: row.get("expires_at")?,
             approved_at: row.get("approved_at")?,
-            approved_by: row
-                .get::<_, Option<String>>("approved_by")?
-                .and_then(|raw| raw.parse().ok()),
+            approved_by: optional_id_at(row, "approved_by")?,
             denied_at: row.get("denied_at")?,
             token_id: row.get("token_id")?,
         })

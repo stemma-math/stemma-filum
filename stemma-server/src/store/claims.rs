@@ -298,20 +298,19 @@ fn list(
     condition: &str,
     parameters: impl rusqlite::Params,
 ) -> Result<Vec<Claim>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {} FROM claims JOIN machines ON machines.id = claims.machine_id
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {} FROM claims JOIN machines ON machines.id = claims.machine_id
           WHERE {condition} AND {}
           ORDER BY claims.taken_at, claims.id",
-        columns(),
-        standing()
-    ))?;
-
-    let found = statement
-        .query_map(parameters, Claim::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the claims")?;
-
-    Ok(found)
+            columns(),
+            standing()
+        ),
+        parameters,
+        Claim::from_row,
+    )
+    .context("cannot list the claims")
 }
 
 #[cfg(test)]

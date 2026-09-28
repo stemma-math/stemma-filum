@@ -5,7 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use stemma_core::access::Grant;
 use stemma_core::id::{GrantId, Slug, UserId};
 
-use super::id_at;
+use super::{id_at, optional_id_at};
 
 /// An account on this instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,15 +153,13 @@ pub fn count(connection: &Connection) -> Result<i64> {
 
 /// Everybody, oldest first.
 pub fn all(connection: &Connection) -> Result<Vec<User>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {COLUMNS} FROM users ORDER BY created_at, id"
-    ))?;
-    let users = statement
-        .query_map([], User::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the accounts")?;
-
-    Ok(users)
+    super::rows(
+        connection,
+        &format!("SELECT {COLUMNS} FROM users ORDER BY created_at, id"),
+        [],
+        User::from_row,
+    )
+    .context("cannot list the accounts")
 }
 
 /// The stored hash of an account's password.
@@ -325,27 +323,22 @@ pub fn holds(connection: &Connection, user: &UserId, grant: Grant) -> Result<boo
 
 /// Everybody who holds a permission right now.
 pub fn holders(connection: &Connection, grant: Grant) -> Result<Vec<HeldGrant>> {
-    let mut statement = connection.prepare(
+    super::rows(
+        connection,
         "SELECT user_id, granted_at, granted_by FROM instance_grants
           WHERE kind = ?1 AND revoked_at IS NULL
           ORDER BY granted_at",
-    )?;
-
-    let held = statement
-        .query_map([grant.as_str()], |row| {
+        [grant.as_str()],
+        |row| {
             Ok(HeldGrant {
                 grant,
                 user: id_at(row, "user_id")?,
                 granted_at: row.get("granted_at")?,
-                granted_by: row
-                    .get::<_, Option<String>>("granted_by")?
-                    .and_then(|raw| raw.parse().ok()),
+                granted_by: optional_id_at(row, "granted_by")?,
             })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list who holds the grant")?;
-
-    Ok(held)
+        },
+    )
+    .context("cannot list who holds the grant")
 }
 
 #[cfg(test)]
