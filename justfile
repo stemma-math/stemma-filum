@@ -78,9 +78,9 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
 [group("check")]
-[doc("Build the Rust documentation, with warnings denied.")]
+[doc("Build the Rust documentation, private items included, with warnings denied.")]
 docs:
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
 
 [group("check")]
 [doc("Run the Rust tests, of one crate when given (e.g. `just test stemma-server`).")]
