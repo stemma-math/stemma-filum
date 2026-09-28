@@ -164,7 +164,8 @@ pub fn groups() -> Result<Vec<String>, String> {
     if let Ok(entries) = std::fs::read_dir(config.workspace_or(home.workspace())) {
         for entry in entries.filter_map(Result::ok) {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if entry.path().is_dir() && !found.contains(&name) {
+            // A hidden directory, such as `.git`, is never a group.
+            if !name.starts_with('.') && entry.path().is_dir() && !found.contains(&name) {
                 found.push(name);
             }
         }
