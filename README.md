@@ -14,6 +14,7 @@ model, and the Tauri desktop application.
 | `stemma-app/` | The Tauri desktop application; its Svelte frontend is in `stemma-app/frontend` |
 | `identity/` | The visual identity: design tokens, faces, the mark, icons and the descent drawing |
 | `typst/` | The `@stemma/line` Typst package every line is typeset with |
+| `lean/` | The `stemma` Lean package for marks and formal-library extraction |
 
 Dependencies point one way: `stemma` and `stemma-server` depend on
 `stemma-core`, never on each other, and the app depends on `stemma`.

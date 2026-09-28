@@ -53,13 +53,19 @@ test-server:
   cargo test -p stemma-server
 
 [group("test")]
+[doc("Build and test the Stemma Lean package.")]
+lean:
+  cd lean && lake build
+  cd lean && lake test
+
+[group("test")]
 [doc("Test the Git repository transport.")]
 test-repositories:
   cargo test -p stemma-server --test repositories
 
 [group("test")]
 [doc("Run the complete pre-commit verification suite.")]
-check: format identity frontend docs
+check: format identity frontend docs lean
   cargo clippy --workspace --all-targets -- -D warnings
   cargo test --workspace
 
