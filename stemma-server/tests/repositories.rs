@@ -415,3 +415,61 @@ async fn released_source_is_public_without_exposing_later_shared_work() {
 
     listening.finish();
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_member_with_much_local_history_can_still_fetch() {
+    let listening = Listening::start("negotiation").await;
+    listening.group_with_owner("ana", "algebra").await;
+    let token = listening.credential("ana").await;
+
+    let work = listening.workspace("ana");
+    let url = listening.repository("git/algebra/shared.git");
+    let cloned = git_with(&token, &work, &["clone", &url, "shared"]);
+    assert!(cloned.worked, "the clone failed: {}", cloned.said);
+
+    // Every local commit is offered to the instance as something the
+    // clone already has. Past a kilobyte of those, git compresses what it
+    // sends, and the backend has to be told so.
+    let clone = work.join("shared");
+    for number in 0..60 {
+        let message = format!("Note {number}");
+        let ran = git_with(
+            &token,
+            &clone,
+            &["commit", "-q", "--allow-empty", "-m", &message],
+        );
+        assert!(ran.worked, "a local commit failed: {}", ran.said);
+    }
+
+    let repositories = git::Repositories::new(listening.root.join("git"));
+    listening
+        .instance
+        .read(move |connection| {
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
+            git::start_line(
+                &repositories.shared(&group.id),
+                &Name::parse("arrived").unwrap(),
+                &Document::new("Arrived", None).to_text(),
+                &git::Author {
+                    name: "Ana",
+                    email: "ana@example.org",
+                },
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let fetched = git_with(&token, &clone, &["fetch", "-q", "origin"]);
+    assert!(fetched.worked, "the fetch failed: {}", fetched.said);
+
+    let arrived = git_with(
+        &token,
+        &clone,
+        &["cat-file", "-e", "origin/main:lines/arrived/line.json"],
+    );
+    assert!(arrived.worked, "the new line did not arrive: {}", arrived.said);
+
+    listening.finish();
+}

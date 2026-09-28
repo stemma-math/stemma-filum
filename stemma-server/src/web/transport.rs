@@ -23,7 +23,8 @@ use anyhow::{Context, Result};
 use axum::body::Body;
 use axum::extract::{Path as UrlPath, RawQuery, State};
 use axum::http::header::{
-    AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, WWW_AUTHENTICATE,
+    AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue,
+    WWW_AUTHENTICATE,
 };
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -268,6 +269,15 @@ async fn run_backend(
         .kill_on_drop(true);
 
     forward(&mut command, headers, &CONTENT_TYPE, "CONTENT_TYPE");
+    // Git compresses a request once it passes a kilobyte, which a fetch
+    // from a clone with any history of its own soon does, and the backend
+    // only inflates what it is told was deflated.
+    forward(
+        &mut command,
+        headers,
+        &CONTENT_ENCODING,
+        "HTTP_CONTENT_ENCODING",
+    );
     forward(
         &mut command,
         headers,
