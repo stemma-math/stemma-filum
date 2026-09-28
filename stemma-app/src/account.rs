@@ -27,10 +27,11 @@ pub struct Beginning {
 #[derive(Default)]
 pub struct SigningIn(Mutex<Option<stemma::session::Beginning>>);
 
+/// Who this machine acts for, when anybody signed it in.
 #[tauri::command(async)]
 pub fn whoami() -> Result<Option<Signed>, String> {
     let credentials =
-        stemma::credentials::Credentials::read(&home().credentials_file()).map_err(said)?;
+        stemma::credentials::Credentials::read(&home().credentials_file()).map_err(failed)?;
 
     Ok(credentials.map(|credentials| Signed {
         server: credentials.server,

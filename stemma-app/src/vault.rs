@@ -2,12 +2,13 @@
 
 use stemma_core::vault::{AuditTarget, AuditVerb, BridgeKind};
 
-use crate::{Session, carried_out, said};
+use crate::{Session, carried_out, failed};
 
+/// What `group` has admitted, and the bridges between it.
 #[tauri::command(async)]
 pub fn vault(group: String) -> Result<stemma::api::Vault, String> {
     let session = Session::open()?;
-    session.server.vault(&session.token, &group).map_err(said)
+    session.server.vault(&session.token, &group).map_err(failed)
 }
 
 /// Admits a definition whose Lean module compiles on this machine.

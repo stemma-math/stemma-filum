@@ -3,13 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use stemma::api::About;
 use stemma::mirror::{Instance, Mirror, State, Which};
 use stemma_core::document::Document;
 use stemma_core::line::Name;
 use stemma_core::repository::{self, Side};
 
 use crate::engine::{self, Nudge};
-use crate::{carried_out, failed, home, said};
+use crate::{Session, carried_out, failed, home, said};
 
 /// A line's `line.json`, checked to lie inside this machine's workspace.
 ///
@@ -71,6 +72,15 @@ impl LineAt {
             .expect("an admitted line is inside a repository")
     }
 
+    /// Which line it is, as the instance names it.
+    pub fn about(&self) -> About {
+        About {
+            group: self.group.clone(),
+            side: self.side.clone(),
+            line: self.name.clone(),
+        }
+    }
+
     /// What the webview is told about which line this is.
     pub fn entry(&self) -> LineEntry {
         LineEntry {
@@ -96,7 +106,7 @@ fn is_line_path(workspace: &Path, path: &Path) -> bool {
 /// Where this machine keeps its groups.
 fn workspace() -> Result<PathBuf, String> {
     let home = home();
-    let config = stemma::config::Config::read(&home.config_file()).map_err(said)?;
+    let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
     Ok(config.workspace_or(home.workspace()))
 }
 
@@ -148,7 +158,7 @@ pub fn send_now() -> Result<(), String> {
 #[tauri::command(async)]
 pub fn groups() -> Result<Vec<String>, String> {
     let home = home();
-    let config = stemma::config::Config::read(&home.config_file()).map_err(said)?;
+    let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
     let mut found: Vec<String> = config.groups.keys().cloned().collect();
 
     if let Ok(entries) = std::fs::read_dir(config.workspace_or(home.workspace())) {
@@ -170,8 +180,8 @@ pub fn groups() -> Result<Vec<String>, String> {
 /// changes there and nowhere else.
 #[tauri::command(async)]
 pub fn managed_groups() -> Result<Vec<String>, String> {
-    let session = crate::Session::open()?;
-    let workspace = session.server.workspace(&session.token).map_err(said)?;
+    let session = Session::open()?;
+    let workspace = session.server.workspace(&session.token).map_err(failed)?;
 
     Ok(workspace
         .groups
