@@ -162,19 +162,6 @@ class App {
     }
   }
 
-  /** Opens a page of the web the signed-in server serves, in the browser:
-   * the profile and a group's details are changed there. */
-  async openOnWeb(path: string) {
-    if (!this.signed) return;
-    try {
-      // Joined as the server joins its own links, so an instance under a
-      // path keeps it.
-      await api.openLink(`${this.signed.server.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`);
-    } catch (error) {
-      fail(error);
-    }
-  }
-
   /** Reads the groups and lines again, as this machine has them now. */
   async lookAgain() {
     if (!this.signed) return;
@@ -200,6 +187,19 @@ class App {
     }
     for (const aside of report.aside) {
       tell(`${aside.line}: a version was kept at ${aside.path}, because ${aside.why}.`);
+    }
+  }
+
+  /** Opens a page of the web the signed-in server serves, in the browser:
+   * the profile and a group's details are changed there. */
+  async openOnWeb(path: string) {
+    if (!this.signed) return;
+    try {
+      // Joined as the server joins its own links, so an instance under a
+      // path keeps it.
+      await api.openLink(`${this.signed.server.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`);
+    } catch (error) {
+      fail(error);
     }
   }
 
