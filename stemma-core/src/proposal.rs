@@ -5,8 +5,10 @@
 //! the job's base commit with the source offered by the agent and refuses
 //! any change to the text or declared dependencies of a central statement.
 
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Component, Path};
+
+use serde::{Deserialize, Serialize};
 
 use crate::actor::{AgentRun, Attribution};
 use crate::artefact::BlockCheck;
@@ -158,6 +160,9 @@ pub fn apply_line_operations(
     operations: &[Operation],
 ) -> Result<String, String> {
     let mut document = Document::parse(base).map_err(|error| error.to_string())?;
+    // Read once, but only complained about once an action needs it: an
+    // answer that touches nothing in the line does not depend on it.
+    let frozen = read("base", base);
 
     for operation in operations {
         if !grants.admits(operation) {
@@ -214,14 +219,11 @@ pub fn apply_line_operations(
             }
         }
 
-        let proposed = document.to_text();
-        preserves_central_statements(base, &proposed).map_err(|error| error.to_string())?;
-        Line::read(&proposed).map_err(|faults| {
-            faults
-                .first()
-                .map(ToString::to_string)
-                .unwrap_or_else(|| "the proposed line is invalid".to_owned())
-        })?;
+        // The line is checked as it will be written, so what passes here is
+        // exactly what the answer carries.
+        let frozen = frozen.as_ref().map_err(ToString::to_string)?;
+        let proposed = read("proposed", &document.to_text()).map_err(|error| error.to_string())?;
+        leaves_frozen(frozen, &proposed).map_err(|error| error.to_string())?;
     }
 
     Ok(document.to_text())
@@ -229,15 +231,12 @@ pub fn apply_line_operations(
 
 /// Whether a library path stays below the package root.
 pub fn safe_library_path(path: &str) -> bool {
-    let path = std::path::Path::new(path);
+    let path = Path::new(path);
     !path.as_os_str().is_empty()
         && !path.is_absolute()
-        && path.components().all(|part| {
-            matches!(
-                part,
-                std::path::Component::Normal(_) | std::path::Component::CurDir
-            )
-        })
+        && path
+            .components()
+            .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
 }
 
 /// Machine-checked evidence attached to a proposed Lean library change.
@@ -267,9 +266,9 @@ pub struct FormalImpact {
     /// The changed files leave every extracted statement and line link intact.
     pub proofs_only: bool,
     /// Blocks whose transitive statement closure changed.
-    pub statement_closures: Vec<crate::id::BlockId>,
+    pub statement_closures: Vec<BlockId>,
     /// Blocks whose links to other marked declarations changed.
-    pub line_links: Vec<crate::id::BlockId>,
+    pub line_links: Vec<BlockId>,
 }
 
 impl FormalReview {
@@ -281,8 +280,8 @@ impl FormalReview {
     pub fn between(
         before: &[BlockCheck],
         after: &[BlockCheck],
-        targets: impl IntoIterator<Item = crate::id::BlockId>,
-        readings: &BTreeMap<crate::id::BlockId, String>,
+        targets: impl IntoIterator<Item = BlockId>,
+        readings: &BTreeMap<BlockId, String>,
     ) -> Self {
         let before: BTreeMap<_, _> = before.iter().map(|check| (check.block, check)).collect();
         let after: BTreeMap<_, _> = after.iter().map(|check| (check.block, check)).collect();
@@ -351,7 +350,7 @@ pub struct LibraryChange {
     pub files: Vec<LibraryFileChange>,
     /// The agent's reading of each marked formal statement, keyed by block.
     #[serde(default)]
-    pub readings: BTreeMap<crate::id::BlockId, String>,
+    pub readings: BTreeMap<BlockId, String>,
 }
 
 /// One file in a proposed library change.
@@ -458,6 +457,11 @@ pub fn preserves_central_statements(base: &str, offered: &str) -> Result<(), Gua
     let base = read("base", base)?;
     let offered = read("proposed", offered)?;
 
+    leaves_frozen(&base, &offered)
+}
+
+/// Checks two lines already read, as [`preserves_central_statements`] does.
+fn leaves_frozen(base: &Document, offered: &Document) -> Result<(), GuardError> {
     for block in &base.blocks {
         let Some(frozen) = block.statement().filter(|statement| statement.central) else {
             continue;
@@ -545,7 +549,7 @@ mod tests {
         document
     }
 
-    fn checked(block: crate::id::BlockId, closure: &str, reaches: &[&str]) -> BlockCheck {
+    fn checked(block: BlockId, closure: &str, reaches: &[&str]) -> BlockCheck {
         BlockCheck {
             block,
             state: Verification::Verified,
@@ -564,7 +568,7 @@ mod tests {
 
     #[test]
     fn formal_review_separates_proof_changes_from_statement_and_link_changes() {
-        let block = crate::id::BlockId::generate();
+        let block = BlockId::generate();
         let mut proof_before = checked(block, "same", &["Library.lemma"]);
         proof_before.declarations[0].sorry_free = false;
         let proof_after = checked(block, "same", &["Library.lemma"]);
@@ -720,6 +724,140 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn blocks_are_added_where_the_grant_says_and_removed_unless_central() {
+        let original = base();
+        let (proof, step) = (*original.blocks[3].id(), *original.blocks[4].id());
+        let central = *original.blocks[2].id();
+        let added = Block::prose("A remark.");
+        let grants = Grants {
+            line: vec![
+                LineGrant::Add { after: Some(proof) },
+                LineGrant::Remove { block: step },
+                LineGrant::Remove { block: central },
+            ],
+            ..Grants::default()
+        };
+
+        let source = apply_line_operations(
+            &original.to_text(),
+            &grants,
+            &[
+                Operation::AddBlocks {
+                    after: Some(proof),
+                    blocks: vec![added.clone()],
+                },
+                Operation::RemoveBlock { block: step },
+            ],
+        )
+        .unwrap();
+        let written = Document::parse(&source).unwrap();
+        assert_eq!(written.position(added.id()), Some(4));
+        assert_eq!(written.position(&step), None);
+
+        assert_eq!(
+            apply_line_operations(
+                &original.to_text(),
+                &grants,
+                &[Operation::RemoveBlock { block: central }],
+            ),
+            Err(format!("central block `{central}` cannot be removed"))
+        );
+        assert_eq!(
+            apply_line_operations(
+                &original.to_text(),
+                &grants,
+                &[Operation::AddBlocks {
+                    after: None,
+                    blocks: vec![added],
+                }],
+            ),
+            Err("that action is outside this job's grants".to_owned())
+        );
+    }
+
+    #[test]
+    fn an_added_block_may_not_reuse_an_identifier() {
+        let original = base();
+        let proof = *original.blocks[3].id();
+        let grants = Grants {
+            line: vec![LineGrant::Add { after: Some(proof) }],
+            ..Grants::default()
+        };
+        let again = original.blocks[4].clone();
+
+        assert_eq!(
+            apply_line_operations(
+                &original.to_text(),
+                &grants,
+                &[Operation::AddBlocks {
+                    after: Some(proof),
+                    blocks: vec![again.clone()],
+                }],
+            ),
+            Err(format!("block `{}` already exists", again.id()))
+        );
+    }
+
+    #[test]
+    fn a_library_file_does_not_need_the_line_to_be_valid() {
+        let broken = Document {
+            blocks: vec![Block::theorem("Theorem", None, "No proof block.")],
+            ..base()
+        };
+        let grants = Grants {
+            library: true,
+            ..Grants::default()
+        };
+        let write = |path: &str| Operation::WriteLibraryFile {
+            path: path.to_owned(),
+            before: None,
+            after: Some("theorem next : True := trivial\n".to_owned()),
+        };
+
+        assert!(apply_line_operations(&broken.to_text(), &grants, &[write("Next.lean")]).is_ok());
+        assert_eq!(
+            apply_line_operations(&broken.to_text(), &grants, &[write("../Next.lean")]),
+            Err("`../Next.lean` is not a safe library path".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_line_action_on_a_base_that_is_not_a_line_says_so() {
+        let broken = Document {
+            blocks: vec![Block::theorem("Theorem", None, "No proof block.")],
+            ..base()
+        };
+        let grants = Grants {
+            line: vec![LineGrant::Add { after: None }],
+            ..Grants::default()
+        };
+        let error = apply_line_operations(
+            &broken.to_text(),
+            &grants,
+            &[Operation::AddBlocks {
+                after: None,
+                blocks: vec![Block::prose("A remark.")],
+            }],
+        )
+        .unwrap_err();
+
+        assert!(
+            error.starts_with("base source is not a valid line"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_library_path_stays_below_the_package_root() {
+        for safe in ["Next.lean", "Algebra/Groups.lean", "./Next.lean"] {
+            assert!(safe_library_path(safe), "refused {safe}");
+        }
+        for unsafe_path in ["", "/etc/passwd", "../Next.lean", "Algebra/../../Next.lean"] {
+            assert!(!safe_library_path(unsafe_path), "accepted {unsafe_path}");
+        }
     }
 
     #[test]
