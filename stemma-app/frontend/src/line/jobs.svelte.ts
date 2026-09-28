@@ -7,7 +7,7 @@ export const jobs = $state({
   problem: null as string | null,
   async refresh() {
     try {
-      jobs.list = (await api.machine()).jobs;
+      jobs.list = (await api.machine())?.jobs ?? [];
       jobs.problem = null;
     } catch (error) {
       jobs.problem = said(error);

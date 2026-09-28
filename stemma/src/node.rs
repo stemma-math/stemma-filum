@@ -143,6 +143,6 @@ mod tests {
         )]));
 
         let error = status(&home, &mut Vec::new()).unwrap_err();
-        assert!(error.to_string().contains("stemma login"));
+        assert!(format!("{error:#}").contains("stemma login"));
     }
 }

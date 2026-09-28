@@ -184,6 +184,36 @@ pub fn run(config: &Config, slug: &str, prompt: &str, into: &Path) -> Result<Ran
     Ok(Ran::Finished(wait_for(&mut command, into, RUN_LIMIT)?))
 }
 
+/// How long trying an agent out may take.
+const TRY_LIMIT: Duration = Duration::from_secs(2 * 60);
+
+/// Asks an agent for one word, to find out whether it is installed and
+/// signed in. What it says stays in this machine's cache.
+pub fn try_out(home: &Home, config: &Config, slug: &str) -> Result<Ran> {
+    let Some(program) = program(config, slug) else {
+        return Ok(Ran::Missing);
+    };
+    let Some(invocation) = invocation(slug) else {
+        return Ok(Ran::Missing);
+    };
+
+    let directory = scratch(home)?.join("tried");
+    std::fs::create_dir_all(&directory)
+        .with_context(|| format!("cannot create {}", directory.display()))?;
+
+    let mut command = Command::new(program);
+    command
+        .current_dir(&directory)
+        .args(invocation.run)
+        .arg("Answer with the single word: ready");
+
+    Ok(Ran::Finished(wait_for(
+        &mut command,
+        &directory.join(format!("{slug}.log")),
+        TRY_LIMIT,
+    )?))
+}
+
 /// Runs an agent inside one prepared workspace with its vendor's sandbox
 /// enabled and the job API ahead of the ordinary `PATH`.
 #[allow(clippy::too_many_arguments)]
@@ -420,7 +450,7 @@ pub fn output_path(home: &Home, job: &str) -> PathBuf {
 
 /// The first place this machine keeps programs that has one of this
 /// name.
-fn on_path(program: &str) -> Option<PathBuf> {
+pub fn on_path(program: &str) -> Option<PathBuf> {
     where_programs_are()
         .into_iter()
         .map(|directory| directory.join(program))
@@ -483,6 +513,7 @@ fn installed_into(home: Option<PathBuf>) -> Vec<PathBuf> {
         beside(".npm-global/bin"),
         beside(".nix-profile/bin"),
         beside(".cargo/bin"),
+        beside(".elan/bin"),
         profile,
         Some(PathBuf::from("/opt/homebrew/bin")),
         Some(PathBuf::from("/usr/local/bin")),

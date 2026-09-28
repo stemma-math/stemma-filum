@@ -70,7 +70,7 @@ fn on_the_path() -> Option<PathBuf> {
 
 /// Whether a path is something that could be run.
 #[cfg(unix)]
-fn is_a_program(path: &Path) -> bool {
+pub(crate) fn is_a_program(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
     std::fs::metadata(path)
@@ -79,7 +79,7 @@ fn is_a_program(path: &Path) -> bool {
 
 /// Whether a path is something that could be run.
 #[cfg(not(unix))]
-fn is_a_program(path: &Path) -> bool {
+pub(crate) fn is_a_program(path: &Path) -> bool {
     path.is_file()
 }
 

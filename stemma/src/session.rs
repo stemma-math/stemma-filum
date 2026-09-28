@@ -12,6 +12,7 @@ use anyhow::{Context, Result, bail};
 use crate::api::{Answer, Server};
 use crate::credentials::Credentials;
 use crate::home::Home;
+use crate::remedy::Remedy;
 
 /// What this machine calls itself when it asks to be let in.
 ///
@@ -206,7 +207,8 @@ pub fn whoami(home: &Home, out: &mut impl Write) -> Result<bool> {
 /// The credential this machine holds, for the commands that need one.
 pub fn required(home: &Home) -> Result<Credentials> {
     Credentials::read(&home.credentials_file())?
-        .context("this machine is not signed in: run `stemma login`")
+        .ok_or(Remedy::SignIn)
+        .context("this machine is not signed in")
 }
 
 /// The credential this machine holds and the instance it is for.

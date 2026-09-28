@@ -19,6 +19,7 @@ mod machine;
 #[cfg(target_os = "macos")]
 mod menu;
 mod reviews;
+mod setup;
 mod vault;
 mod workspace;
 
@@ -64,6 +65,7 @@ pub fn run() {
             });
             engine::start(app.handle());
             live::start(app.handle());
+            setup::repair_at_launch(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -96,8 +98,18 @@ pub fn run() {
             machine::offers,
             machine::launch,
             machine::node_init,
-            machine::daemon_install,
-            machine::install_cli,
+            setup::setup_survey,
+            setup::setup_service,
+            setup::setup_link,
+            setup::setup_path,
+            setup::try_agent,
+            setup::removal_send,
+            setup::removal_leave,
+            setup::removal_data,
+            setup::removal_delete_data,
+            setup::can_trash,
+            setup::trash_and_quit,
+            setup::quit,
             reviews::proposals,
             reviews::proposal,
             reviews::decide_proposal,
@@ -143,8 +155,21 @@ fn said(error: impl std::fmt::Display) -> String {
 }
 
 /// An `anyhow` error with its whole chain of context.
+///
+/// An error with a remedy loses the command the command line would name,
+/// and is marked instead as `remedy:<slug>:`, which the webview turns into
+/// the button that does the same.
 fn failed(error: anyhow::Error) -> String {
-    format!("{error:#}")
+    let Some(remedy) = stemma::remedy::Remedy::of(&error) else {
+        return format!("{error:#}");
+    };
+
+    let said: Vec<String> = error
+        .chain()
+        .filter(|cause| !cause.is::<stemma::remedy::Remedy>())
+        .map(ToString::to_string)
+        .collect();
+    format!("remedy:{}:{}", remedy.slug(), said.join(": "))
 }
 
 /// Runs one of the client's commands and returns what it printed.
@@ -164,9 +189,9 @@ struct Session {
 
 impl Session {
     fn open() -> Result<Self, String> {
-        let credentials = stemma::session::required(&home()).map_err(said)?;
+        let credentials = stemma::session::required(&home()).map_err(failed)?;
         Ok(Self {
-            server: stemma::api::Server::at(&credentials.server).map_err(said)?,
+            server: stemma::api::Server::at(&credentials.server).map_err(failed)?,
             token: credentials.token,
         })
     }
@@ -174,7 +199,23 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
-    use super::proposal_link;
+    use anyhow::Context;
+    use stemma::remedy::Remedy;
+
+    use super::{failed, proposal_link};
+
+    #[test]
+    fn an_error_with_a_remedy_names_its_button_and_not_a_command() {
+        let error = Err::<(), _>(Remedy::SetUpMachine)
+            .context("stemma.example.org does not know this machine")
+            .unwrap_err();
+
+        assert_eq!(
+            failed(error),
+            "remedy:set-up:stemma.example.org does not know this machine"
+        );
+        assert_eq!(failed(anyhow::anyhow!("out of reach")), "out of reach");
+    }
 
     #[test]
     fn only_proposal_links_open_a_review() {

@@ -171,6 +171,27 @@ export type Job = {
 
 export type Machine = { label: string; presence: string; agents: Agent[]; jobs: Job[] };
 
+/** Where one item of the machine checklist stands (`stemma-app/src/setup.rs`). */
+export type SetupState = "done" | "attention" | "not_set_up" | "unknown";
+
+export type SetupItem = { state: SetupState; detail: string | null };
+
+/** The line that puts the command line on a shell's path, and where it goes. */
+export type PathLine = { shell: string; profile: string; line: string };
+
+export type SetupAgent = SetupItem & { name: string; called: string; version: string | null; instructions: string };
+
+export type Survey = {
+  service: SetupItem;
+  command_line: SetupItem & { link: string | null; path_line: PathLine | null };
+  groups: SetupItem & { serving: string[] };
+  agents: SetupAgent[];
+  lean: SetupItem & { instructions: string };
+};
+
+/** What trying an agent out found. */
+export type Tried = { availability: string; said: string };
+
 export type Offer = { machine: string; label: string; presence: string; agents: Agent[] };
 
 export type Claim = {

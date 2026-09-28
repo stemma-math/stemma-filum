@@ -1,7 +1,7 @@
 // Toasts: one line saying what just happened, at the bottom of the
 // window. News goes away by itself; a failure stays until it is closed.
 
-import { said } from "./api";
+import { remedyOf } from "./api";
 
 export type Toast = {
   id: number;
@@ -30,9 +30,19 @@ export function tell(message: string, action?: Toast["action"]) {
   show(message, false, action);
 }
 
-/** Says what went wrong; it stays until closed. */
+/** What each remedy an error can carry does, as a button beside it. The
+ * application registers them, since they reach into its state. */
+let remedies: Record<string, Toast["action"]> = {};
+
+export function setRemedies(given: Record<string, Toast["action"]>) {
+  remedies = given;
+}
+
+/** Says what went wrong; it stays until closed. An error with a remedy
+ * carries the button that applies it. */
 export function fail(error: unknown) {
-  show(said(error), true);
+  const { remedy, message } = remedyOf(error);
+  show(message, true, remedy ? remedies[remedy] : undefined);
 }
 
 export function dismiss(id: number) {
