@@ -17,18 +17,41 @@
 // statements look like statements rather than figures.
 #let stemma(title: none, description: none, body) = {
   set document(title: title)
+  // Typst 0.14 does not export equations as native HTML. Its HTML frame
+  // embeds the paged result as inline SVG and is a no-op for paged output.
+  show math.equation: html.frame
   show figure.where(kind: statement-kind): set block(breakable: true)
   show figure.where(kind: statement-kind): set align(start)
   show figure.where(kind: statement-kind): it => it.body
 
   metadata((stemma: "line", title: title, description: description))
-  if title != none {
-    block(below: 0.6em, text(size: 1.6em, weight: "bold", title))
+  context {
+    if target() == "html" {
+      html.elem("main", attrs: (class: "stemma-line"), {
+        if title != none { html.elem("h1", title) }
+        if description != none { html.elem("p", attrs: (class: "stemma-line__description"), description) }
+        body
+      })
+    } else {
+      if title != none {
+        block(below: 0.6em, text(size: 1.6em, weight: "bold", title))
+      }
+      if description != none {
+        block(below: 1.6em, text(fill: luma(35%), description))
+      }
+      body
+    }
   }
-  if description != none {
-    block(below: 1.6em, text(fill: luma(35%), description))
+}
+
+// The HTML export gives each block an address in the line. On paper the
+// wrapper disappears, so the same source keeps its paged appearance.
+#let section(id, kind, body) = context {
+  if target() == "html" {
+    html.elem("section", attrs: (id: id, class: "stemma-line__block stemma-line__block--" + kind), body)
+  } else {
+    body
   }
-  body
 }
 
 // The siglum, small and out of the way. It is what a reference points
@@ -42,7 +65,7 @@
 // Prose between the mathematics. It is not numbered and declares nothing.
 #let prose(id: none, body) = {
   data("prose", id: id)
-  body
+  section(id, "prose", body)
 }
 
 // One numbered statement. `slanted` is the old convention: what is
@@ -63,7 +86,7 @@
       proof: proof,
       uses: uses,
     )
-    block(
+    section(id, kind, block(
       width: 100%,
       above: 1.2em,
       below: 1.2em,
@@ -79,7 +102,7 @@
         parbreak()
         if slanted { emph(body) } else { body }
       },
-    )
+    ))
   },
 )
 
@@ -111,7 +134,7 @@
 // to be written, since a statement carrying a proof always has one.
 #let proof(id: none, of: none, target: none, adjacent: false, body) = {
   data("proof", id: id, of: of)
-  block(width: 100%, above: 1.2em, below: 1.2em, {
+  section(id, "proof", block(width: 100%, above: 1.2em, below: 1.2em, {
     if adjacent or target == none {
       emph[Proof.]
     } else {
@@ -125,5 +148,5 @@
     }
     h(1fr)
     sym.square.stroked
-  })
+  }))
 }

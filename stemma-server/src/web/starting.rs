@@ -213,9 +213,11 @@ pub fn first_page(title: &str, description: Option<&str>) -> String {
                 title { (title) }
             }
             body {
-                h1 { (title) }
-                @if let Some(description) = description {
-                    p { (description) }
+                main class="stemma-line" {
+                    h1 { (title) }
+                    @if let Some(description) = description {
+                        p class="stemma-line__description" { (description) }
+                    }
                 }
             }
         }

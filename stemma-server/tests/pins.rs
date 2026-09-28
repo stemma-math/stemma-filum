@@ -80,7 +80,7 @@ async fn only_an_admin_changes_pins_and_every_private_toolchain_follows() {
     let head = git::head_commit(&shared).unwrap();
     let manifest = Manifest::parse(&git::show(&shared, &head, "stemma.toml").unwrap()).unwrap();
     assert_eq!(manifest.pins.lean.as_deref(), Some("4.35.0"));
-    assert_eq!(manifest.pins.package.as_deref(), Some("0.1.0"));
+    assert_eq!(manifest.pins.package.as_deref(), Some("0.2.0"));
     assert_eq!(manifest.pins.dependencies[0].name, "geometry");
     assert!(
         git::show(&shared, &head, "lakefile.toml")

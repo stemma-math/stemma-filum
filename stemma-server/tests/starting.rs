@@ -651,7 +651,14 @@ async fn what_a_machine_pushed_is_shown_as_it_was_written() {
     .await;
 
     let line = harness.get("/g/algebra/private/quotient-groups").await;
-    assert!(line.says("It does, and here is why."));
+    assert!(line.says("/g/algebra/private/quotient-groups/page"));
+    assert!(!line.says("Typst source"));
+    let download = harness
+        .get("/g/algebra/private/quotient-groups/line.json")
+        .await;
+    assert!(download.says("It does, and here is why."));
+    let page = harness.get("/g/algebra/private/quotient-groups/page").await;
+    assert!(page.says("The page."));
 }
 
 #[tokio::test]
@@ -686,5 +693,9 @@ async fn a_build_older_than_what_was_pushed_does_not_hide_it() {
     let line = harness.get("/g/algebra/shared/quotient-groups").await;
     assert!(!line.says("This line does not contain any declarations yet"));
     assert!(line.says("thm:split"));
-    assert!(line.says("It splits."));
+    assert!(!line.says("It splits."));
+    let download = harness
+        .get("/g/algebra/shared/quotient-groups/line.json")
+        .await;
+    assert!(download.says("It splits."));
 }
