@@ -27,6 +27,11 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["stemma"] }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": [

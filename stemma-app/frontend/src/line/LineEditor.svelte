@@ -11,6 +11,8 @@
   import LineJobs from "./LineJobs.svelte";
   import Parted from "./Parted.svelte";
   import Preview from "./Preview.svelte";
+  import Review from "./Review.svelte";
+  import ReviewHistory from "./ReviewHistory.svelte";
   import Privacy from "./Privacy.svelte";
 
   let { line }: { line: LineSession } = $props();
@@ -145,7 +147,11 @@
   </header>
 
   <div class="editor-body">
-    {#if app.view === "blocks"}
+    {#if app.review}
+      {#key app.review}
+        <Review {line} review={app.review} />
+      {/key}
+    {:else if app.view === "blocks"}
       <section class="writing">
         {#if line.document}
           <Blocks {line} document={line.document} onask={ask} />
@@ -162,7 +168,7 @@
       <Preview {line} />
     {/if}
 
-    <aside class="panel" aria-label="Line">
+    {#if !app.review}<aside class="panel" aria-label="Line">
       <Parted {line} />
       <section class="panel__section">
         <h2 class="panel__title">Agent</h2>
@@ -172,10 +178,11 @@
         <h2 class="panel__title">Jobs</h2>
         <LineJobs />
       </section>
+      <ReviewHistory {line} />
       <section class="panel__section panel__section--foot">
         <h2 class="panel__title">Visibility</h2>
         <Privacy {line} />
       </section>
-    </aside>
+    </aside>{/if}
   </div>
 </main>

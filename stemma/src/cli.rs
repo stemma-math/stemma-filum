@@ -171,12 +171,18 @@ pub enum ProposalCommand {
     Reject {
         /// The proposal to reject.
         proposal: String,
+        /// Optional reason kept with the decision.
+        #[arg(long)]
+        reason: Option<String>,
     },
 
     /// Rejects a proposal and runs the same task again.
     AskAgain {
         /// The proposal to decline.
         proposal: String,
+        /// Instruction for the next attempt.
+        #[arg(long)]
+        note: Option<String>,
     },
 
     /// Applies an accepted proposal on this machine.

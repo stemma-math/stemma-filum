@@ -1,4 +1,4 @@
-//! The one screen where a person signs, or does not sign, an agent's words.
+//! Proposals are read on the web and decided by a signed-in machine.
 
 mod support;
 
@@ -50,15 +50,6 @@ fn proposed() -> String {
 /// What an answer said, as JSON.
 fn parsed(page: &Page) -> Value {
     serde_json::from_str(&page.body).expect("an answer in JSON")
-}
-
-/// The hidden field a form has to send back.
-fn form_token(page: &Page) -> String {
-    let marker = "name=\"form_token\" value=\"";
-    let start = page.body.find(marker).expect("a form token") + marker.len();
-    let rest = &page.body[start..];
-
-    rest[..rest.find('"').expect("the end of the token")].to_owned()
 }
 
 /// An account, a group with repositories, and a line with a proposal
@@ -381,16 +372,16 @@ async fn asking_again_after_a_formal_realignment_asks_for_the_authors_route() {
     with_formal_review(&harness, &proposal).await;
 
     let screen = harness.get(&format!("/proposals/{proposal}")).await;
-    assert!(screen.says("Follow the author"));
-    harness
-        .post(
-            &format!("/proposals/{proposal}/decide"),
-            &[
-                ("form_token", &form_token(&screen)),
-                ("decision", "ask_again"),
-            ],
+    assert!(screen.says("Open in Stemma to decide"));
+    let token = harness.credential("ana").await;
+    let answer = harness
+        .post_json_with_token(
+            &format!("/api/proposals/{proposal}/decide"),
+            &token,
+            r#"{"decision":"ask_again","note":"Follow the author's route."}"#,
         )
         .await;
+    assert_eq!(answer.status, StatusCode::OK);
 
     let task = harness
         .instance
@@ -480,6 +471,24 @@ async fn a_machine_reads_and_decides_the_same_proposal() {
     );
 
     assert_eq!(accepted["source"].as_str(), Some(proposed().as_str()));
+    let recent = parsed(&harness.get_with_token("/api/proposals", &token).await);
+    assert_eq!(recent["proposals"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        recent["recent"][0]["proposal"].as_str(),
+        Some(proposal.as_str())
+    );
+    let history = parsed(
+        &harness
+            .get_with_token(
+                "/api/proposals/history/algebra/private/quotient-groups",
+                &token,
+            )
+            .await,
+    );
+    assert_eq!(
+        history["proposals"][0]["decided_by"].as_str(),
+        Some("usr:ana")
+    );
 }
 
 #[tokio::test]
@@ -516,18 +525,27 @@ async fn asking_again_declines_this_one_and_puts_the_question_back() {
     let proposal = awaiting(&mut harness).await;
 
     let screen = harness.get(&format!("/proposals/{proposal}")).await;
-    harness
+    assert!(screen.says("Open in Stemma to decide"));
+    let web_decision = harness
         .post(
             &format!("/proposals/{proposal}/decide"),
-            &[
-                ("form_token", &form_token(&screen)),
-                ("decision", "ask_again"),
-            ],
+            &[("decision", "accept")],
         )
         .await;
+    assert_eq!(web_decision.status, StatusCode::METHOD_NOT_ALLOWED);
+    let token = harness.credential("ana").await;
+    let answer = harness
+        .post_json_with_token(
+            &format!("/api/proposals/{proposal}/decide"),
+            &token,
+            r#"{"decision":"ask_again","note":"Try a shorter argument."}"#,
+        )
+        .await;
+    assert_eq!(answer.status, StatusCode::OK);
 
     let after = harness.get(&format!("/proposals/{proposal}")).await;
     assert!(after.says("This proposal was rejected."));
+    assert!(after.says("Try a shorter argument."));
 
     let queued =
         harness
@@ -540,4 +558,17 @@ async fn asking_again_declines_this_one_and_puts_the_question_back() {
             .unwrap();
 
     assert_eq!(queued, 2, "the same question is in the queue again");
+    let request = harness
+        .instance
+        .read(|connection| {
+            Ok(connection.query_row(
+                "SELECT request FROM jobs ORDER BY rowid DESC LIMIT 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )?)
+        })
+        .await
+        .unwrap();
+    assert!(request.contains("Try a shorter argument."));
+    assert!(request.contains(&proposed()));
 }

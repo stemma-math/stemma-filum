@@ -4,14 +4,15 @@
 import { api } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
+import { touchedBlocks } from "./review";
 import { fail, tell } from "./status.svelte";
-import type { Known, LineState, Mirrored, Signed, Waiting } from "./types";
+import type { Known, LineDocument, LineState, Mirrored, Review, Signed, Waiting } from "./types";
 
 /** What fills the middle of the window. */
-export type Stage = "welcome" | "editor" | "new-line" | "vault";
+export type Stage = "welcome" | "editor" | "new-line" | "vault" | "reviews";
 
 /** Which page of the settings dialog is showing. */
-export type Panel = "machine" | "reviews" | "account" | "appearance";
+export type Panel = "machine" | "account" | "appearance";
 
 /** How an open line is shown: its blocks to edit, or the typeset page. */
 export type View = "blocks" | "pdf";
@@ -32,6 +33,9 @@ class App {
   group = $state<string | null>(null);
   lines = $state<Known[]>([]);
   waiting = $state<Waiting[]>([]);
+  recent = $state<Waiting[]>([]);
+  review = $state<Review | null>(null);
+  proposalBlocks = $state<string[]>([]);
   line = $state<LineSession | null>(null);
   view = $state<View>("blocks");
   /** Where synchronisation stands; null until the engine has said. */
@@ -66,7 +70,7 @@ class App {
     this.ready = false;
     try { this.signed = await api.whoami(); } catch { this.signed = null; }
     if (this.signed) {
-      try { this.waiting = await api.proposals(); } catch { this.waiting = []; }
+      try { await this.refreshWaiting(); } catch { this.waiting = []; this.recent = []; }
       try { this.mirrored = await api.standing(); } catch { this.mirrored = null; }
       await this.#loadGroups();
       await this.#loadLines();
@@ -118,6 +122,8 @@ class App {
       this.line = null;
     }
     this.#openRequest();
+    if (next !== "editor") this.review = null;
+    if (next !== "editor") this.proposalBlocks = [];
     this.stage = next;
     return true;
   }
@@ -133,6 +139,7 @@ class App {
   /** Opens a line in the editor, recording the one being left. */
   async open(path: string) {
     const active = this.#openRequest();
+    this.review = null;
     const leaving = this.stage === "editor" ? this.line : null;
     try {
       await leaving?.save();
@@ -145,6 +152,26 @@ class App {
       }
       this.line = new LineSession(opened, offers);
       this.stage = "editor";
+      void this.refreshTouched();
+    } catch (error) {
+      fail(error);
+    }
+  }
+
+  /** Opens a proposal in its line, then lays its comparison over the editor. */
+  async openReview(proposal: string) {
+    try {
+      this.panel = null;
+      const offered = await api.proposal(proposal);
+      let path = this.lines.find((line) => line.group === offered.group && line.side === offered.side && line.name === offered.line)?.path;
+      if (!path) {
+        await this.lookAgain();
+        path = this.lines.find((line) => line.group === offered.group && line.side === offered.side && line.name === offered.line)?.path;
+      }
+      if (!path) throw new Error(`The line ${offered.line} is not on this machine yet.`);
+      if (this.stage !== "editor" || this.line?.path !== path) await this.open(path);
+      else await this.line.flush();
+      if (this.line?.path === path) this.review = await api.proposal(proposal, this.line.opened.source);
     } catch (error) {
       fail(error);
     }
@@ -185,6 +212,9 @@ class App {
       if (this.lines.some((line) => line.path === entry.path)) await open.reread();
       else await this.goTo("welcome");
     }
+    if (this.review && open && entry && touched.includes(`${entry.group}/${entry.side}/${entry.name}`)) {
+      try { this.review = await api.proposal(this.review.proposal, open.opened.source); } catch { /* Keep the last review until the next event. */ }
+    }
     for (const aside of report.aside) {
       tell(`${aside.line}: a version was kept at ${aside.path}, because ${aside.why}.`);
     }
@@ -204,7 +234,29 @@ class App {
   }
 
   async refreshWaiting() {
-    this.waiting = await api.proposals();
+    const reviews = await api.proposals();
+    this.waiting = reviews.waiting;
+    this.recent = reviews.recent;
+    await this.refreshTouched();
+  }
+
+  /** Marks the standing blocks affected by any waiting offer for this line. */
+  async refreshTouched() {
+    const line = this.stage === "editor" ? this.line : null;
+    const entry = line?.opened.entry;
+    if (!line?.document || !entry) { this.proposalBlocks = []; return; }
+    const relevant = this.waiting.filter((one) => one.group === entry.group && one.side === entry.side && one.line === entry.name);
+    const marks = new Set<string>();
+    await Promise.all(relevant.map(async (one) => {
+      try {
+        const review = await api.proposal(one.proposal);
+        if (!review.stands) return;
+        const base = JSON.parse(review.stands) as LineDocument;
+        const offered = JSON.parse(review.source) as LineDocument;
+        for (const id of touchedBlocks(base, offered, line.document!)) marks.add(id);
+      } catch { /* A pending review may have been decided meanwhile. */ }
+    }));
+    if (this.line === line) this.proposalBlocks = [...marks];
   }
 
   /** Saves the open line and sends what can be sent before the window

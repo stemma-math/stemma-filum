@@ -76,13 +76,23 @@
     let unlisten: (() => void) | undefined;
     void live.start().then((stop) => (unlisten = stop));
 
-    void app.boot();
+    let stopReviews: (() => void) | undefined;
+    void window.__TAURI__?.event?.listen<string>("stemma:open-review", (event) => {
+      if (app.ready && app.signed) void app.openReview(event.payload);
+    }).then((stop) => (stopReviews = stop));
+
+    void app.boot().then(async () => {
+      if (!app.signed) return;
+      const proposal = await api.takeOpenReview().catch(() => null);
+      if (proposal) await app.openReview(proposal);
+    });
     return () => {
       stop?.();
       unhear?.();
       unchoose?.();
       unrepair?.();
       unlisten?.();
+      stopReviews?.();
     };
   });
 </script>

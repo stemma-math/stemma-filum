@@ -11,7 +11,7 @@
 
 use anyhow::Context;
 use axum::extract::{Path, State};
-use axum::response::{IntoResponse, Json, Redirect, Response};
+use axum::response::{IntoResponse, Json, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
 use serde_json::json;
@@ -19,7 +19,7 @@ use stemma_core::diff::{self, Change};
 use stemma_core::id::ProposalId;
 
 use super::api::Credential;
-use super::layout::{page, signature};
+use super::layout::page;
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
 use crate::store::proposals;
@@ -36,7 +36,7 @@ pub async fn review(
         .await?
         .ok_or(WebError::NotFound)?;
 
-    if proposal.job.launched_by != signed.user.id {
+    if !may_read(&instance, &proposal, &signed.user.id).await {
         return Err(WebError::NotFound);
     }
 
@@ -45,7 +45,28 @@ pub async fn review(
         .await?
         .at("/");
 
-    Ok(page(&chrome, body(&signed, &proposal, stands.as_deref())).into_response())
+    Ok(page(&chrome, body(&proposal, stands.as_deref())).into_response())
+}
+
+async fn may_read(
+    instance: &Instance,
+    proposal: &proposals::Proposal,
+    who: &stemma_core::id::UserId,
+) -> bool {
+    if proposal.reviewer() == who || proposal.job.launched_by == *who {
+        return true;
+    }
+    if proposal.job.side != stemma_core::repository::Side::Shared {
+        return false;
+    }
+    let group = proposal.job.group.clone();
+    let who = who.clone();
+    instance
+        .read(move |c| crate::store::groups::role_of(c, &group, &who))
+        .await
+        .ok()
+        .flatten()
+        .is_some()
 }
 
 /// The source the proposal would replace: the revision its job read.
@@ -61,8 +82,23 @@ async fn against(instance: &Instance, proposal: &proposals::Proposal) -> Option<
         .map(|revision| revision.source)
 }
 
+/// The line's latest source, for a review against the version that now stands.
+async fn current(instance: &Instance, proposal: &proposals::Proposal) -> Option<String> {
+    let line = proposal.job.line_id?;
+    instance
+        .read(move |c| {
+            let Some(started) = crate::store::lines::by_id(c, &line)? else {
+                return Ok(None);
+            };
+            Ok(crate::store::revisions::current(c, &started)?.map(|revision| revision.source))
+        })
+        .await
+        .ok()
+        .flatten()
+}
+
 /// The review screen.
-fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>) -> Markup {
+fn body(proposal: &proposals::Proposal, stands: Option<&str>) -> Markup {
     let rows = stands.map(|stands| diff::between(stands, &proposal.source));
     let frozen = diff::frozen(stands.unwrap_or(&proposal.source));
 
@@ -157,28 +193,11 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
         }
 
         @if proposal.state == "awaiting_review" {
-            form method="post" action={ "/proposals/" (proposal.id) "/decide" } {
-                (signature(signed))
-                button class="button" name="decision" value="reject" {
-                    "Reject"
-                }
-                button class="button" name="decision" value="ask_again" {
-                    @if matches!(proposal.job.task, stemma_core::job::Task::Formalize { .. })
-                        && proposal.formal_review.is_some()
-                    {
-                        "Follow the author's route"
-                    } @else {
-                        "Ask again"
-                    }
-                }
-                button class="button button--primary" name="decision" value="accept" { "Accept" }
+            a class="button button--primary" href={ "stemma://proposal/" (proposal.id) } {
+                "Open in Stemma to decide"
             }
             p class="quiet" {
-                "Accepting records you as the reviewer and preserves the model information. "
-                @if proposal.formal_review.is_some() {
-                    "For each central result, it also records your audit of the printed Lean statement against the prose. "
-                }
-                "One of your machines then brings it into the line, as a revision of yours."
+                "This page is read only. Review and decide in the desktop application."
             }
         } @else {
             p class="quiet" {
@@ -190,11 +209,17 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
                         "Accepted. One of your machines brings it into the line as soon as it is connected."
                     }
                     ("outdated", _) => {
-                        "Accepted, but a statement it changes was changed after it was made, "
+                        "Accepted, but a block it changes was changed after it was made, "
                         "so it was not brought into the line. Ask for it again against the line as it is."
                     }
                     (state, _) => { "This proposal was " (state.replace('_', " ")) "." }
                 }
+            }
+            @if let Some(by) = &proposal.decided_by {
+                p class="quiet identifier" { "Decided by " (by) }
+            }
+            @if let Some(note) = &proposal.note {
+                p { (note) }
             }
         }
     }
@@ -362,35 +387,13 @@ fn findings(proposal: &proposals::Proposal, stands: Option<&str>) -> Vec<String>
     found
 }
 
-#[derive(Deserialize)]
-/// The signed answer from the review form.
-pub struct Decision {
-    decision: String,
-    form_token: String,
-}
-
-/// Records the launcher's decision; acceptance signs the words as theirs.
-pub async fn decide(
-    State(instance): State<Instance>,
-    signed: SignedIn,
-    Path(id): Path<String>,
-    axum::Form(form): axum::Form<Decision>,
-) -> Result<Response, WebError> {
-    signed.check_form(&form.form_token)?;
-
-    let id: ProposalId = id.parse().map_err(|_| WebError::NotFound)?;
-
-    settle(&instance, &signed.user.id, &id, &form.decision).await?;
-
-    Ok(Redirect::to(&format!("/proposals/{id}")).into_response())
-}
-
 /// Records a decision, wherever it was made.
 async fn settle(
     instance: &Instance,
     by: &stemma_core::id::UserId,
     id: &ProposalId,
     decision: &str,
+    note: Option<&str>,
 ) -> Result<(), WebError> {
     let accept = match decision {
         "accept" => true,
@@ -398,6 +401,10 @@ async fn settle(
         _ => return Err(WebError::BadRequest("Choose accept or reject.".to_owned())),
     };
     let ask_again = decision == "ask_again";
+    let note = note
+        .map(str::trim)
+        .filter(|note| !note.is_empty())
+        .map(str::to_owned);
     let by = by.clone();
     let id = *id;
 
@@ -407,15 +414,26 @@ async fn settle(
             .read(move |connection| {
                 let proposal =
                     proposals::by_id(connection, &id)?.context("the proposal does not exist")?;
-                if proposal.state != "awaiting_review" || proposal.job.launched_by != by_for_read {
+                if proposal.state != "awaiting_review" || proposal.reviewer() != &by_for_read {
                     anyhow::bail!("the proposal is not awaiting this person's review");
                 }
-                let user = crate::store::users::by_id(connection, &proposal.job.launched_by)?
+                if let Some(line_id) = proposal.job.line_id {
+                    let base = crate::store::revisions::at(connection, &line_id, proposal.job.revision)?
+                        .context("the proposal's base revision is unavailable")?;
+                    let started = crate::store::lines::by_id(connection, &line_id)?
+                        .context("the proposal's line is unavailable")?;
+                    let current = crate::store::revisions::current(connection, &started)?
+                        .context("the current revision is unavailable")?;
+                    if !stemma_core::reconcile::between(&base.source, &current.source, &proposal.source)?.is_empty() {
+                        anyhow::bail!("This proposal touches blocks changed since it was made. Ask again on the current line.");
+                    }
+                }
+                let user = crate::store::users::by_id(connection, proposal.reviewer())?
                     .context("the reviewer does not exist")?;
                 Ok((proposal, user))
             })
             .await
-            .map_err(|_| WebError::NotFound)?;
+            .map_err(|error| WebError::BadRequest(error.to_string()))?;
         match proposal.0.library_change.clone() {
             None => None,
             Some(change) => {
@@ -459,13 +477,17 @@ async fn settle(
     };
 
     let by_for_write = by.clone();
+    let note_for_write = note.clone();
+    let decision = decision.to_owned();
 
     let settled = instance
         .write(move |c| {
+            let transaction = c.transaction()?;
+            let c = &transaction;
             let Some(proposal) = proposals::by_id(c, &id)? else {
                 return Ok(false);
             };
-            if !proposals::decide(c, &id, &by_for_write, accept)? {
+            if !proposals::decide(c, &id, &by_for_write, &decision, note_for_write.as_deref())? {
                 return Ok(false);
             }
             if let Some(commit) = &library_commit {
@@ -517,6 +539,27 @@ async fn settle(
             // Asking again is not a third state: the proposal is
             // declined and the same question goes back in the queue.
             if ask_again {
+                let current_revision = match proposal.job.line_id {
+                    Some(id) => {
+                        let line = crate::store::lines::by_id(c, &id)?
+                            .context("the proposal's line is unavailable")?;
+                        if line.is_deleted() {
+                            anyhow::bail!("the line was deleted; this task cannot be run again");
+                        }
+                        line.revision
+                    }
+                    None => proposal.job.revision,
+                };
+                let context = format!(
+                    "Previous attempt {} was rejected. Its source was:\n{}\nReviewer note: {}",
+                    proposal.id,
+                    proposal.source,
+                    note_for_write.as_deref().unwrap_or("No further note.")
+                );
+                let request = match proposal.job.request {
+                    Some(previous) => Some(format!("{previous}\n\n{context}")),
+                    None => Some(context),
+                };
                 crate::store::jobs::launch(
                     c,
                     &crate::store::jobs::Launch {
@@ -524,7 +567,7 @@ async fn settle(
                         side: proposal.job.side,
                         line: proposal.job.line,
                         line_id: proposal.job.line_id,
-                        revision: proposal.job.revision,
+                        revision: current_revision,
                         against: None,
                         task: match proposal.job.task {
                             stemma_core::job::Task::Formalize { block }
@@ -537,7 +580,7 @@ async fn settle(
                         agent: proposal.job.agent,
                         model: proposal.job.model,
                         effort: proposal.job.effort,
-                        request: proposal.job.request,
+                        request,
                         grants: proposal.job.grants,
                         choice: proposal.job.choice,
                         by: by_for_write,
@@ -545,6 +588,7 @@ async fn settle(
                 )?;
             }
 
+            transaction.commit()?;
             Ok(true)
         })
         .await?;
@@ -561,7 +605,9 @@ pub async fn listing(
     credential: Credential,
 ) -> Result<Response, WebError> {
     let who = credential.user.id.clone();
-    let awaiting = instance.read(move |c| proposals::awaiting(c, &who)).await?;
+    let (awaiting, recent) = instance
+        .read(move |c| Ok((proposals::awaiting(c, &who)?, proposals::recent(c, &who)?)))
+        .await?;
 
     let listed: Vec<serde_json::Value> = awaiting
         .iter()
@@ -580,7 +626,68 @@ pub async fn listing(
         })
         .collect();
 
-    Ok(Json(json!({ "proposals": listed })).into_response())
+    let decided: Vec<_> = recent.iter().map(summary).collect();
+    Ok(Json(json!({ "proposals": listed, "recent": decided })).into_response())
+}
+
+fn summary(proposal: &proposals::Proposal) -> serde_json::Value {
+    json!({
+        "proposal": proposal.id.to_string(),
+        "group": proposal.job.group.slug().as_str(),
+        "side": proposal.job.side.as_str(),
+        "line": proposal.job.line.as_str(),
+        "task": proposal.job.task.to_string(),
+        "agent": proposal.job.agent.as_str(),
+        "vendor": proposal.vendor,
+        "model": proposal.model,
+        "state": proposal.state,
+        "decision": proposal.decision,
+        "note": proposal.note,
+    })
+}
+
+/// The proposals kept in a line's history, including attribution and decision.
+pub async fn history(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path((group, side, line)): Path<(String, String, String)>,
+) -> Result<Response, WebError> {
+    let group = format!("grp:{group}")
+        .parse()
+        .map_err(|_| WebError::NotFound)?;
+    let side = side.parse().map_err(|_| WebError::NotFound)?;
+    let line = line.parse().map_err(|_| WebError::NotFound)?;
+    let who = credential.user.id.clone();
+    let entries = instance
+        .read(move |c| {
+            if crate::store::groups::role_of(c, &group, &who)?.is_none() {
+                return Ok(None);
+            }
+            let Some(line) = crate::store::lines::by_name(c, &group, side, &line, &who)? else {
+                return Ok(None);
+            };
+            Ok(Some(proposals::for_line(c, &line.id)?))
+        })
+        .await?
+        .ok_or(WebError::NotFound)?;
+    Ok(
+        Json(json!({ "proposals": entries.iter().map(|proposal| json!({
+        "proposal": proposal.id.to_string(),
+        "task": proposal.job.task.to_string(),
+        "agent": proposal.job.agent.as_str(),
+        "vendor": proposal.vendor,
+        "model": proposal.model,
+        "instructions_version": proposal.prompt_revision,
+        "explanation": proposal.explanation,
+        "state": proposal.state,
+        "decision": proposal.decision,
+        "note": proposal.note,
+        "reviewer": proposal.reviewer().to_string(),
+        "decided_by": proposal.decided_by.as_ref().map(ToString::to_string),
+        "applied_revision": proposal.applied_revision,
+    })).collect::<Vec<_>>() }))
+        .into_response(),
+    )
 }
 
 /// One proposal, with the version it would replace.
@@ -595,11 +702,23 @@ pub async fn offered(
         .await?
         .ok_or(WebError::NotFound)?;
 
-    if proposal.job.launched_by != credential.user.id {
+    if !may_read(&instance, &proposal, &credential.user.id).await {
         return Err(WebError::NotFound);
     }
 
     let stands = against(&instance, &proposal).await;
+    let current = current(&instance, &proposal).await;
+    let group = proposal.job.group.clone();
+    let members = if proposal.job.launched_by == credential.user.id
+        && proposal.job.side == stemma_core::repository::Side::Shared
+    {
+        instance.read(move |c| crate::store::groups::members(c, &group)).await?
+            .into_iter().filter(|member| member.user.suspended_at.is_none())
+            .map(|member| json!({ "id": member.user.id.to_string(), "name": member.user.display_name }))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     Ok(Json(json!({
         "proposal": proposal.id.to_string(),
@@ -617,7 +736,13 @@ pub async fn offered(
         "explanation": proposal.explanation,
         "effort": proposal.effort,
         "state": proposal.state,
+        "decision": proposal.decision,
+        "note": proposal.note,
+        "reviewer": proposal.reviewer().to_string(),
+        "decided_by": proposal.decided_by.as_ref().map(ToString::to_string),
+        "members": members,
         "stands": stands,
+        "current": current,
         "source": proposal.source,
         "lean_source": proposal.lean_source,
         "library_change": proposal.library_change,
@@ -636,7 +761,14 @@ pub async fn api_decide(
 ) -> Result<Response, WebError> {
     let id: ProposalId = id.parse().map_err(|_| WebError::NotFound)?;
 
-    settle(&instance, &credential.user.id, &id, said.decision.trim()).await?;
+    settle(
+        &instance,
+        &credential.user.id,
+        &id,
+        said.decision.trim(),
+        said.note.as_deref(),
+    )
+    .await?;
 
     Ok(Json(json!({ "proposal": id.to_string(), "decision": said.decision })).into_response())
 }
@@ -647,6 +779,41 @@ pub struct Said {
     /// `accept`, `reject` or `ask_again`.
     #[serde(default)]
     pub decision: String,
+    /// Optional reason or instruction.
+    pub note: Option<String>,
+}
+
+/// The member chosen for a handoff.
+#[derive(Debug, Deserialize)]
+pub struct Handoff {
+    reviewer: String,
+}
+
+/// The launcher assigns a shared proposal to a group member.
+pub async fn api_handoff(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(id): Path<String>,
+    Json(request): Json<Handoff>,
+) -> Result<Response, WebError> {
+    let id: ProposalId = id.parse().map_err(|_| WebError::NotFound)?;
+    let to = request
+        .reviewer
+        .parse()
+        .map_err(|_| WebError::BadRequest("Choose a group member.".to_owned()))?;
+    let by = credential.user.id.clone();
+    let changed = instance
+        .write(move |c| {
+            let transaction = c.transaction()?;
+            let changed = proposals::handoff(&transaction, &id, &by, &to)?;
+            transaction.commit()?;
+            Ok(changed)
+        })
+        .await?;
+    if !changed {
+        return Err(WebError::NotFound);
+    }
+    Ok(Json(json!({ "reviewer": request.reviewer })).into_response())
 }
 
 /// Gives accepted source only to the person who signed it, for local application.

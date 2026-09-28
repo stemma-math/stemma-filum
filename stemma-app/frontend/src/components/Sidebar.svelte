@@ -96,6 +96,15 @@
   {/if}
 
   <div class="sidebar__foot">
+    <button
+      type="button"
+      class="sidebar__item"
+      aria-current={app.stage === "reviews" ? "page" : undefined}
+      onclick={() => app.goTo("reviews")}
+    >
+      <Glyph name="check" />Reviews
+      {#if app.waiting.length}<span class="count">{app.waiting.length}</span>{/if}
+    </button>
     {#if app.group}
       <button
         type="button"
@@ -126,14 +135,12 @@
       <button
         type="button"
         class="user-card__settings"
-        aria-label={app.waiting.length ? `Settings, ${app.waiting.length} to review`
-          : setup.attention ? "Settings, this machine needs attention" : "Settings"}
+        aria-label={setup.attention ? "Settings, this machine needs attention" : "Settings"}
         data-tip={setup.attention ? "This machine needs attention" : "Settings"}
-        onclick={() => (app.panel = app.waiting.length && !setup.attention ? "reviews" : "machine")}
+        onclick={() => (app.panel = "machine")}
       >
         <Glyph name="settings" />
-        {#if app.waiting.length}<span class="user-card__count">{app.waiting.length}</span>
-        {:else if setup.attention}<span class="user-card__mark" aria-hidden="true"></span>{/if}
+        {#if setup.attention}<span class="user-card__mark" aria-hidden="true"></span>{/if}
       </button>
     </div>
   </div>
