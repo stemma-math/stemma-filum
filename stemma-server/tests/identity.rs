@@ -299,13 +299,13 @@ async fn there_is_nothing_at_an_address_with_nothing_at_it() {
 #[tokio::test]
 async fn the_stylesheet_is_served_from_this_instance_and_can_be_cached() {
     let mut harness = Harness::new();
-    let page = harness.get("/assets/stemma.css").await;
+    let page = harness.get("/assets/css/stemma.css").await;
 
     assert_eq!(page.status, StatusCode::OK);
     assert!(page.says("--accent"));
 
     let front = harness.get("/").await;
-    assert!(front.says("href=\"/assets/stemma.css\""));
+    assert!(front.says("href=\"/assets/css/stemma.css\""));
     assert!(
         !front.body.contains("//fonts."),
         "the page reaches off the instance"

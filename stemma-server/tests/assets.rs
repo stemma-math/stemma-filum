@@ -42,7 +42,7 @@ async fn a_face_the_instance_does_not_have_is_not_invented() {
 async fn nothing_a_page_loads_comes_from_anywhere_else() {
     let mut instance = Harness::new();
 
-    let stylesheet = instance.get("/assets/stemma.css").await;
+    let stylesheet = instance.get("/assets/css/stemma.css").await;
 
     assert!(stylesheet.status.is_success());
 
@@ -58,6 +58,26 @@ async fn nothing_a_page_loads_comes_from_anywhere_else() {
             || !(address.starts_with('/') || address.contains(':'));
 
         assert!(same_origin, "the stylesheet sends a reader to {address}");
+    }
+}
+
+#[tokio::test]
+async fn every_face_the_stylesheet_names_is_served() {
+    let mut instance = Harness::new();
+
+    let stylesheet = instance.get("/assets/css/stemma.css").await;
+    let faces: Vec<String> = stylesheet
+        .body
+        .split("url(\"../fonts/")
+        .skip(1)
+        .filter_map(|rest| rest.split('"').next())
+        .map(|file| format!("/assets/fonts/{file}"))
+        .collect();
+
+    assert!(!faces.is_empty());
+    for face in faces {
+        let served = instance.get(&face).await;
+        assert!(served.status.is_success(), "{face} is not served");
     }
 }
 

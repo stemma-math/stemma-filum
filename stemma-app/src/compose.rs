@@ -23,7 +23,7 @@ pub fn review_page(path: String, document: Document) -> Result<String, String> {
     let page = stemma::render::page(line.directory(), &document).map_err(failed)?;
     let style = format!(
         "<style>{}\n{}</style>",
-        include_str!("../../identity/tokens.css"),
+        stemma_identity::TOKENS_CSS,
         include_str!("../../stemma-server/assets/line.css"),
     );
     Ok(page.replacen("</head>", &format!("{style}</head>"), 1))

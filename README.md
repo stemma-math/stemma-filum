@@ -160,41 +160,13 @@ STEMMA_HOME="$PWD/.test-state/client" just app-dev
 
 ## Visual identity
 
-`identity/` is the single source of Stemma's look. It is both a Rust crate
-(`stemma-identity`), which the server embeds, and an npm package
-(`@stemma-math/identity`), which the desktop frontend imports:
-
-- `tokens.json` holds every colour, face, text role, type step, spacing,
-  radius, layout width, shadow, duration and control density in the Design
-  Tokens Community Group format. Style
-  Dictionary generates `tokens.css` (custom properties) and `tokens.typ`
-  (colours and faces for Typst) from it: run `npm run build` in `identity/`
-  after editing it; `just check` fails while they are out of date. Neither
-  stylesheet defines tokens of its own. Its `dark` group redefines the
-  semantic colours for the dark appearance, which follows the system unless
-  the root says `data-theme="light"` or `data-theme="dark"`: the web sets it
-  from a cookie its appearance switch writes, and the desktop window from
-  the Appearance settings.
-- `components.css` holds the shared components as classes over native HTML,
-  in cascade layers so each surface's own rules win: `.button` (with
-  `--primary`, `--quiet`, `--danger`, `--link` and `--icon`), `.field`,
-  `.input`, `.choice`, `.fieldset`, `.chip`, `.count`, `.avatar`, `.badge`,
-  `.card`, `.table`, `.menu`, `.dialog`, `.problem`, `.notice`, `.toast`,
-  `.tooltip`, `.segmented`, `.skeleton`, `.spinner`, `.label` and the
-  wordmark. Controls are
-  comfortable by default and compact inside `[data-density="compact"]`, as the
-  desktop window is.
-- `fonts.css` and `fonts/` carry Instrument Sans (the interface), Inter (the
-  wordmark), JetBrains Mono (identifiers) and Libertinus Serif (mathematics),
-  subset to Latin, each beside its SIL Open Font License. The server
-  serves them from its own origin, so no page sends a reader to a font host.
-- `mark-on-dark.svg` and `mark-on-light.svg` are the mark for navy and for
-  light surfaces, `mark-animated.js` draws it live on the front page (with
-  `symbol.webp` as its still), and `glyphs.svg` holds the line glyphs as a
-  sprite; `web/` holds the favicons and the home-screen icons,
-  `icons/` the application icons, and `noise.svg` the surface texture.
-- `descent.js` draws a line's descent graph from the placement
-  `stemma_core::descent` computes. Neither surface shows the graph at present.
+`identity/` is the single source of Stemma's look: design tokens, shared
+components, faces, the mark, icons and the descent drawing. It is both a Rust
+crate (`stemma-identity`), which the server and the application embed, and an
+npm package (`@stemma-math/identity`), which the desktop frontend imports. Its
+own [README](identity/README.md) describes the layout and how to regenerate
+the tokens after editing `identity/tokens/tokens.json`; `just check` fails
+while the generated files are out of date.
 
 ## Verification
 

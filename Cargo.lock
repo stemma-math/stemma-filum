@@ -4815,6 +4815,7 @@ dependencies = [
  "serde_json",
  "stemma",
  "stemma-core",
+ "stemma-identity",
  "tauri",
  "tauri-build",
  "tauri-plugin-deep-link",

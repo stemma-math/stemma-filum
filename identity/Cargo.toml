@@ -7,7 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-include = ["src", "*.css", "*.js", "*.svg", "tokens.json", "*.webp", "tokens.typ", "fonts", "web"]
+readme = "README.md"
+include = ["README.md", "src", "tokens/*.css", "tokens/*.json", "tokens/*.typ", "css", "fonts", "mark", "images", "js", "icons/web"]
 
 [lints]
 workspace = true

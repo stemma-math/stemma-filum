@@ -12,11 +12,11 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use sha2::{Digest, Sha256};
 
-/// Where the stylesheet is served.
-pub const STYLESHEET_PATH: &str = "/assets/stemma.css";
+/// Where the stylesheet is served. It sits in `css/` beside `fonts/`, as
+/// the identity's stylesheets do, so their `../fonts/<file>` URLs resolve.
+pub const STYLESHEET_PATH: &str = "/assets/css/stemma.css";
 
-/// Where the faces are served. The stylesheet's `fonts/<file>` URLs resolve
-/// here because both live under `/assets/`.
+/// Where the faces are served.
 pub const FONT_PATH: &str = "/assets/fonts/{file}";
 
 /// Where the front page's light and its passage to the sign-in are served.

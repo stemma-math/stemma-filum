@@ -6,38 +6,37 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    "./tokens.css": "./tokens.css",
-    "./tokens.json": "./tokens.json",
-    "./tokens.typ": "./tokens.typ",
-    "./components.css": "./components.css",
-    "./fonts.css": "./fonts.css",
-    "./glyphs.svg": "./glyphs.svg",
-    "./mark-on-dark.svg": "./mark-on-dark.svg",
-    "./mark-on-light.svg": "./mark-on-light.svg",
-    "./mark-animated.js": "./mark-animated.js",
-    "./symbol.webp": "./symbol.webp",
-    "./noise.svg": "./noise.svg",
+    "./tokens.css": "./tokens/tokens.css",
+    "./tokens.json": "./tokens/tokens.json",
+    "./tokens.typ": "./tokens/tokens.typ",
+    "./fonts.css": "./css/fonts.css",
+    "./components.css": "./css/components.css",
+    "./glyphs.svg": "./images/glyphs.svg",
+    "./noise.svg": "./images/noise.svg",
+    "./mark-on-dark.svg": "./mark/on-dark.svg",
+    "./mark-on-light.svg": "./mark/on-light.svg",
+    "./mark-animated.js": "./mark/animated.js",
+    "./symbol.webp": "./mark/symbol.webp",
     "./descent.js": {
-      "types": "./descent.d.ts",
-      "default": "./descent.js"
+      "types": "./js/descent.d.ts",
+      "default": "./js/descent.js"
     },
-    "./web/*": "./web/*"
+    "./icons/*": "./icons/*"
   },
   "files": [
-    "*.css",
-    "*.js",
-    "*.d.ts",
-    "*.svg",
-    "tokens.json",
-    "tokens.typ",
+    "tokens/tokens.css",
+    "tokens/tokens.json",
+    "tokens/tokens.typ",
+    "css",
     "fonts",
-    "icons",
-    "web",
-    "*.webp"
+    "mark",
+    "images",
+    "js",
+    "icons"
   ],
   "scripts": {
-    "build": "node build.mjs",
-    "check": "node build.mjs --check"
+    "build": "node tokens/build.mjs",
+    "check": "node tokens/build.mjs --check"
   },
   "devDependencies": {
     "style-dictionary": "^5.5.5"
