@@ -118,26 +118,55 @@ impl Task {
     }
 
     /// The statement the work hangs off, when it hangs off one.
+    ///
+    /// A prose block being developed is where the work lands, but it is not
+    /// a statement, so it is no anchor.
     pub fn anchor(&self) -> Option<&BlockId> {
         match self {
-            Self::Fill { after } => after.as_ref(),
-            Self::Refute { block } => Some(block),
-            Self::Formalize { block } => Some(block),
-            Self::FollowRoute { block } => Some(block),
-            Self::Verify { after } => after.as_ref(),
-            Self::Promote { block } => Some(block),
-            Self::Prove { block } => Some(block),
-            Self::Rewrite { block } => Some(block),
-            Self::Develop { .. } | Self::Explore | Self::Reconcile | Self::Custom | Self::Build => {
-                None
-            }
+            Self::Develop { .. } => None,
+            other => other.block(),
+        }
+    }
+
+    /// The block the task names, whatever kind of block it is.
+    fn block(&self) -> Option<&BlockId> {
+        match self {
+            Self::Fill { after } | Self::Verify { after } => after.as_ref(),
+            Self::Refute { block }
+            | Self::Formalize { block }
+            | Self::FollowRoute { block }
+            | Self::Promote { block }
+            | Self::Prove { block }
+            | Self::Rewrite { block }
+            | Self::Develop { block } => Some(block),
+            Self::Explore | Self::Reconcile | Self::Custom | Self::Build => None,
+        }
+    }
+
+    /// The word the task is written down with, before any `@`.
+    fn verb(&self) -> &'static str {
+        match self {
+            Self::Fill { .. } => "fill",
+            Self::Refute { .. } => "refute",
+            Self::Formalize { .. } => "formalize",
+            Self::FollowRoute { .. } => "realign",
+            Self::Verify { .. } => "back",
+            Self::Promote { .. } => "promote",
+            Self::Prove { .. } => "prove",
+            Self::Rewrite { .. } => "rewrite",
+            Self::Develop { .. } => "develop",
+            Self::Explore => "explore",
+            Self::Reconcile => "reconcile",
+            Self::Custom => "custom",
+            Self::Build => "build",
         }
     }
 
     /// Whether this asks an agent to touch what the line rests on.
     ///
-    /// A central statement is frozen against agents, so refuting one is
-    /// the only thing an agent may aim at it.
+    /// A central statement is frozen against agents, so what an agent may
+    /// aim at one leaves its text alone: looking for a counterexample, or
+    /// giving it a formal counterpart.
     pub fn is_aimed_at_a_central_statement(&self) -> bool {
         matches!(
             self,
@@ -148,22 +177,10 @@ impl Task {
 
 impl fmt::Display for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Fill { after: None } => f.write_str("fill"),
-            Self::Fill { after: Some(node) } => write!(f, "fill@{node}"),
-            Self::Refute { block } => write!(f, "refute@{block}"),
-            Self::Formalize { block } => write!(f, "formalize@{block}"),
-            Self::FollowRoute { block } => write!(f, "realign@{block}"),
-            Self::Verify { after: None } => f.write_str("back"),
-            Self::Verify { after: Some(node) } => write!(f, "back@{node}"),
-            Self::Promote { block } => write!(f, "promote@{block}"),
-            Self::Prove { block } => write!(f, "prove@{block}"),
-            Self::Rewrite { block } => write!(f, "rewrite@{block}"),
-            Self::Develop { block } => write!(f, "develop@{block}"),
-            Self::Explore => f.write_str("explore"),
-            Self::Reconcile => f.write_str("reconcile"),
-            Self::Custom => f.write_str("custom"),
-            Self::Build => f.write_str("build"),
+        f.write_str(self.verb())?;
+        match self.block() {
+            Some(block) => write!(f, "@{block}"),
+            None => Ok(()),
         }
     }
 }
@@ -193,45 +210,30 @@ impl FromStr for Task {
             None => (input, None),
         };
 
-        match (verb, anchor) {
-            ("fill", after) => Ok(Self::Fill {
-                after: after.map(str::parse).transpose()?,
-            }),
-            ("refute", Some(block)) => Ok(Self::Refute {
-                block: block.parse()?,
-            }),
-            ("refute", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("formalize", Some(block)) => Ok(Self::Formalize {
-                block: block.parse()?,
-            }),
-            ("formalize", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("realign" | "follow", Some(block)) => Ok(Self::FollowRoute {
-                block: block.parse()?,
-            }),
-            ("realign" | "follow", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("back" | "verify", after) => Ok(Self::Verify {
-                after: after.map(str::parse).transpose()?,
-            }),
-            ("promote", Some(block)) => Ok(Self::Promote {
-                block: block.parse()?,
-            }),
-            ("promote", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("prove", Some(block)) => Ok(Self::Prove {
-                block: block.parse()?,
-            }),
-            ("rewrite", Some(block)) => Ok(Self::Rewrite {
-                block: block.parse()?,
-            }),
-            ("develop", Some(block)) => Ok(Self::Develop {
-                block: block.parse()?,
-            }),
-            ("prove" | "rewrite" | "develop", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("explore", _) => Ok(Self::Explore),
-            ("reconcile", _) => Ok(Self::Reconcile),
-            ("custom", _) => Ok(Self::Custom),
-            ("build", _) => Ok(Self::Build),
-            _ => Err(BadTask::Unknown(verb.to_owned())),
-        }
+        // What may follow the `@`, and what has to.
+        let after =
+            || -> Result<Option<BlockId>, BadTask> { Ok(anchor.map(str::parse).transpose()?) };
+        let block = || -> Result<BlockId, BadTask> {
+            let anchor = anchor.ok_or_else(|| BadTask::Unanchored(input.to_owned()))?;
+            Ok(anchor.parse()?)
+        };
+
+        Ok(match verb {
+            "fill" => Self::Fill { after: after()? },
+            "refute" => Self::Refute { block: block()? },
+            "formalize" => Self::Formalize { block: block()? },
+            "realign" | "follow" => Self::FollowRoute { block: block()? },
+            "back" | "verify" => Self::Verify { after: after()? },
+            "promote" => Self::Promote { block: block()? },
+            "prove" => Self::Prove { block: block()? },
+            "rewrite" => Self::Rewrite { block: block()? },
+            "develop" => Self::Develop { block: block()? },
+            "explore" => Self::Explore,
+            "reconcile" => Self::Reconcile,
+            "custom" => Self::Custom,
+            "build" => Self::Build,
+            _ => return Err(BadTask::Unknown(verb.to_owned())),
+        })
     }
 }
 
@@ -494,7 +496,9 @@ mod tests {
                 block: BlockId::generate(),
             },
             Task::Explore,
+            Task::Reconcile,
             Task::Custom,
+            Task::Build,
         ] {
             assert_eq!(task.to_string().parse(), Ok(task.clone()), "for {task}");
         }
@@ -512,6 +516,24 @@ mod tests {
             Task::FollowRoute { block: block() }.to_string(),
             "realign@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV"
         );
+    }
+
+    #[test]
+    fn older_names_of_a_task_are_still_read() {
+        assert_eq!(
+            format!("follow@{}", block()).parse(),
+            Ok(Task::FollowRoute { block: block() })
+        );
+        assert_eq!("verify".parse(), Ok(Task::Verify { after: None }));
+    }
+
+    #[test]
+    fn developing_prose_names_its_block_without_anchoring_to_it() {
+        let task = Task::Develop { block: block() };
+
+        assert_eq!(task.anchor(), None);
+        assert_eq!(task.to_string(), "develop@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV");
+        assert_eq!(Task::Prove { block: block() }.anchor(), Some(&block()));
     }
 
     #[test]
