@@ -48,7 +48,27 @@ pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<Propo
             ],
         )
         .context("cannot keep the proposal")?;
+    tell(connection, &id)?;
     Ok(id)
+}
+
+/// Says a proposal arrived or was decided, to the person it waits for.
+fn tell(connection: &Connection, id: &ProposalId) -> Result<()> {
+    let Some(proposal) = by_id(connection, id)? else {
+        return Ok(());
+    };
+
+    super::events::publish(
+        connection,
+        super::events::Audience::Person(&proposal.job.group, &proposal.job.launched_by),
+        &stemma_core::event::Event::Proposal {
+            group: proposal.job.group.slug().as_str().to_owned(),
+            proposal: id.to_string(),
+            state: proposal.state.as_str().to_owned(),
+        },
+    )?;
+
+    Ok(())
 }
 
 /// Finds one proposal and its job.
@@ -98,12 +118,18 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
 /// Records the launcher's first and only decision.
 pub fn decide(connection: &Connection, id: &ProposalId, by: &UserId, accept: bool) -> Result<bool> {
     let state = if accept { "accepted" } else { "rejected" };
-    Ok(connection.execute(
+    let decided = connection.execute(
         "UPDATE proposals SET state = ?3, decided_by = ?2, decided_at = datetime('now')
          WHERE id = ?1 AND state = 'awaiting_review'
            AND job_id IN (SELECT id FROM jobs WHERE launched_by = ?2)",
         params![id.to_string(), by.to_string(), state],
-    )? > 0)
+    )? > 0;
+
+    if decided {
+        tell(connection, id)?;
+    }
+
+    Ok(decided)
 }
 
 /// Proposals this person still has to review.

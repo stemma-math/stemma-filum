@@ -65,6 +65,36 @@ fn agent() -> ureq::Agent {
         .clone()
 }
 
+/// The agent a stream of events is heard through.
+///
+/// Not the one above: a stream is one answer that lasts minutes, and a
+/// limit on the whole exchange would cut every one of them short. What
+/// it has instead is a limit just past the ten minutes the instance
+/// keeps a stream open, so a stream that went silent is noticed.
+static LISTENING: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+
+/// How long one stream may last before it is taken for dead.
+const STREAM: Duration = Duration::from_secs(11 * 60);
+
+fn listening() -> ureq::Agent {
+    LISTENING
+        .get_or_init(|| {
+            let config = ureq::Agent::config_builder()
+                .timeout_connect(Some(CONNECTING))
+                .timeout_recv_response(Some(TIMEOUT))
+                .timeout_recv_body(Some(STREAM))
+                .http_status_as_error(false)
+                .build();
+
+            ureq::Agent::with_parts(
+                config,
+                ureq::unversioned::transport::DefaultConnector::new(),
+                crate::reaching::HappyEyeballs::default(),
+            )
+        })
+        .clone()
+}
+
 /// What an instance says when a machine asks to sign in.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SignIn {
@@ -1001,6 +1031,33 @@ impl Server {
     }
 
     /// One of this instance's addresses.
+    /// Opens the stream of what changes on the instance, from after the
+    /// last notice this machine saw, or from now.
+    pub fn listen(&self, token: &str, last: Option<i64>) -> Result<impl std::io::BufRead + use<>> {
+        let mut request = listening()
+            .get(self.url("/api/events"))
+            .header("authorization", format!("Bearer {token}"))
+            .header("accept", "text/event-stream");
+        if let Some(last) = last {
+            request = request.header(stemma_core::event::LAST_EVENT_HEADER, last.to_string());
+        }
+
+        let response = request
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        match response.status().as_u16() {
+            200 => Ok(std::io::BufReader::new(response.into_body().into_reader())),
+            401 | 403 => bail!(
+                "{} no longer accepts this machine's credential",
+                self.address
+            ),
+            status => bail!("{} answered with {status}", self.address),
+        }
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.address)
     }

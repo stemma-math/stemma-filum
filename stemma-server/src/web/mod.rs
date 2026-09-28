@@ -13,6 +13,7 @@ pub mod auth;
 pub mod claims;
 pub mod cookies;
 pub mod device;
+pub mod events;
 pub mod front;
 pub mod groups;
 pub mod home;
@@ -53,6 +54,9 @@ pub struct Instance {
     pub database: Arc<Mutex<Database>>,
     /// The key that makes a cookie or a link worth something.
     pub key: Key,
+    /// Rung whenever the database may have changed, so that whoever is
+    /// waiting for events looks again instead of on a timer.
+    pub changed: Arc<tokio::sync::Notify>,
 }
 
 impl Instance {
@@ -62,6 +66,7 @@ impl Instance {
             settings: Arc::new(settings),
             database: Arc::new(Mutex::new(database)),
             key,
+            changed: Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -98,18 +103,44 @@ impl Instance {
         self.blocking(move || work(&repositories)).await
     }
 
+    /// Reads without saying anything may have changed.
+    ///
+    /// For whoever is watching for changes: their reading is not one, and
+    /// ringing for it would wake every other watcher to read in turn.
+    pub async fn peek<T, F>(&self, work: F) -> Result<T, WebError>
+    where
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let database = self.database.clone();
+
+        tokio::task::spawn_blocking(move || work(lock(&database)?.connection()))
+            .await
+            .map_err(|error| {
+                WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
+            })?
+            .map_err(WebError::Internal)
+    }
+
     /// Runs synchronous I/O or expensive computation on the blocking pool.
     pub async fn blocking<T, F>(&self, work: F) -> Result<T, WebError>
     where
         F: FnOnce() -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        tokio::task::spawn_blocking(work)
+        let done = tokio::task::spawn_blocking(work)
             .await
             .map_err(|error| {
                 WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
             })?
-            .map_err(WebError::Internal)
+            .map_err(WebError::Internal);
+
+        // Most work reads and changes nothing, and a stream woken for
+        // nothing reads once and goes back to sleep: cheaper than
+        // knowing which work wrote.
+        self.changed.notify_waiters();
+
+        done
     }
 
     /// Where this instance keeps its repositories.
@@ -254,6 +285,7 @@ fn api() -> Router<Instance> {
         .route("/api/me", get(api::me))
         .route("/api/logout", post(api::sign_out))
         .route("/api/workspace", get(api::workspace))
+        .route("/api/events", get(events::stream))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))
         .route("/api/lines", post(starting::api_start))

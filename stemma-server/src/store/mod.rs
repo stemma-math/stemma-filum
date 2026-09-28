@@ -9,6 +9,7 @@
 pub mod artefacts;
 pub mod claims;
 pub mod devices;
+pub mod events;
 pub mod groups;
 pub mod invitations;
 pub mod jobs;

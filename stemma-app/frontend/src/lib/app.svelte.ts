@@ -201,6 +201,14 @@ class App {
     }
   }
 
+  /** Brings what this machine has up to what the instance has, then reads
+   * the groups and lines again. Called when the instance says something
+   * changed, so it says nothing unless it fails. */
+  async lookAgain() {
+    if (!this.signed || this.synced.running) return;
+    await this.sync();
+  }
+
   async refreshWaiting() {
     this.waiting = await api.proposals();
   }
