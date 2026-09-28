@@ -441,6 +441,48 @@ mod tests {
     }
 
     #[test]
+    fn identifiers_travel_as_the_string_they_are_shown_as() {
+        let user: UserId = "usr:enric".parse().unwrap();
+        let job = JobId::generate();
+        let slug = Slug::parse("algebra").unwrap();
+
+        assert_eq!(serde_json::to_value(&user).unwrap(), "usr:enric");
+        assert_eq!(serde_json::to_value(job).unwrap(), job.to_string());
+        assert_eq!(serde_json::to_value(&slug).unwrap(), "algebra");
+
+        assert_eq!(
+            serde_json::from_str::<UserId>("\"usr:enric\"").unwrap(),
+            user
+        );
+        assert_eq!(
+            serde_json::from_value::<JobId>(job.to_string().into()).unwrap(),
+            job
+        );
+        assert_eq!(serde_json::from_str::<Slug>("\"algebra\"").unwrap(), slug);
+    }
+
+    #[test]
+    fn what_is_not_an_identifier_is_never_read_as_one() {
+        assert!(serde_json::from_str::<UserId>("\"grp:algebra\"").is_err());
+        assert!(serde_json::from_str::<UserId>("\"usr:Enric\"").is_err());
+        assert!(serde_json::from_str::<JobId>("\"job:nothing\"").is_err());
+        assert!(serde_json::from_str::<Slug>("\"-lead\"").is_err());
+        assert!(serde_json::from_str::<UserId>("42").is_err());
+    }
+
+    #[test]
+    fn an_identifier_can_be_a_map_key() {
+        let job = JobId::generate();
+        let map = std::collections::BTreeMap::from([(job, 1)]);
+        let text = serde_json::to_string(&map).unwrap();
+
+        assert_eq!(
+            serde_json::from_str::<std::collections::BTreeMap<JobId, u8>>(&text).unwrap(),
+            map
+        );
+    }
+
+    #[test]
     fn a_unique_identifier_rejects_a_body_that_is_not_a_ulid() {
         let error = "job:not-a-ulid".parse::<JobId>().unwrap_err();
         assert_eq!(error, IdError::Ulid("not-a-ulid".to_owned()));
