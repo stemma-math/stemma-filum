@@ -332,8 +332,15 @@ export class LineSession {
     return this.#claimWith(() => api.claim(this.path));
   }
 
+  /** Lets the line go, once everything is saved; edits that cannot be
+   * saved keep the claim, so they are not left behind. */
   async release() {
-    await this.flush();
+    try {
+      await this.flush();
+    } catch (error) {
+      fail(error);
+      return;
+    }
     return this.#claimWith(() => api.release(this.path));
   }
 
