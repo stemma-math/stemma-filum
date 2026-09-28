@@ -1,0 +1,20 @@
+name = "stemma"
+version = "0.1.0"
+defaultTargets = ["Stemma", "stemma-extract"]
+testDriver = "stemma_tests"
+
+[[lean_lib]]
+name = "Stemma"
+
+[[lean_lib]]
+name = "Tests"
+
+[[lean_exe]]
+name = "stemma-extract"
+root = "Main"
+supportInterpreter = true
+
+[[lean_exe]]
+name = "stemma_tests"
+root = "Tests.Main"
+supportInterpreter = true

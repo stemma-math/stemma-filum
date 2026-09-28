@@ -4,6 +4,7 @@ AGENTS.override.md
 
 # Build outputs.
 /target
+/lean/.lake
 /stemma-app/frontend/dist
 /identity/node_modules
 /stemma-app/frontend/node_modules
