@@ -102,10 +102,7 @@ impl Started {
 
     /// Who hears about what happens to it.
     pub fn audience(&self) -> Audience<'_> {
-        match self.side {
-            Side::Shared => Audience::Group(&self.group),
-            Side::Private => Audience::Person(&self.group, &self.author),
-        }
+        Audience::of(self.side, &self.group, &self.author)
     }
 }
 

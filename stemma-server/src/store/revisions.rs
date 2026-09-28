@@ -342,10 +342,7 @@ pub fn write(
     for block in withdrawn {
         super::events::publish(
             &transaction,
-            match found.side {
-                Side::Shared => super::events::Audience::Group(&found.group),
-                Side::Private => super::events::Audience::Person(&found.group, writer),
-            },
+            found.audience(),
             &stemma_core::event::Event::FormalAudit {
                 group: found.group.slug().as_str().to_owned(),
                 line: found.name.as_str().to_owned(),

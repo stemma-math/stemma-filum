@@ -255,14 +255,9 @@ fn tell(connection: &Connection, id: &JobId) -> Result<()> {
         return Ok(());
     };
 
-    let audience = match job.side {
-        Side::Shared => super::events::Audience::Group(&job.group),
-        Side::Private => super::events::Audience::Person(&job.group, &job.launched_by),
-    };
-
     super::events::publish(
         connection,
-        audience,
+        super::events::Audience::of(job.side, &job.group, &job.launched_by),
         &Event::Job {
             group: job.group.slug().as_str().to_owned(),
             job: job.id.to_string(),

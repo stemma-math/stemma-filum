@@ -161,14 +161,9 @@ fn tell(
     owner: &UserId,
     change: ClaimChange,
 ) -> Result<()> {
-    let audience = match side {
-        Side::Shared => Audience::Group(group),
-        Side::Private => Audience::Person(group, owner),
-    };
-
     events::publish(
         connection,
-        audience,
+        Audience::of(side, group, owner),
         &Event::Claim {
             group: group.slug().as_str().to_owned(),
             side,
