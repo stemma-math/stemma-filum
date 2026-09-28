@@ -6,31 +6,19 @@
   import { isStatement, nameOf } from "../lib/blocks";
   import type { LineSession } from "../lib/line.svelte";
   import { common, tasksFor } from "../lib/tasks";
-  import type { Block } from "../lib/types";
+  import type { Block, CustomTask } from "../lib/types";
 
   let { line, onask }: {
     line: LineSession;
-    onask: (tasks: string[], custom?: { request: string; blocks: string[]; library: boolean }) => void;
+    onask: (tasks: string[], custom?: CustomTask) => void;
   } = $props();
 
   let choosing = $state(false);
   let custom = $state("");
   let customLibrary = $state(false);
 
-  /** Every agent on every machine that works for this group. */
-  const choices = $derived(
-    line.offers.flatMap((machine) =>
-      machine.agents.map((agent) => ({
-        value: `${machine.machine}|${agent.name}`,
-        agent: agent.called,
-        machine: machine.label,
-        reason: agent.reason,
-        models: agent.models,
-        efforts: agent.efforts,
-      })),
-    ),
-  );
-  const chosenAgent = $derived(choices.find((one) => one.value === line.agent));
+  const choices = $derived(line.agents);
+  const chosenAgent = $derived(line.chosenAgent);
 
   const chosen = $derived(line.document?.blocks.filter((block) => line.selected.has(block.id)) ?? []);
   const offered = $derived(
@@ -68,7 +56,7 @@
           role="menuitemcheckbox"
           aria-checked={choice.value === line.agent}
           disabled={!!choice.reason}
-          onclick={() => { line.agent = choice.value; line.chooseDefaults(); choosing = false; }}
+          onclick={() => { line.choose(choice.value); choosing = false; }}
         >
           <span>{choice.agent}</span>
           <span class="menu__description">on {choice.machine}{choice.reason ? ` · ${choice.reason}` : ""}</span>

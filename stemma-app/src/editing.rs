@@ -33,24 +33,35 @@ pub struct Problem {
 }
 
 impl OpenLine {
-    fn of(line: &LineAt, source: String) -> Result<Self, String> {
-        let (document, read, faults) = analyse(&source);
-        Ok(Self {
+    /// The line as `source` reads, with its last Lean check. A check that
+    /// cannot be made is one more thing wrong with the line rather than a
+    /// failure: the line was still read, or saved.
+    fn of(line: &LineAt, source: String) -> Self {
+        let (document, read, mut faults) = analyse(&source);
+        let lean = lean_status(line).unwrap_or_else(|error| {
+            faults.push(Problem {
+                at: None,
+                message: failed(error),
+            });
+            None
+        });
+        Self {
             entry: line.entry(),
             document,
             source,
             line: read,
             faults,
-            lean: lean_status(line)?,
-        })
+            lean,
+        }
     }
 }
 
+/// Reads a line from disk for the editor.
 #[tauri::command(async)]
 pub fn open_line(path: String) -> Result<OpenLine, String> {
     let line = LineAt::admit(&path)?;
     let source = std::fs::read_to_string(&line.path).map_err(said)?;
-    OpenLine::of(&line, source)
+    Ok(OpenLine::of(&line, source))
 }
 
 /// Saves the line through the engine, which sends it after a pause.
@@ -62,7 +73,7 @@ pub fn save_line(path: String, document: Document) -> Result<OpenLine, String> {
         .and_then(|mirror| mirror.save(&line.group, line.side()?, &line.name, &document))
         .map_err(failed)?;
     engine::nudge(Nudge::Saved);
-    OpenLine::of(&line, document.to_text())
+    Ok(OpenLine::of(&line, document.to_text()))
 }
 
 /// Reads the line out of its source, collecting every fault.
@@ -91,12 +102,12 @@ fn problem(fault: &Fault) -> Problem {
     }
 }
 
-/// The last Lean check of this line against the group's pinned toolchain.
-fn lean_status(line: &LineAt) -> Result<Option<LeanDigest>, String> {
+/// The Lean check of this line against the group's pinned toolchain.
+fn lean_status(line: &LineAt) -> anyhow::Result<Option<LeanDigest>> {
     let clone = line.clone_root();
-    let manifest = stemma::build::read_manifest(clone).map_err(said)?;
+    let manifest = stemma::build::read_manifest(clone)?;
     let pins = stemma::build::group_pins(clone, &manifest);
-    stemma::lean::check(clone, &Name::parse(&line.name).map_err(said)?, &pins).map_err(said)
+    stemma::lean::check(clone, &Name::parse(&line.name)?, &pins)
 }
 
 #[cfg(test)]

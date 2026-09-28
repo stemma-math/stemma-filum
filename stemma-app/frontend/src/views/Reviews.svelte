@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { app } from "../lib/app.svelte";
   import { said } from "../lib/api";
+  import { outcome } from "../lib/review";
 
   let problem = $state<string | null>(null);
   onMount(() => { void app.refreshWaiting().catch((error) => { problem = said(error); }); });
@@ -28,7 +29,7 @@
     <h2>Recent decisions</h2>
     {#each app.recent as one (one.proposal)}
       <button type="button" class="reviews-view__item" onclick={() => app.openReview(one.proposal)}>
-        <strong>{one.line}</strong><span class="identifier">{one.group} · {one.state === "outdated" ? "outdated" : one.decision ?? one.state}</span>
+        <strong>{one.line}</strong><span class="identifier">{one.group} · {outcome(one)}</span>
         {#if one.note}<span class="quiet">{one.note}</span>{/if}
       </button>
     {:else}

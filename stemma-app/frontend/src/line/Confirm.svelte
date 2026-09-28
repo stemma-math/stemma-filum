@@ -21,15 +21,13 @@
     oncancel: () => void;
   } = $props();
 
-  let shown = $state(false);
-  $effect(() => { shown = open; });
-  $effect(() => { if (!shown && open) oncancel(); });
 </script>
 
-<Dialog bind:open={shown} {title}>
+<!-- Closing the dialog any other way than confirming cancels. -->
+<Dialog bind:open={() => open, (shown) => { if (!shown && open) oncancel(); }} {title}>
   <p class="dialog__text">{text}</p>
   {#snippet actions()}
-    <button type="button" class="button" onclick={() => (shown = false)}>Cancel</button>
+    <button type="button" class="button" onclick={oncancel}>Cancel</button>
     <button type="button" class="button button--primary" class:button--danger={danger} onclick={onconfirm}>{verb}</button>
   {/snippet}
 </Dialog>

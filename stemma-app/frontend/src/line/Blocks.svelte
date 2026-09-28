@@ -2,6 +2,7 @@
   import { flip } from "svelte/animate";
   import { isStatement, move, moveTo, remove } from "../lib/blocks";
   import { app } from "../lib/app.svelte";
+  import { blockCard, blockText } from "../lib/dom";
   import type { LineSession } from "../lib/line.svelte";
   import type { Block, LineDocument } from "../lib/types";
   import BlockCard from "./BlockCard.svelte";
@@ -98,13 +99,13 @@
       const next = blocks[to];
       if (next) {
         select(next.id, false);
-        window.document.querySelector(`[data-block="${next.id}"]`)?.scrollIntoView({ block: "nearest" });
+        blockCard(next.id)?.scrollIntoView({ block: "nearest" });
       }
       return;
     }
     if (event.key === "Enter" && current) {
       event.preventDefault();
-      (window.document.querySelector(`[data-block="${current}"] .cm-content`) as HTMLElement | null)?.focus();
+      blockText(current)?.focus();
       return;
     }
     if (event.key === "Backspace" && (event.metaKey || event.ctrlKey) && current) {

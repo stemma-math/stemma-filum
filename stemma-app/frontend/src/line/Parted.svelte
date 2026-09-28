@@ -10,29 +10,42 @@
   let found = $state<Conflict[]>([]);
   let problem = $state<string | null>(null);
   let kept = $state<Record<string, Keep>>({});
+  let settling = $state(false);
 
   const complete = $derived(found.every((one) => kept[one.block]));
   const deciding = $derived(app.stateOf(line.path) === "needs_decision");
 
-  // Looked at again whenever the line starts or stops needing a decision.
+  // Looked at again whenever the line starts or stops needing a decision;
+  // an answer that arrives after that changed again is dropped.
   $effect(() => {
     if (!deciding) {
       found = [];
+      problem = null;
       return;
     }
+    let current = true;
     api.parted(line.path).then((conflicts) => {
+      if (!current) return;
       found = conflicts;
       problem = null;
-    }, (error) => (problem = said(error)));
+    }, (error) => {
+      if (current) problem = said(error);
+    });
+    return () => {
+      current = false;
+    };
   });
 
   async function keep() {
+    settling = true;
     try {
       await api.settle(line.path, found.map((one) => ({ block: one.block, keep: kept[one.block] })));
       await app.lookAgain();
       await line.reread();
     } catch (error) {
       problem = said(error);
+    } finally {
+      settling = false;
     }
   }
 </script>
@@ -56,7 +69,7 @@
           <pre class="conflict__version">{one.there ?? "Deleted"}</pre>
         </div>
       {/each}
-      <button type="button" class="button button--primary button--small" disabled={!complete} onclick={keep}>Keep these</button>
+      <button type="button" class="button button--primary button--small" disabled={!complete || settling} onclick={keep}>Keep these</button>
       <p class="panel__text">The version you do not keep stays in the line's history.</p>
     {/if}
   </section>

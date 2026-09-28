@@ -4,6 +4,7 @@
   import Bubble from "../components/Bubble.svelte";
   import Glyph from "../components/Glyph.svelte";
   import { ADDABLE, insert, isStatement } from "../lib/blocks";
+  import { blockCard, blockText } from "../lib/dom";
   import type { LineSession } from "../lib/line.svelte";
   import type { LineDocument } from "../lib/types";
 
@@ -31,9 +32,8 @@
     line.selected.add(block.id);
     line.changed();
     requestAnimationFrame(() => {
-      const card = window.document.querySelector(`[data-block="${block.id}"]`);
-      card?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      (card?.querySelector(".cm-content") as HTMLElement | null)?.focus();
+      blockCard(block.id)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      blockText(block.id)?.focus();
     });
   }
 </script>

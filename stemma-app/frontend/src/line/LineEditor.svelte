@@ -2,12 +2,15 @@
   import { onMount } from "svelte";
   import Glyph from "../components/Glyph.svelte";
   import { app, type View } from "../lib/app.svelte";
+  import { blurOnEnter } from "../lib/dom";
+  import { jobs } from "../lib/jobs.svelte";
   import type { LineSession } from "../lib/line.svelte";
+  import { fail } from "../lib/status.svelte";
+  import type { CustomTask } from "../lib/types";
   import Agents from "./Agents.svelte";
   import Blocks from "./Blocks.svelte";
   import ClaimBox from "./ClaimBox.svelte";
   import FloatingBar from "./FloatingBar.svelte";
-  import { jobs } from "./jobs.svelte";
   import LineJobs from "./LineJobs.svelte";
   import Parted from "./Parted.svelte";
   import Preview from "./Preview.svelte";
@@ -25,7 +28,7 @@
     return () => line.detach();
   });
 
-  async function ask(tasks: string[], custom?: { request: string; blocks: string[]; library: boolean }) {
+  async function ask(tasks: string[], custom?: CustomTask) {
     if (await line.ask(tasks, custom)) await jobs.refresh();
   }
 
@@ -95,7 +98,7 @@
             bind:value={titleDraft}
             disabled={!line.editable || !line.document}
             onchange={(event) => retitle(event.currentTarget.value)}
-            onkeydown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+            onkeydown={blurOnEnter}
           />
         </label>
         <label class="autosize editor-head__about" data-value={aboutDraft || "Add a description"}>
@@ -106,7 +109,7 @@
             placeholder={line.editable ? "Add a description" : ""}
             disabled={!line.editable || !line.document}
             onchange={(event) => redescribe(event.currentTarget.value)}
-            onkeydown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+            onkeydown={blurOnEnter}
           />
         </label>
         <span class="chip">
@@ -133,7 +136,7 @@
         <span class="save-state"><span class="spinner" aria-hidden="true"></span>Saving…</span>
       {:else if line.saveState === "not saved"}
         <span class="save-state save-state--failed"><Glyph name="alert" small />Couldn't save
-          <button type="button" class="button button--link" onclick={() => line.save()}>Retry</button></span>
+          <button type="button" class="button button--link" onclick={() => line.save().catch(fail)}>Retry</button></span>
       {:else if app.stateOf(line.path) === "needs_decision"}
         <span class="save-state save-state--failed"><Glyph name="alert" small />Needs a decision</span>
       {:else if app.stateOf(line.path) === "not_sent"}
