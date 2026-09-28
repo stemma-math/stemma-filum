@@ -362,14 +362,20 @@ pub enum JobCommand {
         /// The job whose local output to print.
         job: String,
     },
+
+    /// Cancels a queued job or asks a running one to stop.
+    Cancel {
+        /// The job to cancel.
+        job: String,
+    },
 }
 
 /// What a job asks for, and of whom.
 #[derive(Debug, Args)]
 pub struct JobRun {
-    /// The task: `fill`, `refute@thm:main`, `formalize@thm:main`,
-    /// `verify@thm:main`, `prove@thm:main`, `rewrite@lem:step`,
-    /// `develop@blk:…` or `explore`.
+    /// The task: `refute@BLOCK`, `formalize@BLOCK`, `back@BLOCK`,
+    /// `realign@BLOCK`, `prove@BLOCK`, `rewrite@BLOCK`,
+    /// `develop@BLOCK`, `explore`, `reconcile`, or `custom`.
     #[arg(long)]
     pub task: String,
 
@@ -389,6 +395,26 @@ pub struct JobRun {
     /// This machine.
     #[arg(long)]
     pub here: bool,
+
+    /// Concrete model offered by the chosen machine.
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Reasoning effort offered by the chosen machine.
+    #[arg(long)]
+    pub effort: Option<String>,
+
+    /// A custom request. This selects the `custom` task.
+    #[arg(long)]
+    pub request: Option<String>,
+
+    /// A block the custom request may edit, remove, or add after.
+    #[arg(long = "grant-block", value_name = "BLOCK")]
+    pub grant_blocks: Vec<stemma_core::id::BlockId>,
+
+    /// Allow a custom request to change the Lean library.
+    #[arg(long, requires = "request")]
+    pub grant_library: bool,
 }
 
 #[cfg(test)]

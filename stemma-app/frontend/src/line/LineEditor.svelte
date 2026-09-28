@@ -23,8 +23,8 @@
     return () => line.detach();
   });
 
-  async function ask(tasks: string[]) {
-    if (await line.ask(tasks)) await jobs.refresh();
+  async function ask(tasks: string[], custom?: { request: string; blocks: string[]; library: boolean }) {
+    if (await line.ask(tasks, custom)) await jobs.refresh();
   }
 
   /** Undo and redo for the whole line, and the two views. A plain text

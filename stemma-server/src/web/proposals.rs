@@ -82,7 +82,22 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
             // and framed by nothing.
             p class="quiet identifier" {
                 (proposal.vendor) " · " (proposal.model)
+                @if let Some(effort) = &proposal.effort { " · " (effort) }
                 " · prompt " (proposal.prompt_revision)
+            }
+            @if !proposal.explanation.is_empty() {
+                p { (proposal.explanation) }
+            }
+        }
+
+        @if !proposal.operations.is_empty() {
+            div class="block" {
+                p class="label" { "Operations" }
+                ul class="findings" {
+                    @for operation in &proposal.operations {
+                        li { (operation_summary(operation)) }
+                    }
+                }
             }
         }
 
@@ -182,6 +197,27 @@ fn body(signed: &SignedIn, proposal: &proposals::Proposal, stands: Option<&str>)
                 }
             }
         }
+    }
+}
+
+fn operation_summary(operation: &stemma_core::proposal::Operation) -> String {
+    use stemma_core::proposal::Operation;
+    match operation {
+        Operation::EditBlock { block, .. } => format!("Edit block {block}"),
+        Operation::AddBlocks { after, blocks } => format!(
+            "Add {} block{} {}",
+            blocks.len(),
+            if blocks.len() == 1 { "" } else { "s" },
+            after.map_or_else(
+                || "at the beginning".to_owned(),
+                |block| format!("after {block}")
+            ),
+        ),
+        Operation::RemoveBlock { block } => format!("Remove block {block}"),
+        Operation::WriteLibraryFile { path, after, .. } => match after {
+            Some(_) => format!("Write library file {path}"),
+            None => format!("Remove library file {path}"),
+        },
     }
 }
 
@@ -499,6 +535,10 @@ async fn settle(
                             task => task,
                         },
                         agent: proposal.job.agent,
+                        model: proposal.job.model,
+                        effort: proposal.job.effort,
+                        request: proposal.job.request,
+                        grants: proposal.job.grants,
                         choice: proposal.job.choice,
                         by: by_for_write,
                     },
@@ -573,6 +613,9 @@ pub async fn offered(
         "vendor": proposal.vendor,
         "model": proposal.model,
         "prompt_revision": proposal.prompt_revision,
+        "operations": proposal.operations,
+        "explanation": proposal.explanation,
+        "effort": proposal.effort,
         "state": proposal.state,
         "stands": stands,
         "source": proposal.source,

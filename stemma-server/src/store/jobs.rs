@@ -16,6 +16,7 @@ use stemma_core::event::Event;
 use stemma_core::id::{GroupId, JobId, LineId, MachineId, Slug, UserId};
 use stemma_core::job::{Choice, JobState, Outcome, Task};
 use stemma_core::line::Name;
+use stemma_core::proposal::Grants;
 use stemma_core::repository::Side;
 
 use super::id_at;
@@ -41,6 +42,14 @@ pub struct Job {
     pub task: Task,
     /// Which agent was chosen.
     pub agent: Slug,
+    /// Concrete model selected for the run.
+    pub model: Option<String>,
+    /// Reasoning effort selected for the run.
+    pub effort: Option<String>,
+    /// A person's request for a custom task.
+    pub request: Option<String>,
+    /// Explicit grants for a custom task.
+    pub grants: Option<Grants>,
     /// Which machine was chosen, or nobody in particular.
     pub choice: Choice,
     /// Who launched it and answers for it.
@@ -59,6 +68,12 @@ pub struct Job {
     pub outcome: Option<Outcome>,
     /// When the machine's owner dealt with what stopped it.
     pub cleared_at: Option<String>,
+    /// Inspectable workspace reported by the machine.
+    pub workspace: Option<String>,
+    /// Most recent progress sentence.
+    pub progress: Option<String>,
+    /// Whether the launcher asked a running job to stop.
+    pub cancel_requested_at: Option<String>,
 }
 
 impl Job {
@@ -94,6 +109,12 @@ impl Job {
             against: revision_at(row, "against")?,
             task: task.parse().map_err(|_| unreadable("a task", &task))?,
             agent: Slug::parse(&agent).map_err(|_| unreadable("an agent", &agent))?,
+            model: row.get("model")?,
+            effort: row.get("effort")?,
+            request: row.get("request")?,
+            grants: row
+                .get::<_, Option<String>>("grants")?
+                .and_then(|raw| serde_json::from_str(&raw).ok()),
             choice: match chosen {
                 Some(machine) => Choice::Machine {
                     machine: machine
@@ -122,6 +143,9 @@ impl Job {
                 None => None,
             },
             cleared_at: row.get("cleared_at")?,
+            workspace: row.get("workspace")?,
+            progress: row.get("progress")?,
+            cancel_requested_at: row.get("cancel_requested_at")?,
         })
     }
 
@@ -150,7 +174,8 @@ fn revision_at(row: &Row<'_>, column: &str) -> rusqlite::Result<Option<u64>> {
 /// The columns every read asks for.
 const COLUMNS: &str = "id, group_id, side, line, line_id, revision, against, task, agent,
                        chosen_machine, launched_by, launched_at, state, taken_by, taken_at,
-                       finished_at, outcome, code, reason, cleared_at";
+                       finished_at, outcome, code, reason, cleared_at, model, effort, request,
+                       grants, workspace, progress, cancel_requested_at";
 
 /// What somebody asked for.
 #[derive(Debug, Clone)]
@@ -171,6 +196,14 @@ pub struct Launch {
     pub task: Task,
     /// Which agent.
     pub agent: Slug,
+    /// Concrete model override.
+    pub model: Option<String>,
+    /// Reasoning effort override.
+    pub effort: Option<String>,
+    /// A person's request for a custom task.
+    pub request: Option<String>,
+    /// Capabilities chosen for a custom task.
+    pub grants: Option<Grants>,
     /// Which machine, or nobody in particular.
     pub choice: Choice,
     /// Who is asking.
@@ -184,8 +217,9 @@ pub fn launch(connection: &Connection, asked: &Launch) -> Result<Job> {
     connection
         .execute(
             "INSERT INTO jobs (id, group_id, side, line, revision, against, task, agent,
-                               chosen_machine, launched_by, state, line_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'queued', ?11)",
+                               chosen_machine, launched_by, state, line_id, model, effort,
+                               request, grants)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'queued', ?11, ?12, ?13, ?14, ?15)",
             params![
                 id.to_string(),
                 asked.group.to_string(),
@@ -198,6 +232,14 @@ pub fn launch(connection: &Connection, asked: &Launch) -> Result<Job> {
                 asked.choice.machine().map(MachineId::to_string),
                 asked.by.to_string(),
                 asked.line_id.map(|line| line.to_string()),
+                asked.model,
+                asked.effort,
+                asked.request,
+                asked
+                    .grants
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()?,
             ],
         )
         .context("cannot add the job to the queue")?;
@@ -373,6 +415,42 @@ pub fn withdraw(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool
     Ok(withdrawn > 0)
 }
 
+/// Asks a running job to stop, or withdraws it before it starts.
+pub fn cancel(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool> {
+    let changed = connection.execute(
+        "UPDATE jobs
+            SET state = CASE WHEN state = 'queued' THEN 'withdrawn' ELSE state END,
+                finished_at = CASE WHEN state = 'queued' THEN datetime('now') ELSE finished_at END,
+                cancel_requested_at = datetime('now')
+          WHERE id = ?1 AND launched_by = ?2 AND state IN ('queued', 'running')
+            AND cancel_requested_at IS NULL",
+        params![id.to_string(), by.to_string()],
+    )? > 0;
+    if changed {
+        tell(connection, id)?;
+    }
+    Ok(changed)
+}
+
+/// Records an inspectable workspace and progress from the machine holding the job.
+pub fn progress(
+    connection: &Connection,
+    id: &JobId,
+    machine: &MachineId,
+    workspace: Option<&str>,
+    progress: &str,
+) -> Result<bool> {
+    let changed = connection.execute(
+        "UPDATE jobs SET workspace = COALESCE(?3, workspace), progress = ?4
+          WHERE id = ?1 AND taken_by = ?2 AND state = 'running'",
+        params![id.to_string(), machine.to_string(), workspace, progress],
+    )? > 0;
+    if changed {
+        tell(connection, id)?;
+    }
+    Ok(changed)
+}
+
 /// Records that a machine's owner has dealt with what stopped a job.
 ///
 /// The outcome stays in the record, saying what happened then. What
@@ -522,6 +600,10 @@ mod tests {
             against: None,
             task: Task::Fill { after: None },
             agent: claude(),
+            model: None,
+            effort: None,
+            request: None,
+            grants: None,
             choice,
             by: by.clone(),
         }
@@ -580,6 +662,37 @@ mod tests {
             .unwrap()
             .is_none()
         );
+    }
+
+    #[test]
+    fn a_launcher_can_withdraw_queued_work_and_request_running_work_to_stop() {
+        let mut database = test_database();
+        let (algebra, ana) = ready(database.connection_mut());
+
+        let queued = launch(
+            database.connection(),
+            &asked(&algebra, &ana.user, Choice::Anyone),
+        )
+        .unwrap();
+        assert!(cancel(database.connection(), &queued.id, &ana.user).unwrap());
+        assert_eq!(
+            by_id(database.connection(), &queued.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            JobState::Withdrawn
+        );
+
+        let running = launch(
+            database.connection(),
+            &asked(&algebra, &ana.user, Choice::Anyone),
+        )
+        .unwrap();
+        take_next(database.connection_mut(), &ana.machine, &[claude()]).unwrap();
+        assert!(cancel(database.connection(), &running.id, &ana.user).unwrap());
+        let running = by_id(database.connection(), &running.id).unwrap().unwrap();
+        assert_eq!(running.state, JobState::Running);
+        assert!(running.cancel_requested_at.is_some());
     }
 
     #[test]

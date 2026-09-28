@@ -19,6 +19,8 @@ pub mod export;
 pub mod git;
 pub mod git_credential;
 pub mod home;
+pub mod job_api;
+pub mod job_workspace;
 pub mod jobs;
 pub mod lean;
 pub mod lines;

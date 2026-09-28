@@ -81,7 +81,12 @@
   {@const review = reading}
   <section class="review">
     <h4 class="setting__title">{review.line} · <span class="identifier">{review.task}</span></h4>
-    <p class="row__meta identifier">{review.vendor} · {review.model} · prompt {review.prompt_revision}</p>
+    <p class="row__meta identifier">{review.vendor} · {review.model}{review.effort ? ` · ${review.effort}` : ""} · prompt {review.prompt_revision}</p>
+    {#if review.explanation}<p>{review.explanation}</p>{/if}
+    {#if review.operations.length}
+      <h4 class="setting__title">Operations</h4>
+      <pre class="diff">{JSON.stringify(review.operations, null, 2)}</pre>
+    {/if}
     <h4 class="setting__title">What changed <span class="count">{review.extent}</span></h4>
     <div class="diff">
       {#each review.rows as row, at (at)}

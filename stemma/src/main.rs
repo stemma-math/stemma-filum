@@ -20,6 +20,20 @@ use stemma::{
 use stemma_core::proposal::Verdict;
 
 fn main() -> ExitCode {
+    if std::env::args_os()
+        .next()
+        .and_then(|path| PathBuf::from(path).file_stem().map(|name| name.to_owned()))
+        .is_some_and(|name| name == "stemma-job")
+    {
+        return match stemma::job_api::run_from_environment() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("stemma-job: {error:#}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
     match run(Cli::parse()) {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::FAILURE,
@@ -118,17 +132,46 @@ fn run(cli: Cli) -> Result<bool> {
 
         Command::Job { command } => match command {
             JobCommand::Run(asked) => {
+                let grants = asked
+                    .request
+                    .as_ref()
+                    .map(|_| stemma_core::proposal::Grants {
+                        line: asked
+                            .grant_blocks
+                            .iter()
+                            .flat_map(|block| {
+                                [
+                                    stemma_core::proposal::LineGrant::Edit { block: *block },
+                                    stemma_core::proposal::LineGrant::Remove { block: *block },
+                                    stemma_core::proposal::LineGrant::Add {
+                                        after: Some(*block),
+                                    },
+                                ]
+                            })
+                            .collect(),
+                        library: asked.grant_library,
+                        add_only: false,
+                    });
                 let wanted = jobs::Wanted {
                     line: asked.line,
-                    task: asked.task,
+                    task: if asked.request.is_some() {
+                        "custom".to_owned()
+                    } else {
+                        asked.task
+                    },
                     agent: asked.agent,
                     machine: asked.machine,
                     here: asked.here,
+                    model: asked.model,
+                    effort: asked.effort,
+                    request: asked.request,
+                    grants,
                 };
                 jobs::run(home, &here(), &wanted, out)?;
             }
             JobCommand::List => jobs::list(home, out)?,
             JobCommand::Output { job } => jobs::output(home, &job, out)?,
+            JobCommand::Cancel { job } => jobs::cancel(home, &job, out)?,
         },
 
         Command::Proposal { command } => match command {

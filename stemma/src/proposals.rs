@@ -56,6 +56,15 @@ pub fn show(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
         "  {} · {} · {} {} · prompt {}",
         offered.task, offered.agent, offered.vendor, offered.model, offered.prompt_revision
     )?;
+    if let Some(effort) = &offered.effort {
+        writeln!(out, "  effort {effort}")?;
+    }
+    if !offered.explanation.is_empty() {
+        writeln!(out, "  {}", offered.explanation)?;
+    }
+    if !offered.operations.is_empty() {
+        writeln!(out, "  {} scoped operation(s)", offered.operations.len())?;
+    }
     writeln!(out, "  {}", offered.state)?;
     writeln!(out)?;
 

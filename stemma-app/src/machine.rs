@@ -14,6 +14,8 @@ pub struct Agent {
     called: String,
     availability: String,
     reason: Option<String>,
+    models: Vec<String>,
+    efforts: Vec<String>,
 }
 
 impl Agent {
@@ -26,6 +28,8 @@ impl Agent {
             name: name.to_owned(),
             availability: agent.availability.to_string(),
             reason: agent.availability.reason().map(str::to_owned),
+            models: agent.models.clone(),
+            efforts: agent.efforts.clone(),
         }
     }
 }
@@ -38,6 +42,9 @@ pub struct Job {
     agent: String,
     said: String,
     raw_output: bool,
+    workspace: Option<String>,
+    progress: Option<String>,
+    cancel_requested: bool,
 }
 
 #[derive(Serialize)]
@@ -79,6 +86,9 @@ pub fn machine() -> Result<MachinePanel, String> {
             task: job.task,
             agent: job.agent,
             said: job.said,
+            workspace: job.workspace,
+            progress: job.progress,
+            cancel_requested: job.cancel_requested,
         })
         .collect();
 
@@ -94,6 +104,16 @@ pub fn machine() -> Result<MachinePanel, String> {
 #[tauri::command(async)]
 pub fn job_output(job: String) -> Result<String, String> {
     carried_out(|home, out| stemma::jobs::output(home, &job, out))
+}
+
+/// Cancels a queued job or asks its running agent to stop.
+#[tauri::command(async)]
+pub fn cancel_job(job: String) -> Result<(), String> {
+    let session = Session::open()?;
+    session
+        .server
+        .cancel_job(&session.token, &job)
+        .map_err(said)
 }
 
 /// The machines that work for `group`, and what each can run.
@@ -116,12 +136,18 @@ pub fn offers(group: String) -> Result<Vec<Offer>, String> {
 
 /// Asks `machine` to run `task` with `agent` on the line.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn launch(
     path: String,
     task: String,
     agent: String,
     here: bool,
     machine: Option<String>,
+    model: Option<String>,
+    effort: Option<String>,
+    request: Option<String>,
+    grant_blocks: Vec<String>,
+    grant_library: bool,
 ) -> Result<String, String> {
     let line = LineAt::admit(&path)?;
     let wanted = stemma::jobs::Wanted {
@@ -130,6 +156,27 @@ pub fn launch(
         agent,
         machine,
         here,
+        model,
+        effort,
+        request: request.clone(),
+        grants: request
+            .map(|_| {
+                let mut line = Vec::new();
+                for raw in grant_blocks {
+                    let block = raw
+                        .parse()
+                        .map_err(|error| format!("invalid block grant: {error}"))?;
+                    line.push(stemma_core::proposal::LineGrant::Edit { block });
+                    line.push(stemma_core::proposal::LineGrant::Remove { block });
+                    line.push(stemma_core::proposal::LineGrant::Add { after: Some(block) });
+                }
+                Ok::<_, String>(stemma_core::proposal::Grants {
+                    line,
+                    library: grant_library,
+                    add_only: false,
+                })
+            })
+            .transpose()?,
     };
     stemma::jobs::run(&home(), line.directory(), &wanted, &mut Vec::new()).map_err(said)
 }

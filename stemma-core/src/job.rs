@@ -85,6 +85,8 @@ pub enum Task {
     /// What comes back is a proposal like any other: an agent may offer
     /// a reconciliation, and a person signs it or does not.
     Reconcile,
+    /// A person's own request, whose text and grants travel beside the task.
+    Custom,
     /// Build the line's repository and publish what it holds, for the
     /// web to show. The instance asks for this itself, of any machine of
     /// the group, when the machine that wrote the line did not; no agent
@@ -102,14 +104,15 @@ impl Task {
             Self::Fill { .. } => "fill this box",
             Self::Refute { .. } => "look for a counterexample",
             Self::Formalize { .. } => "formalize in Lean",
-            Self::FollowRoute { .. } => "follow the author's route in Lean",
-            Self::Verify { .. } => "verify this box in Lean",
+            Self::FollowRoute { .. } => "realign the narrative",
+            Self::Verify { .. } => "back this box in Lean",
             Self::Promote { .. } => "promote this statement",
             Self::Prove { .. } => "write the proof",
             Self::Rewrite { .. } => "rewrite this statement rigorously",
             Self::Develop { .. } => "develop this prose into mathematics",
             Self::Explore => "say where the line could go next",
             Self::Reconcile => "bring the two versions together",
+            Self::Custom => "carry out a custom request",
             Self::Build => "build its pages",
         }
     }
@@ -125,7 +128,9 @@ impl Task {
             Self::Promote { block } => Some(block),
             Self::Prove { block } => Some(block),
             Self::Rewrite { block } => Some(block),
-            Self::Develop { .. } | Self::Explore | Self::Reconcile | Self::Build => None,
+            Self::Develop { .. } | Self::Explore | Self::Reconcile | Self::Custom | Self::Build => {
+                None
+            }
         }
     }
 
@@ -148,15 +153,16 @@ impl fmt::Display for Task {
             Self::Fill { after: Some(node) } => write!(f, "fill@{node}"),
             Self::Refute { block } => write!(f, "refute@{block}"),
             Self::Formalize { block } => write!(f, "formalize@{block}"),
-            Self::FollowRoute { block } => write!(f, "follow@{block}"),
-            Self::Verify { after: None } => f.write_str("verify"),
-            Self::Verify { after: Some(node) } => write!(f, "verify@{node}"),
+            Self::FollowRoute { block } => write!(f, "realign@{block}"),
+            Self::Verify { after: None } => f.write_str("back"),
+            Self::Verify { after: Some(node) } => write!(f, "back@{node}"),
             Self::Promote { block } => write!(f, "promote@{block}"),
             Self::Prove { block } => write!(f, "prove@{block}"),
             Self::Rewrite { block } => write!(f, "rewrite@{block}"),
             Self::Develop { block } => write!(f, "develop@{block}"),
             Self::Explore => f.write_str("explore"),
             Self::Reconcile => f.write_str("reconcile"),
+            Self::Custom => f.write_str("custom"),
             Self::Build => f.write_str("build"),
         }
     }
@@ -199,11 +205,11 @@ impl FromStr for Task {
                 block: block.parse()?,
             }),
             ("formalize", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("follow", Some(block)) => Ok(Self::FollowRoute {
+            ("realign" | "follow", Some(block)) => Ok(Self::FollowRoute {
                 block: block.parse()?,
             }),
-            ("follow", None) => Err(BadTask::Unanchored(input.to_owned())),
-            ("verify", after) => Ok(Self::Verify {
+            ("realign" | "follow", None) => Err(BadTask::Unanchored(input.to_owned())),
+            ("back" | "verify", after) => Ok(Self::Verify {
                 after: after.map(str::parse).transpose()?,
             }),
             ("promote", Some(block)) => Ok(Self::Promote {
@@ -222,6 +228,7 @@ impl FromStr for Task {
             ("prove" | "rewrite" | "develop", None) => Err(BadTask::Unanchored(input.to_owned())),
             ("explore", _) => Ok(Self::Explore),
             ("reconcile", _) => Ok(Self::Reconcile),
+            ("custom", _) => Ok(Self::Custom),
             ("build", _) => Ok(Self::Build),
             _ => Err(BadTask::Unknown(verb.to_owned())),
         }
@@ -487,6 +494,7 @@ mod tests {
                 block: BlockId::generate(),
             },
             Task::Explore,
+            Task::Custom,
         ] {
             assert_eq!(task.to_string().parse(), Ok(task.clone()), "for {task}");
         }
@@ -502,7 +510,7 @@ mod tests {
         );
         assert_eq!(
             Task::FollowRoute { block: block() }.to_string(),
-            "follow@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV"
+            "realign@blk:01ARZ3NDEKTSV4RRFFQ69G5FAV"
         );
     }
 

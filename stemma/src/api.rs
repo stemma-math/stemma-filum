@@ -283,6 +283,21 @@ pub struct Handed {
     pub task: String,
     /// Which agent to use.
     pub agent: String,
+    /// Concrete model override.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Reasoning effort override.
+    #[serde(default)]
+    pub effort: Option<String>,
+    /// A person's request for a custom task.
+    #[serde(default)]
+    pub request: Option<String>,
+    /// Explicit capabilities for a custom task.
+    #[serde(default)]
+    pub grants: Option<stemma_core::proposal::Grants>,
+    /// Whether the launcher asked this running job to stop.
+    #[serde(default)]
+    pub cancel_requested: bool,
     /// Who asked, and answers for it.
     pub launched_by: String,
 }
@@ -304,6 +319,20 @@ pub struct Listed {
     pub state: String,
     /// One line about it.
     pub said: String,
+    /// Inspectable workspace, once the machine reports it.
+    #[serde(default)]
+    pub workspace: Option<String>,
+    /// Latest progress sentence.
+    #[serde(default)]
+    pub progress: Option<String>,
+    /// Whether cancellation has been requested.
+    #[serde(default)]
+    pub cancel_requested: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct JobControl {
+    cancel_requested: bool,
 }
 
 /// What a machine says to launch a job.
@@ -326,6 +355,18 @@ pub struct Asking {
     pub agent: String,
     /// Which machine, where one was chosen.
     pub machine: Option<String>,
+    /// Concrete model override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Reasoning effort override.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    /// A person's request for a custom task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// Explicit capabilities for a custom task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grants: Option<stemma_core::proposal::Grants>,
 }
 
 /// One proposal waiting for a person.
@@ -374,6 +415,15 @@ pub struct Offered {
     pub model: String,
     /// Which prompt contract produced it.
     pub prompt_revision: String,
+    /// Narrow operations submitted through the job API.
+    #[serde(default)]
+    pub operations: Vec<stemma_core::proposal::Operation>,
+    /// The agent's reviewer-facing summary.
+    #[serde(default)]
+    pub explanation: String,
+    /// Selected reasoning effort.
+    #[serde(default)]
+    pub effort: Option<String>,
     /// Where review has got to.
     pub state: String,
     /// The source it would replace, when the instance still has it.
@@ -824,6 +874,32 @@ impl Server {
         let _: serde_json::Value =
             self.ask(token, &format!("/api/jobs/{job}/finish"), completion)?;
 
+        Ok(())
+    }
+
+    /// Reports visible progress and learns whether the launcher cancelled.
+    pub fn job_progress(
+        &self,
+        token: &str,
+        job: &str,
+        workspace: Option<&str>,
+        progress: &str,
+    ) -> Result<bool> {
+        let answer: JobControl = self.ask(
+            token,
+            &format!("/api/jobs/{job}/progress"),
+            &serde_json::json!({ "workspace": workspace, "progress": progress }),
+        )?;
+        Ok(answer.cancel_requested)
+    }
+
+    /// Cancels a queued job or asks its worker to stop it.
+    pub fn cancel_job(&self, token: &str, job: &str) -> Result<()> {
+        let _: serde_json::Value = self.ask(
+            token,
+            &format!("/api/jobs/{job}/cancel"),
+            &serde_json::json!({}),
+        )?;
         Ok(())
     }
 

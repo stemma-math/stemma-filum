@@ -39,6 +39,14 @@ pub struct Wanted {
     pub machine: Option<String>,
     /// Whether they chose this machine.
     pub here: bool,
+    /// Concrete model override.
+    pub model: Option<String>,
+    /// Reasoning effort override.
+    pub effort: Option<String>,
+    /// A person's request for a custom task.
+    pub request: Option<String>,
+    /// Explicit capabilities for a custom task.
+    pub grants: Option<stemma_core::proposal::Grants>,
 }
 
 /// Puts a job in the queue, against the revision of the line the
@@ -68,6 +76,10 @@ pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Res
             task: task.to_string(),
             agent: wanted.agent.clone(),
             machine: machine.clone(),
+            model: wanted.model.clone(),
+            effort: wanted.effort.clone(),
+            request: wanted.request.clone(),
+            grants: wanted.grants.clone(),
         },
     )?;
 
@@ -118,8 +130,23 @@ pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {
                 job.job
             )?;
         }
+        if let Some(progress) = &job.progress {
+            writeln!(out, "  {progress}")?;
+        }
+        if let Some(workspace) = &job.workspace {
+            writeln!(out, "  workspace · {workspace}")?;
+        }
     }
 
+    Ok(())
+}
+
+/// Cancels a queued job or asks the machine running it to stop.
+pub fn cancel(home: &Home, job: &str, out: &mut impl Write) -> Result<()> {
+    let job: JobId = job.parse().context("that is not a job identifier")?;
+    let (credentials, server) = session::connect(home)?;
+    server.cancel_job(&credentials.token, &job.to_string())?;
+    writeln!(out, "{job}  cancellation requested")?;
     Ok(())
 }
 
