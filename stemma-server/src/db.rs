@@ -99,6 +99,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "formal-reviews",
         sql: include_str!("../migrations/0018-formal-reviews.sql"),
     },
+    Migration {
+        name: "library-releases",
+        sql: include_str!("../migrations/0019-library-releases.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.

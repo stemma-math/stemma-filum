@@ -18,6 +18,7 @@ pub mod lines;
 pub mod machines;
 pub mod pictures;
 pub mod proposals;
+pub mod releases;
 pub mod resets;
 pub mod revisions;
 pub mod sessions;

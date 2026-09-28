@@ -38,6 +38,8 @@ pub enum Kind {
     Shared,
     /// One person's, inside one group, which only they can clone.
     Personal,
+    /// Immutable snapshots the group deliberately made public.
+    Releases,
 }
 
 impl Kind {
@@ -46,6 +48,7 @@ impl Kind {
         match self {
             Self::Shared => "shared",
             Self::Personal => "personal",
+            Self::Releases => "releases",
         }
     }
 }
@@ -80,6 +83,11 @@ impl Repositories {
             .join(format!("{}.git", user.slug()))
     }
 
+    /// The public snapshots a group has released.
+    pub fn releases(&self, group: &GroupId) -> PathBuf {
+        self.root.join(group.slug().as_str()).join("releases.git")
+    }
+
     /// Every private package belonging to one group, in stable order.
     pub fn personal_for_group(&self, group: &GroupId) -> Vec<PathBuf> {
         let directory = self.root.join(group.slug().as_str()).join("personal");
@@ -104,6 +112,10 @@ impl Repositories {
 
         if rest == "shared.git" {
             return Some((Kind::Shared, self.shared(&group)));
+        }
+
+        if rest == "releases.git" {
+            return Some((Kind::Releases, self.releases(&group)));
         }
 
         let personal = rest
@@ -153,6 +165,11 @@ impl Repositories {
                 found.push(shared);
             }
 
+            let releases = directory.join("releases.git");
+            if exists(&releases) {
+                found.push(releases);
+            }
+
             let Ok(entries) = std::fs::read_dir(directory.join("personal")) else {
                 continue;
             };
@@ -169,6 +186,80 @@ impl Repositories {
 
         found
     }
+}
+
+/// Copies one shared-library tree into a new, history-free public release.
+///
+/// Each version is a root commit. Consequently a public tag reveals exactly
+/// that release's source and no unpublished commits that led to it.
+pub fn publish_release(
+    shared: &Path,
+    releases: &Path,
+    source_commit: &str,
+    version: &str,
+    author: &Author<'_>,
+) -> Result<String> {
+    if !exists(releases) {
+        if let Some(parent) = releases.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("cannot create {}", parent.display()))?;
+        }
+        run(
+            Path::new("."),
+            &["init", "--quiet", "--bare", &releases.display().to_string()],
+        )?;
+    }
+
+    let tag = format!("refs/tags/v{version}");
+    if run(releases, &["show-ref", "--verify", "--quiet", &tag]).is_ok() {
+        bail!("version {version} has already been released");
+    }
+
+    let temporary = format!("refs/stemma/publishing/{}", uuid());
+    run(
+        releases,
+        &[
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            &shared.display().to_string(),
+            &format!("+{source_commit}:{temporary}"),
+        ],
+    )
+    .context("cannot copy the shared source into the release repository")?;
+
+    let published = (|| {
+        let tree = run(releases, &["rev-parse", &format!("{temporary}^{{tree}}")])?;
+        let commit = run_with(
+            releases,
+            &["commit-tree", &tree, "-m", &format!("Release v{version}")],
+            None,
+            &author.environment(),
+        )?;
+        run(releases, &["update-ref", &tag, &commit])?;
+        Ok(commit)
+    })();
+
+    let _ = run(releases, &["update-ref", "-d", &temporary]);
+    match published {
+        Ok(commit) => {
+            if let Err(error) = run(releases, &["gc", "--quiet", "--prune=now"]) {
+                let _ = run(releases, &["update-ref", "-d", &tag]);
+                return Err(error).context("cannot seal the release source");
+            }
+            Ok(commit)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Removes a release ref while compensating for a failed database record.
+pub fn remove_release(path: &Path, version: &str) -> Result<()> {
+    run(
+        path,
+        &["update-ref", "-d", &format!("refs/tags/v{version}")],
+    )?;
+    Ok(())
 }
 
 /// Makes a bare repository, unless it is already there.
@@ -1246,6 +1337,10 @@ mod tests {
             repositories.personal(&group(), &user()),
             Path::new("/var/lib/stemma/git/algebra/personal/ana.git")
         );
+        assert_eq!(
+            repositories.releases(&group()),
+            Path::new("/var/lib/stemma/git/algebra/releases.git")
+        );
     }
 
     #[test]
@@ -1264,6 +1359,12 @@ mod tests {
                 .resolve(&algebra, "personal/ana.git")
                 .map(|(kind, _)| kind),
             Some(Kind::Personal)
+        );
+        assert_eq!(
+            repositories
+                .resolve(&algebra, "releases.git")
+                .map(|(kind, _)| kind),
+            Some(Kind::Releases)
         );
 
         for asked in [
