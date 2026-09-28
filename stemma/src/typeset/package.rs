@@ -17,10 +17,10 @@ use anyhow::{Context, Result};
 use stemma_core::package::{NAME, NAMESPACE, VERSION};
 
 /// The package's own manifest, as Typst reads it.
-const MANIFEST: &str = include_str!("../../typst/typst.toml");
+const MANIFEST: &str = include_str!("../../../typst/typst.toml");
 
 /// What the environments are.
-const LIBRARY: &str = include_str!("../../typst/lib.typ");
+const LIBRARY: &str = include_str!("../../../typst/lib.typ");
 
 /// Where this version of the package goes.
 pub fn directory() -> Result<PathBuf> {
@@ -47,14 +47,10 @@ pub fn install() -> Result<PathBuf> {
         return Ok(directory);
     }
 
-    std::fs::create_dir_all(&directory)
-        .with_context(|| format!("cannot create {}", directory.display()))?;
-
+    // Each file is replaced whole, so a document compiled while another
+    // program installs the package never reads half of one.
     for (name, contents) in [("typst.toml", MANIFEST), ("lib.typ", LIBRARY)] {
-        let path = directory.join(name);
-
-        std::fs::write(&path, contents)
-            .with_context(|| format!("cannot write {}", path.display()))?;
+        crate::storage::replace(&directory.join(name), contents)?;
     }
 
     Ok(directory)

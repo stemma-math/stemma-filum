@@ -14,9 +14,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 
-use crate::daemon::{self, Service, Started};
 use crate::home::Home;
-use crate::program;
+use crate::machine::daemon::{self, Service, Started};
+use crate::machine::program;
 
 /// The directory the command line is linked into, which needs no
 /// administrator rights.

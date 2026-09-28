@@ -99,7 +99,7 @@ fn compile<D: typst::Document>(
     root: &Path,
     rendered: &Rendered,
 ) -> Result<(typst::diag::Warned<Result<D, TypstAsLibError>>, Source)> {
-    crate::package::install()?;
+    crate::typeset::package::install()?;
 
     let main = Source::detached(rendered.source.clone());
     let engine = TypstEngine::builder()

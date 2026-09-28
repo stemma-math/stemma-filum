@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
+use crate::account::credentials::Credentials;
 use crate::api::{Answer, Server};
-use crate::credentials::Credentials;
 use crate::home::Home;
 use crate::remedy::Remedy;
 

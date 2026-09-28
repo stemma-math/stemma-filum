@@ -1,16 +1,16 @@
 //! The complete command-line surface for the group vault.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result};
-
+use stemma_core::repository::Side;
 use stemma_core::vault::{AuditTarget, AuditVerb, BridgeKind};
 
-use crate::build;
-use crate::config::Config;
+use crate::account::session;
 use crate::home::Home;
-use crate::session;
+use crate::mirror::Mirror;
+use crate::repository;
 
 /// Lists definitions and bridges, including withdrawn objects as history.
 pub fn list(home: &Home, group: &str, out: &mut impl Write) -> Result<()> {
@@ -133,16 +133,14 @@ pub fn audit(
     Ok(())
 }
 
+/// The module, once it compiles against the group's shared repository
+/// as this machine has it.
 fn checked(home: &Home, group: &str, module: &str) -> Result<String> {
-    let module = module.to_owned();
-    let config = Config::read(&home.config_file())?;
-    let clone = config
-        .group_directory(group, &config.workspace_or(home.workspace()))
-        .join(crate::workspace::Side::Shared.directory());
-    let manifest = build::read_manifest(&clone)?;
-    let pins = build::group_pins(&clone, &manifest);
-    let scratch: PathBuf = home.cache_dir().join("lean").join("vault-check.lean");
-    crate::lean::check_offered(&clone, &pins, &module, &scratch).map_err(anyhow::Error::msg)?;
+    let clone = Mirror::at(home)?.repository(group, Side::Shared);
+    let manifest = repository::read_manifest(&clone)?;
+    let pins = repository::group_pins(&clone, &manifest);
+    let scratch = home.cache_dir().join("lean").join("vault-check.lean");
+    crate::lean::check_offered(&clone, &pins, module, &scratch).map_err(anyhow::Error::msg)?;
 
-    Ok(module)
+    Ok(module.to_owned())
 }

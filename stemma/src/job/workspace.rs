@@ -3,14 +3,15 @@
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use stemma_core::document::Document;
 use stemma_core::job::Task;
-use stemma_core::line::Line;
+use stemma_core::line::{Line, Name};
 use stemma_core::proposal::{Grants, LineGrant};
+use stemma_core::repository;
 
 use crate::api::Handed;
-use crate::job_api::{self, State};
+use crate::job::answer::{self, State};
 
 /// The versioned instruction contract shipped by this build.
 pub const INSTRUCTION_REVISION: &str = "workspace-api/1";
@@ -27,6 +28,14 @@ pub struct Workspace {
     pub grants: Grants,
 }
 
+/// Where the workspace of a job is: in the operating system's temporary
+/// directory, one directory per job.
+pub fn root_of(job: &str) -> PathBuf {
+    std::env::temp_dir()
+        .join("stemma-jobs")
+        .join(crate::storage::file_name(job))
+}
+
 /// Creates a workspace in the operating system's temporary directory and
 /// deliberately leaves it there for its owner to inspect.
 pub fn prepare(
@@ -36,68 +45,59 @@ pub fn prepare(
     repository: Option<&Path>,
     custom_grants: Option<Grants>,
 ) -> Result<Workspace> {
-    let root = std::env::temp_dir()
-        .join("stemma-jobs")
-        .join(handed.job.replace(':', "-"));
-    if root.exists() {
-        bail!("the job workspace already exists at {}", root.display());
+    // The line's name becomes a directory, so it has to be one.
+    let line = Name::parse(&handed.line)
+        .map_err(|_| anyhow!("the job names a line that cannot be a directory here"))?;
+    let root = root_of(&handed.job);
+    let parent = root
+        .parent()
+        .context("a job workspace needs somewhere to go")?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("cannot create {}", parent.display()))?;
+    match std::fs::create_dir(&root) {
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            bail!("the job workspace already exists at {}", root.display());
+        }
+        created => created.with_context(|| format!("cannot create {}", root.display()))?,
     }
-    std::fs::create_dir_all(&root)?;
+
     if let Some(repository) = repository {
         copy_tree(repository, &root)?;
     }
-    std::fs::create_dir_all(root.join("scratch"))?;
-    std::fs::create_dir_all(root.join(".stemma"))?;
+    create(&root.join("scratch"))?;
+    create(&root.join(".stemma"))?;
     let group_conventions = std::fs::read_to_string(root.join("AGENTS.md")).ok();
-    let mut instructions = include_str!("../instructions/AGENTS.md").to_owned();
+    let mut instructions = include_str!("../../instructions/AGENTS.md").to_owned();
     if let Some(conventions) = group_conventions.filter(|text| !text.trim().is_empty()) {
         instructions.push_str("\n## Group conventions\n\n");
         instructions.push_str(conventions.trim());
         instructions.push('\n');
     }
-    std::fs::write(root.join("AGENTS.md"), instructions)?;
+    write(&root.join("AGENTS.md"), &instructions)?;
 
-    let line_at = root
-        .join(stemma_core::repository::LINES)
-        .join(&handed.line)
-        .join(stemma_core::repository::ENTRY);
+    let line_at = repository::line_entry(&root, &line);
     if let Some(parent) = line_at.parent() {
-        std::fs::create_dir_all(parent)?;
+        create(parent)?;
     }
-    std::fs::write(&line_at, base_source)?;
-    std::fs::write(root.join("line.json"), base_source)?;
+    write(&line_at, base_source)?;
+    write(&root.join("line.json"), base_source)?;
 
     let grants = custom_grants.unwrap_or_else(|| grants_for(task, base_source));
-    let mut task_file = String::new();
-    let _ = writeln!(task_file, "{}", instruction_for(task));
-    let _ = writeln!(task_file, "\n## Job\n");
-    let _ = writeln!(task_file, "- Group: `{}`", handed.group);
-    let _ = writeln!(task_file, "- Line: `{}`", handed.line);
-    let _ = writeln!(task_file, "- Revision: `{}`", handed.revision);
-    let _ = writeln!(task_file, "- Task: `{task}`");
-    if let Some(request) = handed.request.as_deref() {
-        let _ = writeln!(task_file, "\n## Request\n\n{request}");
-    }
-    let _ = writeln!(task_file, "\n## Grants\n");
-    let _ = writeln!(
-        task_file,
-        "```json\n{}\n```",
-        serde_json::to_string_pretty(&grants)?
-    );
-    std::fs::write(root.join("TASK.md"), task_file)?;
+    write(&root.join("TASK.md"), &task_file(handed, task, &grants)?)?;
 
     let api_bin = root.join(".stemma/bin");
-    std::fs::create_dir_all(&api_bin)?;
-    let command = crate::program::command_line()?;
+    create(&api_bin)?;
+    let command = crate::machine::program::command_line()?;
     let linked = api_bin.join(if cfg!(windows) {
         "stemma-job.exe"
     } else {
         "stemma-job"
     });
-    link_command(&command, &linked)?;
+    link_command(&command, &linked)
+        .with_context(|| format!("cannot put `stemma-job` at {}", linked.display()))?;
 
     let state = root.join(".stemma/job.json");
-    job_api::write(
+    answer::write(
         &state,
         &State {
             line: handed.line.clone(),
@@ -121,20 +121,53 @@ pub fn prepare(
     })
 }
 
+/// What the agent is asked to do, and with what grants.
+fn task_file(handed: &Handed, task: &Task, grants: &Grants) -> Result<String> {
+    let mut text = String::new();
+    let _ = writeln!(text, "{}", instruction_for(task));
+    let _ = writeln!(text, "\n## Job\n");
+    let _ = writeln!(text, "- Group: `{}`", handed.group);
+    let _ = writeln!(text, "- Line: `{}`", handed.line);
+    let _ = writeln!(text, "- Revision: `{}`", handed.revision);
+    let _ = writeln!(text, "- Task: `{task}`");
+    if let Some(request) = handed.request.as_deref() {
+        let _ = writeln!(text, "\n## Request\n\n{request}");
+    }
+    let _ = writeln!(text, "\n## Grants\n");
+    let _ = writeln!(
+        text,
+        "```json\n{}\n```",
+        serde_json::to_string_pretty(grants)?
+    );
+
+    Ok(text)
+}
+
+/// Makes a directory in the workspace, saying which when it cannot.
+fn create(directory: &Path) -> Result<()> {
+    std::fs::create_dir_all(directory)
+        .with_context(|| format!("cannot create {}", directory.display()))
+}
+
+/// Writes a file in the workspace, saying which when it cannot.
+fn write(path: &Path, contents: &str) -> Result<()> {
+    std::fs::write(path, contents).with_context(|| format!("cannot write {}", path.display()))
+}
+
 fn instruction_for(task: &Task) -> &'static str {
     match task {
-        Task::Prove { .. } => include_str!("../instructions/tasks/prove.md"),
-        Task::Formalize { .. } => include_str!("../instructions/tasks/formalize.md"),
-        Task::Verify { .. } => include_str!("../instructions/tasks/back.md"),
-        Task::FollowRoute { .. } => include_str!("../instructions/tasks/realign.md"),
-        Task::Refute { .. } => include_str!("../instructions/tasks/refute.md"),
-        Task::Rewrite { .. } => include_str!("../instructions/tasks/rewrite.md"),
-        Task::Develop { .. } => include_str!("../instructions/tasks/develop.md"),
-        Task::Explore => include_str!("../instructions/tasks/explore.md"),
-        Task::Reconcile => include_str!("../instructions/tasks/reconcile.md"),
-        Task::Custom => include_str!("../instructions/tasks/custom.md"),
+        Task::Prove { .. } => include_str!("../../instructions/tasks/prove.md"),
+        Task::Formalize { .. } => include_str!("../../instructions/tasks/formalize.md"),
+        Task::Verify { .. } => include_str!("../../instructions/tasks/back.md"),
+        Task::FollowRoute { .. } => include_str!("../../instructions/tasks/realign.md"),
+        Task::Refute { .. } => include_str!("../../instructions/tasks/refute.md"),
+        Task::Rewrite { .. } => include_str!("../../instructions/tasks/rewrite.md"),
+        Task::Develop { .. } => include_str!("../../instructions/tasks/develop.md"),
+        Task::Explore => include_str!("../../instructions/tasks/explore.md"),
+        Task::Reconcile => include_str!("../../instructions/tasks/reconcile.md"),
+        Task::Custom => include_str!("../../instructions/tasks/custom.md"),
         Task::Fill { .. } | Task::Promote { .. } => {
-            include_str!("../instructions/tasks/develop.md")
+            include_str!("../../instructions/tasks/develop.md")
         }
         Task::Build => "# Build\n\nNo agent runs for this task.",
     }
@@ -226,18 +259,22 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     for entry in
         std::fs::read_dir(from).with_context(|| format!("cannot read {}", from.display()))?
     {
-        let entry = entry?;
+        let entry = entry.with_context(|| format!("cannot read {}", from.display()))?;
         let name = entry.file_name();
         if name == ".git" || name == "target" {
             continue;
         }
         let source = entry.path();
         let target = to.join(name);
-        if entry.file_type()?.is_dir() {
-            std::fs::create_dir_all(&target)?;
+        let kind = entry
+            .file_type()
+            .with_context(|| format!("cannot read {}", source.display()))?;
+        if kind.is_dir() {
+            create(&target)?;
             copy_tree(&source, &target)?;
-        } else if entry.file_type()?.is_file() {
-            std::fs::copy(&source, &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(&source, &target)
+                .with_context(|| format!("cannot copy {}", source.display()))?;
         }
     }
     Ok(())
@@ -268,5 +305,38 @@ mod tests {
         assert!(grants.add_only);
         assert!(grants.line.contains(&LineGrant::Add { after: Some(block) }));
         assert!(!grants.library);
+    }
+
+    #[test]
+    fn a_job_is_kept_in_a_directory_of_its_own_and_never_elsewhere() {
+        let root = root_of("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T");
+        assert!(root.ends_with("stemma-jobs/job-01K5YQ4TQ2VZ8H3M9N0P1R2S3T"));
+        assert!(
+            root_of("job:../../elsewhere").starts_with(std::env::temp_dir().join("stemma-jobs"))
+        );
+    }
+
+    #[test]
+    fn a_job_naming_a_line_that_cannot_be_a_directory_is_refused() {
+        let handed: Handed = serde_json::from_value(serde_json::json!({
+            "job": "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T",
+            "group": "algebra",
+            "side": "shared",
+            "line": "../../outside",
+            "revision": 1,
+            "task": "explore",
+            "agent": "claude",
+            "launched_by": "usr:ana",
+        }))
+        .unwrap();
+
+        let error = prepare(&handed, &Task::Explore, "", None, None)
+            .err()
+            .unwrap();
+
+        assert!(
+            error.to_string().contains("cannot be a directory"),
+            "{error}"
+        );
     }
 }

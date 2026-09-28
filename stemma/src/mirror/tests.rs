@@ -31,6 +31,10 @@ struct Pretend {
     away: Cell<bool>,
     pages: RefCell<Vec<String>>,
     released: Cell<usize>,
+    /// Writes answered so far.
+    writes: Cell<usize>,
+    /// The write, counting from one, that finds the instance gone.
+    lost_at_write: Cell<Option<usize>>,
 }
 
 impl Pretend {
@@ -127,6 +131,10 @@ impl Remote for Pretend {
 
     fn write(&self, id: &str, outgoing: &Outgoing) -> Result<Written> {
         self.reachable()?;
+        self.writes.set(self.writes.get() + 1);
+        if self.lost_at_write.get() == Some(self.writes.get()) {
+            bail!("the connection dropped");
+        }
         let mut lines = self.lines.borrow_mut();
         let line = lines.iter_mut().find(|line| line.id == id).unwrap();
 
@@ -703,4 +711,120 @@ fn the_window_keeps_the_machine_while_it_is_open() {
     assert!(store.hold_window().is_err(), "one window at a time");
     drop(held);
     assert!(!store.window_open());
+}
+
+#[test]
+fn a_line_taken_to_send_it_is_let_go_even_when_sending_fails() {
+    let (world, document) = started("taken-and-lost");
+    world.instance.with("lin:one", |line| line.holder = None);
+    world.save(&saying(&document, 0, "Written after the claim lapsed."));
+    // The first write finds nobody holding the line; the second, made
+    // once this machine has taken it, never arrives.
+    world.instance.lost_at_write.set(Some(2));
+
+    let report = world.step();
+
+    assert!(report.stopped.is_some());
+    assert_eq!(world.instance.released.get(), 1, "the line was not let go");
+    assert_eq!(
+        world.instance.with("lin:one", |line| line.holder.clone()),
+        None
+    );
+    assert_eq!(world.state(), State::NotSent);
+}
+
+#[test]
+fn two_versions_kept_aside_at_once_are_both_kept() {
+    let (world, document) = started("aside-twice");
+    world.save(&saying(&document, 0, "Not sent."));
+    std::fs::write(world.file(Side::Shared, "quotients"), "edited by hand").unwrap();
+    world.instance.with("lin:one", |line| line.deleted = true);
+
+    // Sending, unlike a whole round, does not put the files right first,
+    // so the line goes with a file changed by hand and changes not sent.
+    let report = world.mirror.send(&world.instance, &Which::All);
+
+    assert_eq!(report.gone, ["algebra/shared/quotients"]);
+    assert_eq!(report.aside.len(), 2);
+    assert_ne!(report.aside[0].path, report.aside[1].path);
+    assert_eq!(
+        std::fs::read_to_string(report.aside[0].path.join(repository::ENTRY)).unwrap(),
+        "edited by hand"
+    );
+    assert!(
+        std::fs::read_to_string(report.aside[1].path.join(repository::ENTRY))
+            .unwrap()
+            .contains("Not sent.")
+    );
+}
+
+#[test]
+fn a_record_is_kept_under_its_identifier_and_never_above_the_store() {
+    let world = world("record-names");
+    let store = Store::at(&world.root.join("state"));
+    let mut record = world_record("lin:../../escaped");
+
+    store.put(&record).unwrap();
+
+    assert!(!world.root.join("escaped.json").exists());
+    assert_eq!(
+        store.get("lin:../../escaped").unwrap(),
+        Some(record.clone())
+    );
+    assert_eq!(store.get("lin:elsewhere").unwrap(), None);
+
+    record.id = "lin:one".to_owned();
+    store.put(&record).unwrap();
+    assert!(world.root.join("state/mirror/lines/lin-one.json").is_file());
+}
+
+fn world_record(id: &str) -> Record {
+    let source = three().to_text();
+
+    Record {
+        id: id.to_owned(),
+        group: "algebra".to_owned(),
+        side: Side::Shared,
+        name: "quotients".to_owned(),
+        author: "usr:ana".to_owned(),
+        writing: "anyone".to_owned(),
+        base: 1,
+        base_source: source.clone(),
+        base_lean: None,
+        source,
+        lean_source: None,
+        saved_at: None,
+        there: None,
+        trouble: None,
+        unbuilt: None,
+    }
+}
+
+#[test]
+fn the_daemons_engine_waits_quietly_while_the_window_keeps_the_machine() {
+    let world = world("background-waits");
+    let home = Home::locate(&Environment::from_pairs([(HOME_VARIABLE, &world.root)]));
+    let _window = Store::at(home.state_dir()).hold_window().unwrap();
+    let (nudges, heard) = super::engine::channel();
+    let (finished, done) = std::sync::mpsc::channel();
+
+    let running = home.clone();
+    std::thread::spawn(move || {
+        let mut rounds = 0;
+        super::engine::run(&running, super::engine::Role::Background, &heard, |_| {
+            rounds += 1;
+        });
+        let _ = finished.send(rounds);
+    });
+
+    nudges.send(super::engine::Nudge::Now).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    drop(nudges);
+
+    // An engine that only ever looked at the window again would never
+    // notice that nobody can nudge it any more.
+    let rounds = done
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the engine is still going with nobody left to nudge it");
+    assert_eq!(rounds, 0, "the engine worked while the window was open");
 }

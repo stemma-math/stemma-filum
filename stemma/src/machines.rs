@@ -9,8 +9,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::account::session;
 use crate::home::Home;
-use crate::session;
 
 /// Lists the machines serving a group.
 pub fn list(home: &Home, at: &Path, group: Option<&str>, out: &mut impl Write) -> Result<()> {
@@ -18,11 +18,11 @@ pub fn list(home: &Home, at: &Path, group: Option<&str>, out: &mut impl Write) -
     let group = match group {
         Some(named) => named.to_owned(),
         None => {
-            let clone = crate::mirror::repository_of(at).context(
+            let clone = crate::repository::repository_of(at).context(
                 "say which group with --group, or run this inside one of its repositories",
             )?;
 
-            crate::build::read_manifest(&clone)?
+            crate::repository::read_manifest(&clone)?
                 .group
                 .slug()
                 .as_str()

@@ -19,56 +19,85 @@ use stemma_core::repository::{self, Pins};
 
 const MARKER: &str = "-- stemma: verifies ";
 
-/// Checks a line when it has a Lean module.
+/// Checks a line when its repository has a Lean library.
 pub fn check(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<LeanDigest>> {
+    Ok(check_library(clone, pins)?.digest(clone, line))
+}
+
+/// What checking a repository's Lean library came to, ready to be read
+/// for any of its lines.
+///
+/// Building the library and extracting its marks is the same work for
+/// every line in the repository, so it is done once and each line reads
+/// its own blocks out of the result.
+#[derive(Debug)]
+pub struct Library {
+    pins: Pins,
+    state: LibraryState,
+}
+
+#[derive(Debug)]
+enum LibraryState {
+    /// The repository has no Lean library.
+    Absent,
+    /// The library could not be checked, and why.
+    Refused(String),
+    /// It was built and its marks extracted.
+    Extracted {
+        lean: String,
+        mathlib: String,
+        report: ExtractorReport,
+    },
+}
+
+/// Prepares, builds and reads the Lean library of a repository against
+/// the group's pinned environment.
+pub fn check_library(clone: &Path, pins: &Pins) -> Result<Library> {
+    let state = library_state(clone, pins)?;
+
+    Ok(Library {
+        pins: pins.clone(),
+        state,
+    })
+}
+
+fn library_state(clone: &Path, pins: &Pins) -> Result<LibraryState> {
+    let refused = |reason: &str| Ok(LibraryState::Refused(reason.to_owned()));
+
     if !has_lean_sources(clone) {
-        return Ok(None);
+        return Ok(LibraryState::Absent);
     }
 
     let Some(lean) = pins.lean.as_deref() else {
-        return Ok(Some(refused(
-            clone,
-            line,
-            "Lean is not pinned for this group",
-            pins,
-        )));
+        return refused("Lean is not pinned for this group");
     };
     let Some(mathlib) = pins.mathlib.as_deref() else {
-        return Ok(Some(refused(
-            clone,
-            line,
-            "Mathlib is not pinned for this group",
-            pins,
-        )));
+        return refused("Mathlib is not pinned for this group");
     };
 
     if !elan_is_installed() {
-        return Ok(Some(refused(
-            clone,
-            line,
+        return refused(
             "Lean checking needs elan. Install it from https://lean-lang.org/lean4/doc/quickstart.html, then sync again",
-            pins,
-        )));
+        );
     }
     if let Err(reason) = prepare_environment(clone, lean, mathlib) {
-        return Ok(Some(refused(clone, line, &reason, pins)));
+        return refused(&reason);
     }
 
     let installed = installed_version(clone);
     if installed.as_deref() != Some(lean) {
-        let diagnostic = match installed {
+        return refused(&match installed {
             Some(found) => format!("Lean {lean} is pinned but Lean {found} is installed"),
             None => format!("Lean {lean} is pinned but is not available through Lake"),
-        };
-        return Ok(Some(refused(clone, line, &diagnostic, pins)));
+        });
     }
 
     if let Err(reason) = check_mathlib(clone, mathlib) {
-        return Ok(Some(refused(clone, line, &reason, pins)));
+        return refused(&reason);
     }
     let modules = modules_in(clone)?;
     if modules.is_empty() {
-        return Ok(None);
+        return Ok(LibraryState::Absent);
     }
     let output = Command::new("lake")
         .current_dir(clone)
@@ -76,54 +105,77 @@ pub fn check(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<LeanDigest
         .output()
         .with_context(|| format!("cannot build the Lean library in {}", clone.display()))?;
     if !output.status.success() {
-        return Ok(Some(refused(
-            clone,
-            line,
-            &concise(&String::from_utf8_lossy(&output.stderr)),
-            pins,
-        )));
+        return refused(&concise(&String::from_utf8_lossy(&output.stderr)));
     }
 
-    let mut report = extract(clone, &modules, &known_blocks(clone)?)?;
-    let prefix = format!("{}/", line.as_str());
-    let mut blocks = Vec::new();
-    for mark in std::mem::take(&mut report.marks) {
-        let Some(written) = mark.block.strip_prefix(&prefix) else {
-            continue;
+    Ok(LibraryState::Extracted {
+        lean: lean.to_owned(),
+        mathlib: mathlib.to_owned(),
+        report: extract(clone, &modules, &known_blocks(clone)?)?,
+    })
+}
+
+impl Library {
+    /// What the library establishes for one line, when there is a
+    /// library at all.
+    pub fn digest(&self, clone: &Path, line: &Name) -> Option<LeanDigest> {
+        let (lean, mathlib, report) = match &self.state {
+            LibraryState::Absent => return None,
+            LibraryState::Refused(reason) => return Some(refused(clone, line, reason, &self.pins)),
+            LibraryState::Extracted {
+                lean,
+                mathlib,
+                report,
+            } => (lean, mathlib, report),
         };
-        let Ok(block) = written.parse::<BlockId>() else {
-            continue;
-        };
-        blocks.push(classify(block, mark.declarations));
-    }
-    let line_entry = repository::line_entry(clone, line);
-    if let Ok(source) = std::fs::read_to_string(&line_entry)
-        && let Ok(document) = stemma_core::document::Document::parse(&source)
-    {
-        for block in document
-            .blocks
+
+        let prefix = format!("{}/", line.as_str());
+        let mut blocks: Vec<BlockCheck> = report
+            .marks
             .iter()
-            .filter(|block| block.statement().is_some())
-        {
-            if !blocks.iter().any(|result| &result.block == block.id()) {
+            .filter_map(|mark| {
+                let block = mark.block.strip_prefix(&prefix)?.parse::<BlockId>().ok()?;
+                Some(classify(block, mark.declarations.clone()))
+            })
+            .collect();
+
+        for block in statements_of(clone, line) {
+            if !blocks.iter().any(|result| result.block == block) {
                 blocks.push(BlockCheck {
-                    block: *block.id(),
+                    block,
                     state: Verification::Unverified,
                     diagnostic: "no Lean declaration is marked for this block".to_owned(),
                     declarations: Vec::new(),
                 });
             }
         }
-    }
-    blocks.sort_by_key(|result| result.block);
+        blocks.sort_by_key(|result| result.block);
 
-    Ok(Some(LeanDigest {
-        lean: lean.to_owned(),
-        mathlib: mathlib.to_owned(),
-        compiled: true,
-        blocks,
-        diagnostic: broken_for(&report, &prefix),
-    }))
+        Some(LeanDigest {
+            lean: lean.clone(),
+            mathlib: mathlib.clone(),
+            compiled: true,
+            blocks,
+            diagnostic: broken_for(report, &prefix),
+        })
+    }
+}
+
+/// The statement blocks of a line as its repository has it.
+fn statements_of(clone: &Path, line: &Name) -> Vec<BlockId> {
+    let Ok(source) = std::fs::read_to_string(repository::line_entry(clone, line)) else {
+        return Vec::new();
+    };
+    let Ok(document) = stemma_core::document::Document::parse(&source) else {
+        return Vec::new();
+    };
+
+    document
+        .blocks
+        .iter()
+        .filter(|block| block.statement().is_some())
+        .map(|block| *block.id())
+        .collect()
 }
 
 /// Checks an agent's library change in detached worktrees and returns the
@@ -229,7 +281,7 @@ fn safe_library_path(written: &str) -> Result<PathBuf> {
 }
 
 fn update_root_imports(worktree: &Path, change: &LibraryChange) -> Result<()> {
-    let manifest = crate::build::read_manifest(worktree)?;
+    let manifest = crate::repository::read_manifest(worktree)?;
     let root = match manifest.side {
         repository::Side::Shared => "GroupLibrary.lean",
         repository::Side::Private => "PrivateLibrary.lean",
@@ -275,13 +327,13 @@ struct ExtractorReport {
     broken_marks: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ExtractedMark {
     block: String,
     declarations: Vec<ExtractedDeclaration>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExtractedDeclaration {
     name: String,
@@ -476,7 +528,7 @@ fn known_blocks(clone: &Path) -> Result<Vec<String>> {
 
 /// Where elan is on this machine, if it is anywhere a program would be.
 pub fn elan() -> Option<std::path::PathBuf> {
-    crate::agents::on_path("elan")
+    crate::job::agents::on_path("elan")
 }
 
 fn elan_is_installed() -> bool {
@@ -586,18 +638,10 @@ fn refused(clone: &Path, line: &Name, reason: &str, pins: &Pins) -> LeanDigest {
 }
 
 fn unchecked_blocks(clone: &Path, line: &Name, diagnostic: &str) -> Vec<BlockCheck> {
-    let Ok(source) = std::fs::read_to_string(repository::line_entry(clone, line)) else {
-        return Vec::new();
-    };
-    let Ok(document) = stemma_core::document::Document::parse(&source) else {
-        return Vec::new();
-    };
-    document
-        .blocks
-        .iter()
-        .filter(|block| block.statement().is_some())
+    statements_of(clone, line)
+        .into_iter()
         .map(|block| BlockCheck {
-            block: *block.id(),
+            block,
             state: Verification::Unverified,
             diagnostic: diagnostic.to_owned(),
             declarations: Vec::new(),
