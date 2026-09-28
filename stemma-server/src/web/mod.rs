@@ -13,6 +13,7 @@ pub mod auth;
 pub mod claims;
 pub mod cookies;
 pub mod device;
+pub mod events;
 pub mod front;
 pub mod groups;
 pub mod home;
@@ -25,6 +26,7 @@ pub mod pictures;
 pub mod profile;
 pub mod proposals;
 pub mod reset;
+pub mod revisions;
 pub mod starting;
 pub mod transport;
 pub mod vault;
@@ -53,6 +55,12 @@ pub struct Instance {
     pub database: Arc<Mutex<Database>>,
     /// The key that makes a cookie or a link worth something.
     pub key: Key,
+    /// Rung whenever the database may have changed, so that whoever is
+    /// waiting for events looks again instead of on a timer.
+    pub changed: Arc<tokio::sync::Notify>,
+    /// Held while anything writes to the repositories, so two writers
+    /// never race for the same branch.
+    pub git: Arc<Mutex<()>>,
 }
 
 impl Instance {
@@ -62,6 +70,8 @@ impl Instance {
             settings: Arc::new(settings),
             database: Arc::new(Mutex::new(database)),
             key,
+            changed: Arc::new(tokio::sync::Notify::new()),
+            git: Arc::new(Mutex::new(())),
         }
     }
 
@@ -98,18 +108,63 @@ impl Instance {
         self.blocking(move || work(&repositories)).await
     }
 
+    /// Reads without saying anything may have changed.
+    ///
+    /// For whoever is watching for changes: their reading is not one, and
+    /// ringing for it would wake every other watcher to read in turn.
+    pub async fn peek<T, F>(&self, work: F) -> Result<T, WebError>
+    where
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let database = self.database.clone();
+
+        tokio::task::spawn_blocking(move || work(lock(&database)?.connection()))
+            .await
+            .map_err(|error| {
+                WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
+            })?
+            .map_err(WebError::Internal)
+    }
+
     /// Runs synchronous I/O or expensive computation on the blocking pool.
     pub async fn blocking<T, F>(&self, work: F) -> Result<T, WebError>
     where
         F: FnOnce() -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        tokio::task::spawn_blocking(work)
+        let done = tokio::task::spawn_blocking(work)
             .await
             .map_err(|error| {
                 WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
             })?
-            .map_err(WebError::Internal)
+            .map_err(WebError::Internal);
+
+        // Most work reads and changes nothing, and a stream woken for
+        // nothing reads once and goes back to sleep: cheaper than
+        // knowing which work wrote.
+        self.changed.notify_waiters();
+
+        done
+    }
+
+    /// Runs work that writes to the repositories, one writer at a time.
+    pub async fn writing_git<T, F>(&self, work: F) -> Result<T, WebError>
+    where
+        F: FnOnce(&crate::git::Repositories) -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let repositories = self.repositories();
+        let git = self.git.clone();
+
+        self.blocking(move || {
+            let _held = git
+                .lock()
+                .map_err(|_| anyhow::anyhow!("a writer to the repositories failed"))?;
+
+            work(&repositories)
+        })
+        .await
     }
 
     /// Where this instance keeps its repositories.
@@ -227,6 +282,7 @@ fn pages() -> Router<Instance> {
         .route("/g/{slug}/vault/obligations", post(vault::assign))
         .route("/audit-obligations/{id}/decide", post(vault::decide))
         .route("/g/{slug}/{side}/{line}", get(lines::view))
+        .route("/g/{slug}/{side}/{line}/page", get(revisions::page))
         .route("/g/{slug}/{side}/{line}/jobs", post(jobs::launch))
         .route(
             "/g/{slug}/{side}/{line}/claim/release",
@@ -254,9 +310,22 @@ fn api() -> Router<Instance> {
         .route("/api/me", get(api::me))
         .route("/api/logout", post(api::sign_out))
         .route("/api/workspace", get(api::workspace))
+        .route("/api/events", get(events::stream))
         .route("/api/device/start", post(device::start))
         .route("/api/device/collect", post(device::collect))
-        .route("/api/lines", post(starting::api_start))
+        .route(
+            "/api/lines",
+            get(revisions::listing).post(starting::api_start),
+        )
+        .route(
+            "/api/lines/{id}",
+            get(revisions::read)
+                .put(revisions::write)
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    revisions::LARGEST_WRITE,
+                )),
+        )
+        .route("/api/repositories/{group}/{side}", get(revisions::root))
         .route("/api/lines/{slug}/{line}/share", post(starting::api_share))
         .route(
             "/api/lines/{slug}/{line}/delete",
@@ -275,7 +344,10 @@ fn api() -> Router<Instance> {
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/jobs/{id}/finish", post(jobs::finish))
         .route("/api/proposals", get(proposals::listing))
+        .route("/api/proposals/accepted", get(proposals::to_apply))
         .route("/api/proposals/{id}", get(proposals::accepted))
+        .route("/api/proposals/{id}/applied", post(proposals::applied))
+        .route("/api/proposals/{id}/outdated", post(proposals::outdated))
         .route("/api/proposals/{id}/review", get(proposals::offered))
         .route("/api/proposals/{id}/decide", post(proposals::api_decide))
         .route("/api/groups/{group}/machines", get(jobs::machine_choices))

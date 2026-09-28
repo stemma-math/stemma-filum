@@ -115,6 +115,19 @@ impl Harness {
         self.send(request).await
     }
 
+    /// Replaces something as a machine would, carrying a credential.
+    pub async fn put_json_with_token(&mut self, path: &str, token: &str, body: &str) -> Page {
+        let request = Request::builder()
+            .method("PUT")
+            .uri(path)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(body.to_owned()))
+            .expect("a request");
+
+        self.send(request).await
+    }
+
     /// A credential for an account, made the way a signed-in machine
     /// collects one.
     pub async fn credential(&self, account: &str) -> String {
@@ -161,6 +174,59 @@ impl Harness {
             .expect("a request");
 
         self.send(request).await
+    }
+
+    /// Listens to the event stream as a machine would, and returns the
+    /// first `wanted` events it says, each as its `id` and its `data`.
+    ///
+    /// A stream does not end by itself, so this stops at what it wanted,
+    /// or after a few seconds of hearing nothing more.
+    pub async fn listen(
+        &self,
+        token: &str,
+        last_seen: Option<i64>,
+        wanted: usize,
+    ) -> Vec<(Option<i64>, String)> {
+        use futures_util::StreamExt;
+
+        let mut request = Request::builder()
+            .method("GET")
+            .uri("/api/events")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"));
+        if let Some(last_seen) = last_seen {
+            request = request.header("last-event-id", last_seen.to_string());
+        }
+
+        let response = self
+            .app()
+            .oneshot(request.body(Body::empty()).expect("a request"))
+            .await
+            .expect("an answer");
+        assert_eq!(response.status(), StatusCode::OK, "the stream was refused");
+
+        let mut body = response.into_body().into_data_stream();
+        let mut text = String::new();
+        let mut heard = Vec::new();
+
+        while heard.len() < wanted {
+            let chunk = tokio::time::timeout(std::time::Duration::from_secs(3), body.next()).await;
+            let Ok(Some(Ok(chunk))) = chunk else { break };
+            text.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(end) = text.find("\n\n") {
+                let frame: String = text.drain(..end + 2).collect();
+                let id = frame
+                    .lines()
+                    .find_map(|line| line.strip_prefix("id: "))
+                    .and_then(|id| id.parse().ok());
+                if let Some(data) = frame.lines().find_map(|line| line.strip_prefix("data: ")) {
+                    heard.push((id, data.to_owned()));
+                }
+            }
+        }
+
+        heard.truncate(wanted);
+        heard
     }
 
     /// Starts a request with the cookie this harness holds.
@@ -279,5 +345,6 @@ pub fn digest(document: &stemma_core::document::Document) -> stemma_core::artefa
         description: document.description.clone(),
         line: stemma_core::line::Line::of(document).expect("a line that reads"),
         lean: None,
+        revision: None,
     }
 }

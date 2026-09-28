@@ -3,9 +3,12 @@
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use stemma::mirror::{Instance, Mirror, State, Which};
+use stemma_core::document::Document;
 use stemma_core::line::Name;
-use stemma_core::repository;
+use stemma_core::repository::{self, Side};
 
+use crate::engine::{self, Nudge};
 use crate::{carried_out, failed, home, said};
 
 /// A line's `line.json`, checked to lie inside this machine's workspace.
@@ -48,6 +51,11 @@ impl LineAt {
         })
     }
 
+    /// Which of the group's repositories it is in.
+    pub fn side(&self) -> anyhow::Result<Side> {
+        Ok(self.side.parse()?)
+    }
+
     /// The line's own directory.
     pub fn directory(&self) -> &Path {
         self.path
@@ -55,7 +63,7 @@ impl LineAt {
             .expect("an admitted line has a directory")
     }
 
-    /// The clone of the repository the line lives in.
+    /// The repository the line lives in.
     pub fn clone_root(&self) -> &Path {
         self.path
             .ancestors()
@@ -100,7 +108,7 @@ pub struct LineEntry {
     path: String,
 }
 
-/// One line as this machine has it on disk.
+/// One line as this machine has it.
 #[derive(Serialize)]
 pub struct Known {
     group: String,
@@ -109,38 +117,34 @@ pub struct Known {
     title: Option<String>,
     description: Option<String>,
     path: String,
+    /// `sent`, `not_sent` or `needs_decision`.
+    state: State,
 }
 
-/// What one repository did in the last sync.
-#[derive(Serialize)]
-pub struct Stepped {
-    group: String,
-    side: String,
-    outcome: String,
-    parted: bool,
-    dirty: bool,
-    recorded: Vec<String>,
-}
-
-/// Syncs every group this machine works in.
+/// Where every line that is not simply sent stands, and whether the
+/// instance could be reached the last time it was tried.
 #[tauri::command(async)]
-pub fn sync() -> Result<Vec<Stepped>, String> {
-    let reports = stemma::sync::run(&home(), &mut Vec::new()).map_err(failed)?;
-
-    Ok(reports
-        .into_iter()
-        .map(|report| Stepped {
-            group: report.group,
-            side: report.side.to_string(),
-            parted: matches!(report.outcome, stemma::sync::Outcome::Parted(_, _)),
-            outcome: report.outcome.to_string(),
-            dirty: report.dirty,
-            recorded: report.recorded,
-        })
-        .collect())
+pub fn standing() -> engine::Said {
+    engine::last()
 }
 
-/// The groups configured or cloned on this machine, sorted.
+/// Sends every line with something new, now, rather than after the
+/// pause: for when the window is about to close.
+#[tauri::command(async)]
+pub fn send_now() -> Result<(), String> {
+    let home = home();
+    let mirror = Mirror::at(&home).map_err(failed)?;
+    let instance = Instance::connect(&home).map_err(failed)?;
+    let report = mirror.send(&instance, &Which::All);
+    engine::nudge(Nudge::Now);
+
+    match report.stopped {
+        Some(stopped) => Err(stopped),
+        None => Ok(()),
+    }
+}
+
+/// The groups on this machine, sorted.
 #[tauri::command(async)]
 pub fn groups() -> Result<Vec<String>, String> {
     let home = home();
@@ -183,52 +187,35 @@ fn manages(role: &str) -> bool {
         .is_ok_and(stemma_core::access::GroupRole::may_manage)
 }
 
-/// Every line in the workspace, with the title and description its source
-/// declares.
+/// Every line on this machine, with the title and description its source
+/// declares and where it stands.
 #[tauri::command(async)]
 pub fn lines() -> Result<Vec<Known>, String> {
-    let groups = match std::fs::read_dir(workspace()?) {
-        Ok(groups) => groups,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(said(error)),
-    };
+    let mirror = Mirror::at(&home()).map_err(failed)?;
+    let records = mirror.records().map_err(failed)?;
+    let standing = mirror.standing().map_err(failed)?;
 
-    let mut found = Vec::new();
-    for group in groups
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_dir())
-    {
-        let group_name = group.file_name().to_string_lossy().into_owned();
-        for side in ["shared", "private"] {
-            let Ok(entries) = std::fs::read_dir(group.path().join(side).join(repository::LINES))
-            else {
-                continue;
-            };
-            for entry in entries
-                .filter_map(Result::ok)
-                .filter(|entry| entry.path().is_dir())
-            {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                let path = entry.path().join(repository::ENTRY);
-                if Name::parse(&name).is_err() || !path.is_file() {
-                    continue;
-                }
-                let source = std::fs::read_to_string(&path).unwrap_or_default();
-                let document = stemma_core::document::Document::parse(&source).ok();
-                found.push(Known {
-                    group: group_name.clone(),
-                    side: side.to_owned(),
-                    name,
-                    title: document
-                        .as_ref()
-                        .map(|document| document.title.clone())
-                        .filter(|title| !title.trim().is_empty()),
-                    description: document.and_then(|document| document.description),
-                    path: path.display().to_string(),
-                });
+    let mut found: Vec<Known> = records
+        .iter()
+        .map(|record| {
+            let document = Document::parse(&record.source).ok();
+            Known {
+                group: record.group.clone(),
+                side: record.side.as_str().to_owned(),
+                name: record.name.clone(),
+                title: document
+                    .as_ref()
+                    .map(|document| document.title.clone())
+                    .filter(|title| !title.trim().is_empty()),
+                description: document.and_then(|document| document.description),
+                path: mirror.entry(record).display().to_string(),
+                state: standing
+                    .iter()
+                    .find(|line| line.id == record.id)
+                    .map_or(State::Sent, |line| line.state),
             }
-        }
-    }
+        })
+        .collect();
 
     found.sort_by(|a, b| (&a.group, &a.side, &a.name).cmp(&(&b.group, &b.side, &b.name)));
     Ok(found)

@@ -1,4 +1,4 @@
-//! Who writes a line, and reconciling two versions of it.
+//! Who writes a line, and deciding between two versions of its blocks.
 
 use std::collections::BTreeMap;
 
@@ -7,8 +7,11 @@ use stemma::api::{About, Claimed, Server};
 use stemma_core::id::BlockId;
 use stemma_core::reconcile::Keep;
 
+use stemma::mirror::Mirror;
+
+use crate::engine::{self, Nudge};
 use crate::workspace::LineAt;
-use crate::{Session, said};
+use crate::{Session, failed, home, said};
 
 #[derive(Serialize)]
 pub struct Claim {
@@ -25,15 +28,55 @@ pub fn claim(path: String) -> Result<Claim, String> {
     with_claim(&path, Server::take_claim)
 }
 
-/// Records what was written, then releases the claim. The release goes
-/// ahead even if recording fails: a claim that cannot be released is worse
-/// than one released with work still uncommitted.
+/// Sends what was written, then releases the claim. The release goes
+/// ahead even if sending fails: a claim that cannot be released is worse
+/// than one released with writing that leaves on the next round.
 #[tauri::command(async)]
 pub fn release(path: String) -> Result<Claim, String> {
     if let Ok(line) = LineAt::admit(&path) {
-        let _ = stemma::writing::record(&line.path);
+        let about = About {
+            group: line.group,
+            side: line.side,
+            line: line.name,
+        };
+        let _ = stemma::claims::send_before_release(&home(), &about);
     }
     with_claim(&path, Server::release_claim)
+}
+
+/// Who is writing the line, without taking or renewing anything: for
+/// looking again when the instance says the claim changed.
+#[tauri::command(async)]
+pub fn claim_status(path: String) -> Result<Claim, String> {
+    let line = LineAt::admit(&path)?;
+    let session = Session::open()?;
+    let found = session
+        .server
+        .claims(&session.token)
+        .map_err(said)?
+        .into_iter()
+        .find(|held| held.group == line.group && held.side == line.side && held.line == line.name);
+
+    Ok(match found {
+        None => Claim {
+            standing: "open".to_owned(),
+            label: None,
+            left: None,
+            asked: false,
+            said: "nobody is writing this line".to_owned(),
+        },
+        Some(held) => Claim {
+            standing: if held.mine { "writing" } else { "waiting" }.to_owned(),
+            said: match (held.mine, held.asked) {
+                (true, _) => "this machine is writing it".to_owned(),
+                (false, false) => format!("{} is writing it", held.label),
+                (false, true) => format!("{} is writing it, and has been asked for it", held.label),
+            },
+            label: Some(held.label),
+            left: Some(held.left),
+            asked: held.asked,
+        },
+    })
 }
 
 /// Asks the machine holding the claim to release it.
@@ -83,20 +126,16 @@ pub struct Decision {
     keep: Keep,
 }
 
-/// The blocks the local and server versions of this line conflict on.
+/// The blocks this machine and the instance both changed in this line,
+/// when it needs a decision.
 #[tauri::command(async)]
 pub fn parted(path: String) -> Result<Vec<Conflict>, String> {
     let line = LineAt::admit(&path)?;
-    let clone = line.clone_root();
-    let _ = stemma::git::fetch(clone);
+    let conflicts = Mirror::at(&home())
+        .and_then(|mirror| mirror.conflicts(&line.group, line.side()?, &line.name))
+        .map_err(failed)?;
 
-    let found = stemma::conflicts::between(clone).map_err(said)?;
-    let Some(parted) = found.into_iter().find(|one| one.line.as_str() == line.name) else {
-        return Ok(Vec::new());
-    };
-
-    Ok(parted
-        .conflicts
+    Ok(conflicts
         .into_iter()
         .map(|conflict| Conflict {
             said: conflict.said().to_owned(),
@@ -108,7 +147,8 @@ pub fn parted(path: String) -> Result<Vec<Conflict>, String> {
         .collect())
 }
 
-/// Writes the decisions as one merge commit.
+/// Settles the line with the version chosen for each block; the engine
+/// sends it at once.
 #[tauri::command(async)]
 pub fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, String> {
     let line = LineAt::admit(&path)?;
@@ -117,11 +157,10 @@ pub fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, Str
         .map(|decision| (decision.block, decision.keep))
         .collect();
 
-    let settled = stemma::conflicts::settle(
-        line.clone_root(),
-        &BTreeMap::from([(line.name.clone(), decided)]),
-    )
-    .map_err(said)?;
+    Mirror::at(&home())
+        .and_then(|mirror| mirror.decide(&line.group, line.side()?, &line.name, &decided))
+        .map_err(failed)?;
+    engine::nudge(Nudge::Now);
 
-    Ok(settled.iter().map(ToString::to_string).collect())
+    Ok(vec![line.name])
 }

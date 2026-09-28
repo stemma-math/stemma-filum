@@ -39,7 +39,7 @@ pub enum Command {
     /// Signs this machine out.
     Logout,
 
-    /// Syncs every group with the server.
+    /// Takes in what changed on the server and sends what is here, now.
     Sync,
 
     /// Checks the lines here and publishes what they declare.
@@ -66,7 +66,7 @@ pub enum Command {
         command: ClaimCommand,
     },
 
-    /// Resolves conflicts between this machine and the server.
+    /// Decides between versions of a block changed here and elsewhere.
     Conflict {
         /// What to do about them.
         #[command(subcommand)]
@@ -108,8 +108,20 @@ pub enum Command {
         command: VaultCommand,
     },
 
-    /// Shows this machine's state without contacting the server.
+    /// Says which lines here are not sent yet or need a decision, without
+    /// contacting the server.
     Status,
+
+    /// Makes a read-only git clone of one of a group's repositories.
+    Export {
+        /// The group's short name.
+        group: String,
+        /// Your own repository in the group rather than the shared one.
+        #[arg(long)]
+        private: bool,
+        /// Where the clone goes; a new directory beside you otherwise.
+        into: Option<PathBuf>,
+    },
 
     /// Shows where this machine keeps its files.
     Where,
@@ -299,18 +311,11 @@ pub enum ConflictCommand {
     /// Lists the conflicting blocks.
     List,
 
-    /// Merges, keeping one side wherever they conflict.
+    /// Settles them, keeping one side wherever they disagree.
     Resolve {
         /// Which version stands: `here` or `there`.
         #[arg(long)]
         keep: Keep,
-    },
-
-    /// Asks an agent to merge them; the result is a proposal.
-    Reconcile {
-        /// Which agent is to do it.
-        #[arg(long)]
-        agent: String,
     },
 }
 

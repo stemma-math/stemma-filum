@@ -16,7 +16,7 @@ use stemma_core::repository::Side;
 use super::api::Credential;
 use super::{Instance, WebError};
 use crate::artefacts::{LARGEST, Shelf};
-use crate::store::{artefacts as index, groups};
+use crate::store::{artefacts as index, groups, lines, revisions};
 
 /// What a machine sends, and where it goes.
 type Address = Path<(String, String, String, String)>;
@@ -48,6 +48,12 @@ pub async fn receive(
             nodes.group
         )));
     }
+    if nodes.side.as_str() != side {
+        return Err(WebError::BadRequest(format!(
+            "that artefact says it is about the {} repository, and it was sent to the {side} one",
+            nodes.side
+        )));
+    }
     if nodes.commit != commit {
         return Err(WebError::BadRequest(format!(
             "that artefact says it was built from {}, and it was sent as {commit}",
@@ -75,7 +81,22 @@ pub async fn receive(
     let by = machine.user.id.clone();
     let recorded = instance
         .read(move |connection| {
-            index::record(connection, &group, &scope, kind, &commit, bytes, &by)
+            let recorded = index::record(connection, &group, &scope, kind, &commit, bytes, &by)?;
+
+            // Every line it covers at a revision has been built up to
+            // there, and nobody needs to be asked for it any more.
+            for line in &nodes.lines {
+                let Some(revision) = line.revision else {
+                    continue;
+                };
+                if let Some(found) =
+                    lines::by_name(connection, &group, nodes.side, &line.name, &by)?
+                {
+                    revisions::built_up_to(connection, &found.id, revision)?;
+                }
+            }
+
+            Ok(recorded)
         })
         .await?;
 

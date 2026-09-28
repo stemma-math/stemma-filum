@@ -1628,6 +1628,31 @@ a.machine-row:hover {
     grid-column: 2;
 }
 
+/* ── The typeset page ──────────────────────────────────────────────────
+ *
+ * What the machine that wrote the revision typeset, in a frame of its
+ * own: it is paper, whatever surrounds it. */
+
+.typeset__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
+.typeset__head .block__title {
+    flex: 1;
+}
+
+.typeset__frame {
+    display: block;
+    width: 100%;
+    min-height: min(80vh, 900px);
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
 /* ── The launcher ──────────────────────────────────────────────────────
  *
  * An agent action is offered where its effect will land: a quiet line

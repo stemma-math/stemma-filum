@@ -8,6 +8,7 @@
   import Tooltips from "./components/Tooltips.svelte";
   import { onViewChosen, said } from "./lib/api";
   import { app } from "./lib/app.svelte";
+  import { live } from "./lib/live.svelte";
   import { fail } from "./lib/status.svelte";
   import SignIn from "./views/SignIn.svelte";
 
@@ -41,10 +42,14 @@
       if (view === "blocks" || view === "pdf") app.view = view;
     }).then((stop) => (unhear = stop));
 
+    let unlisten: (() => void) | undefined;
+    void live.start().then((stop) => (unlisten = stop));
+
     void app.boot();
     return () => {
       stop?.();
       unhear?.();
+      unlisten?.();
     };
   });
 </script>

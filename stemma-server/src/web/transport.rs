@@ -11,6 +11,11 @@
 //! of the instance, and not to anybody who knows the address. That is what
 //! makes a private line private: it is not a flag on a row, it is a
 //! repository nobody else can clone.
+//!
+//! Nothing is pushed. Lines are written a revision at a time through the
+//! instance, which checks each one, and a push would go around that; so
+//! git here only ever reads, and a clone is a way to take the history
+//! away, never a way to put anything back.
 
 use std::process::Stdio;
 
@@ -56,6 +61,12 @@ pub async fn serve(
         return Err(WebError::NotFound);
     };
 
+    if is_a_push(path, &query) {
+        return Err(WebError::Forbidden(
+            "These repositories are read-only: lines are written through Stemma.".to_owned(),
+        ));
+    }
+
     let Some((kind, on_disk)) = instance.repositories().resolve(&group_slug, repository) else {
         return Err(WebError::NotFound);
     };
@@ -89,6 +100,14 @@ pub async fn serve(
     )
     .await
     .map_err(WebError::Internal)
+}
+
+/// Whether git is trying to send something rather than to read.
+fn is_a_push(path: &str, query: &str) -> bool {
+    path == "git-receive-pack"
+        || query
+            .split('&')
+            .any(|pair| pair == "service=git-receive-pack")
 }
 
 /// Whether this is a shape git uses at all.
@@ -431,6 +450,14 @@ mod tests {
         );
 
         headers
+    }
+
+    #[test]
+    fn nothing_is_ever_pushed() {
+        assert!(is_a_push("git-receive-pack", ""));
+        assert!(is_a_push("info/refs", "service=git-receive-pack"));
+        assert!(!is_a_push("info/refs", "service=git-upload-pack"));
+        assert!(!is_a_push("git-upload-pack", ""));
     }
 
     #[test]

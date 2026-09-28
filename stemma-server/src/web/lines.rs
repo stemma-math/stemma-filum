@@ -43,17 +43,23 @@ pub async fn view(
     let written = written(&instance, &group.id, side, &signed, &name).await?;
     let built = read(&instance, &group.id, &scope).await?;
     let digest = match (&written, built.as_ref()) {
-        // A build of the commit the repository is at says everything the
+        // A build of the revision the line is at says everything the
         // source does and more.
-        (Some(written), Some(nodes)) if nodes.commit == written.commit => nodes
-            .line(&name)
-            .cloned()
-            .unwrap_or_else(|| declared(&name, &written.source)),
+        (Some(written), Some(nodes))
+            if nodes
+                .line(&name)
+                .is_some_and(|built| built.revision == Some(written.revision)) =>
+        {
+            nodes
+                .line(&name)
+                .cloned()
+                .unwrap_or_else(|| declared(&name, &written.source))
+        }
         // Nothing has built it yet, which is the ordinary state of a
-        // line somebody started a minute ago, or what was built is older
-        // than what was pushed since. What the source declares is
-        // readable without compiling anything, so the line is here as it
-        // stands — with everything a build adds, and only that, missing.
+        // line somebody is writing, or what was built is older than what
+        // was written since. What the source declares is readable
+        // without compiling anything, so the line is here as it stands —
+        // with everything a build adds, and only that, missing.
         (Some(written), _) => declared(&name, &written.source),
         (None, built) => built
             .and_then(|nodes| nodes.line(&name))
@@ -84,7 +90,7 @@ pub async fn view(
         group: group.slug().clone(),
         side,
         line: digest.name.clone(),
-        commit: nodes.commit.clone(),
+        revision: written.as_ref().map_or(0, |written| written.revision),
         offers,
     };
 
@@ -111,24 +117,14 @@ pub async fn unbuilt_in(
     side: Side,
     signed: &SignedIn,
 ) -> Result<Vec<LineDigest>, WebError> {
-    let repositories = instance.repositories();
-    let path = match side {
-        Side::Shared => repositories.shared(group),
-        Side::Private => repositories.personal(group, &signed.user.id),
-    };
-
+    let (id, reader) = (group.clone(), signed.user.id.clone());
     let names: Vec<Name> = instance
-        .blocking(move || {
-            let Some(head) = crate::git::head_commit(&path) else {
-                return Ok(Vec::new());
-            };
-
-            Ok(crate::git::lines_at(&path, &head)?
-                .iter()
-                .filter_map(|name| Name::parse(name).ok())
-                .collect())
-        })
-        .await?;
+        .read(move |connection| crate::store::lines::in_group(connection, &id, &reader))
+        .await?
+        .into_iter()
+        .filter(|line| line.side == side)
+        .map(|line| line.name)
+        .collect();
 
     let mut found = Vec::new();
 
@@ -154,15 +150,15 @@ async fn unbuilt(
         .map(|written| declared(name, &written.source)))
 }
 
-/// A line's source, exactly as it stands at the head of its repository.
+/// A line's source, exactly as it stands at its current revision.
 struct Written {
-    /// The commit it was read from.
-    commit: String,
-    /// What is in the line's entry file there.
+    /// The revision it was read from.
+    revision: u64,
+    /// What the line says there.
     source: String,
 }
 
-/// Reads a line's source at the head of its repository.
+/// Reads a line's source at its current revision.
 async fn written(
     instance: &Instance,
     group: &GroupId,
@@ -170,28 +166,22 @@ async fn written(
     signed: &SignedIn,
     name: &Name,
 ) -> Result<Option<Written>, WebError> {
-    let repositories = instance.repositories();
-    let path = match side {
-        Side::Shared => repositories.shared(group),
-        Side::Private => repositories.personal(group, &signed.user.id),
-    };
-    let inside = format!(
-        "{}/{}/{}",
-        stemma_core::repository::LINES,
-        name,
-        stemma_core::repository::ENTRY
-    );
+    let (group, name, reader) = (group.clone(), name.clone(), signed.user.id.clone());
 
     instance
-        .blocking(move || {
-            let Some(commit) = crate::git::head_commit(&path) else {
-                return Ok(None);
-            };
-            let Ok(source) = crate::git::show(&path, &commit, &inside) else {
+        .read(move |connection| {
+            let Some(line) =
+                crate::store::lines::by_name(connection, &group, side, &name, &reader)?
+            else {
                 return Ok(None);
             };
 
-            Ok(Some(Written { commit, source }))
+            Ok(
+                crate::store::revisions::current(connection, &line)?.map(|revision| Written {
+                    revision: revision.number,
+                    source: revision.source,
+                }),
+            )
         })
         .await
 }
@@ -221,6 +211,7 @@ fn declared(name: &Name, source: &str) -> LineDigest {
             .and_then(|document| stemma_core::line::Line::of(&document).ok())
             .unwrap_or(stemma_core::line::Line { nodes: Vec::new() }),
         lean: None,
+        revision: None,
     }
 }
 
@@ -308,7 +299,7 @@ struct Anchored<'a> {
     group: Slug,
     side: Side,
     line: Name,
-    commit: String,
+    revision: u64,
     offers: Vec<Offer>,
 }
 
@@ -320,7 +311,7 @@ impl Anchored<'_> {
             &self.group,
             self.side,
             &self.line,
-            &self.commit,
+            self.revision,
             &task,
             &self.offers,
         )
@@ -383,6 +374,26 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                 @if let Some(description) = &digest.description {
                     p class="page-subtitle" { (description) }
                 }
+            }
+        }
+
+        // The page, as the machine that wrote this revision typeset it,
+        // in a frame of its own: it came from a machine, so nothing in it
+        // runs.
+        @if written.is_some() {
+            section class="block typeset" aria-labelledby="typeset-title" {
+                div class="typeset__head" {
+                    h2 class="block__title" id="typeset-title" { "The page" }
+                    @if writing.is_some() {
+                        span class="chip chip--accent" { "Being written" }
+                    }
+                    @if let Some(written) = written {
+                        span class="quiet identifier" { "revision " (written.revision) }
+                    }
+                }
+                iframe class="typeset__frame" sandbox=""
+                       src={ "/g/" (group.slug()) "/" (side) "/" (digest.name) "/page" }
+                       title={ "The typeset page of " (digest.shown_as()) } {}
             }
         }
 
@@ -461,7 +472,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             div class="block source" {
                 p class="label" {
                     "Typst source · "
-                    span class="identifier" { (short(&written.commit)) }
+                    span class="identifier" { "revision " (written.revision) }
                 }
                 pre class="source__text" { (stemma_core::render::readable(&written.source)) }
             }

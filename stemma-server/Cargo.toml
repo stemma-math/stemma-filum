@@ -25,6 +25,7 @@ argon2.workspace = true
 axum = { workspace = true, features = ["multipart"] }
 base64.workspace = true
 clap.workspace = true
+futures-util.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 lettre.workspace = true

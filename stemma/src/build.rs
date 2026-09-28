@@ -1,38 +1,43 @@
-//! Reading what is written here.
+//! Reading what is written here, and publishing it.
 //!
-//! Building a line means reading what its source declares — the nodes,
-//! which of them the line rests on, and what leans on what. It does not
-//! mean typesetting: that needs the pinned compiler, and this has to work
-//! on a machine that has not installed one yet.
+//! Building a repository means reading what each line declares — the
+//! nodes, which of them the line rests on, what leans on what — and what
+//! its Lean module establishes. It does not mean typesetting: every
+//! revision already carries its page.
 //!
-//! What comes out is keyed by the commit it was read from, so it can be
-//! handed to the instance and shown to somebody with no machine running.
+//! What comes out names the revision of every line it read, so the web
+//! shows it for a line exactly while the line is at that revision. It is
+//! built from what the engine keeps, and a line with something not sent
+//! yet is read without a revision: it describes nothing the group has.
+//!
+//! The machine that wrote a line builds its repository when the writing
+//! is over; when it cannot, the instance asks another machine for it.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use stemma_core::artefact::{LineDigest, Nodes};
 use stemma_core::document::Document;
 use stemma_core::line::{Fault, Line, Name};
 use stemma_core::repository::{self, Manifest};
 
 use crate::api::Server;
-use crate::config::Config;
 use crate::credentials::Credentials;
-use crate::git;
 use crate::home::Home;
+use crate::mirror::{self, Mirror};
 use crate::pin;
 use crate::workspace::Side;
 
 /// What one repository turned out to hold.
 #[derive(Debug, Clone)]
 pub struct Built {
-    /// Where the clone is.
+    /// Where it is shown on this machine.
     pub path: PathBuf,
     /// Which of the group's two repositories it is.
     pub side: Side,
-    /// What was read, keyed by the commit it was read from.
+    /// What was read.
     pub nodes: Nodes,
     /// What is wrong with it, by line.
     pub faults: Vec<Faulty>,
@@ -56,17 +61,24 @@ pub struct Faulty {
     pub faults: Vec<Fault>,
 }
 
-/// Reads every repository this machine has, or the one it is inside.
+/// Builds every repository this machine has, or the one it is inside,
+/// and publishes what each holds.
 pub fn run(home: &Home, here: &Path, out: &mut impl Write) -> Result<Vec<Built>> {
-    let clones = match git::containing(here) {
-        Some(clone) => vec![clone],
-        None => every_clone(home)?,
-    };
+    let mirror = Mirror::at(home)?;
+    let inside = mirror::repository_of(here)
+        .and_then(|root| read_manifest(&root).ok())
+        .map(|manifest| (manifest.group.slug().as_str().to_owned(), manifest.side));
 
-    if clones.is_empty() {
+    let repositories: Vec<(String, repository::Side)> = mirror
+        .repositories()?
+        .into_iter()
+        .filter(|found| inside.as_ref().is_none_or(|inside| inside == found))
+        .collect();
+
+    if repositories.is_empty() {
         writeln!(
             out,
-            "There are no repositories here. Run `stemma sync` to get your groups."
+            "There are no lines here yet. Run `stemma sync` to get your groups."
         )?;
 
         return Ok(Vec::new());
@@ -75,95 +87,108 @@ pub fn run(home: &Home, here: &Path, out: &mut impl Write) -> Result<Vec<Built>>
     let credentials = Credentials::read(&home.credentials_file())?;
     let mut built = Vec::new();
 
-    for clone in clones {
+    for (group, side) in repositories {
         // One repository nobody can read is not a reason to stop looking
         // at the others, and saying which one it was is the useful part.
-        match read(&clone) {
+        match read(&mirror, &group, side) {
             Ok(one) => {
                 report(&one, out)?;
-                writeln!(out, "  {}", publish(&one, credentials.as_ref()))?;
+                let published = publish(&one, credentials.as_ref());
+                if published == Published::Kept {
+                    mirror.built(&one.nodes)?;
+                }
+                writeln!(out, "  {published}")?;
                 built.push(one);
             }
-            Err(error) => writeln!(out, "{}\n  {error:#}", clone.display())?,
+            Err(error) => writeln!(out, "{group}/{side}\n  {error:#}")?,
         }
     }
 
     Ok(built)
 }
 
-/// Every clone this machine knows about.
-fn every_clone(home: &Home) -> Result<Vec<PathBuf>> {
-    let config = Config::read(&home.config_file())?;
-    let workspace = config.workspace_or(home.workspace());
+/// Builds and publishes every repository whose writing is over and has
+/// not been built, and says which it published. For the engine, after a
+/// round; what fails is tried again after the next.
+pub fn publish_due(
+    home: &Home,
+    mirror: &Mirror,
+    released: &[String],
+    quiet: std::time::Duration,
+) -> Result<Vec<String>> {
+    let due = mirror.due_builds(released, quiet)?;
+    if due.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    let mut clones = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&workspace) else {
-        return Ok(clones);
-    };
+    let credentials = Credentials::read(&home.credentials_file())?;
+    let mut published = Vec::new();
 
-    let mut groups: Vec<PathBuf> = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .collect();
-    groups.extend(config.groups.values().cloned());
-    groups.sort();
-    groups.dedup();
-
-    for group in groups {
-        for side in Side::both() {
-            let path = group.join(side.directory());
-
-            if git::is_clone(&path) {
-                clones.push(path);
+    for (group, side) in due {
+        let built = read(mirror, &group, side)?;
+        match publish(&built, credentials.as_ref()) {
+            Published::Kept => {
+                mirror.built(&built.nodes)?;
+                published.push(format!("{group}/{side}"));
             }
+            other => anyhow::bail!("{group}/{side}: {other}"),
         }
     }
 
-    Ok(clones)
+    Ok(published)
 }
 
-/// Reads one repository.
-pub fn read(clone: &Path) -> Result<Built> {
-    let manifest = read_manifest(clone)?;
-    let commit = git::head(clone).unwrap_or_else(|_| "unknown".to_owned());
+/// Reads one repository, as this machine has it.
+pub fn read(mirror: &Mirror, group: &str, side: repository::Side) -> Result<Built> {
+    let root = mirror.repository(group, side);
+    let manifest = read_manifest(&root)?;
+    let pins = group_pins(&root, &manifest);
 
-    let mut nodes = Nodes::new(manifest.group.clone(), manifest.side, commit);
-    let pins = group_pins(clone, &manifest);
+    let mut nodes = Nodes::new(manifest.group.clone(), manifest.side, String::new());
     nodes.typst = pins.typst.clone();
+
+    let mut records: Vec<_> = mirror
+        .records()?
+        .into_iter()
+        .filter(|record| record.group == group && record.side == side)
+        .collect();
+    records.sort_by(|one, other| one.name.cmp(&other.name));
 
     let mut faults = Vec::new();
 
-    for name in lines_in(clone)? {
-        let source_path = repository::line_entry(clone, &name);
-        let text = std::fs::read_to_string(&source_path)
-            .with_context(|| format!("cannot read {}", source_path.display()))?;
-
-        let read = Document::parse(&text)
+    for record in records {
+        let Ok(name) = Name::parse(&record.name) else {
+            continue;
+        };
+        let read = Document::parse(&record.source)
             .map_err(|unreadable| vec![Fault::from(unreadable)])
             .and_then(|document| Line::of(&document).map(|line| (document, line)));
 
         match read {
             Ok((document, line)) => {
-                let lean = crate::lean::check(clone, &name, &pins)?;
+                let lean = crate::lean::check(&root, &name, &pins)?;
+                let sent = !record.pending() && record.there.is_none();
                 nodes.lines.push(LineDigest {
                     name,
                     title: Some(document.title).filter(|title| !title.trim().is_empty()),
                     description: document.description,
                     line,
                     lean,
+                    revision: sent.then_some(record.base),
                 });
             }
             Err(found) => faults.push(Faulty {
+                source: mirror.entry(&record),
                 name,
-                source: source_path,
                 faults: found,
             }),
         }
     }
 
+    nodes.commit = named(&nodes);
+
     Ok(Built {
-        path: clone.to_owned(),
+        path: root,
         side: match manifest.side {
             repository::Side::Shared => Side::Shared,
             repository::Side::Private => Side::Private,
@@ -171,6 +196,19 @@ pub fn read(clone: &Path) -> Result<Built> {
         nodes,
         faults,
     })
+}
+
+/// What an artefact is filed under: what it says, digested, so the same
+/// build is the same file however often it is sent.
+fn named(nodes: &Nodes) -> String {
+    let mut unnamed = nodes.clone();
+    unnamed.commit = String::new();
+
+    Sha256::digest(unnamed.to_text().as_bytes())
+        .iter()
+        .take(20)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// What the group has pinned, wherever it is written down.
@@ -250,10 +288,9 @@ fn report(built: &Built, out: &mut impl Write) -> Result<()> {
 
     writeln!(
         out,
-        "{where_it_is}\n  {}, {} at {}",
+        "{where_it_is}\n  {}, {}",
         count(lines, "line"),
         count(statements, "statement"),
-        short(&built.nodes.commit)
     )?;
 
     for line in &built.nodes.lines {
@@ -300,11 +337,6 @@ fn report(built: &Built, out: &mut impl Write) -> Result<()> {
 pub enum Published {
     /// The instance has it.
     Kept,
-    /// There is uncommitted work here, so what was read is not what the
-    /// commit holds.
-    Uncommitted,
-    /// The commit is not on the instance yet.
-    NotSentYet,
     /// This machine is not signed in to anything.
     Unknown,
     /// The instance would not take it.
@@ -315,39 +347,17 @@ impl std::fmt::Display for Published {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Kept => f.write_str("published to the server"),
-            Self::Uncommitted => f.write_str(
-                "not sent to the instance: there is uncommitted work here, so this is \
-                 not what the commit holds",
-            ),
-            Self::NotSentYet => f.write_str(
-                "not sent to the instance: it does not have this commit yet, so run \
-                 `stemma sync` first",
-            ),
             Self::Unknown => f.write_str("not published: this machine is not signed in"),
             Self::Refused(why) => write!(f, "not published: {why}"),
         }
     }
 }
 
-/// Hands what was read to the instance, where that makes sense.
-///
-/// An artefact is named by a commit, so sending one for work that is
-/// only on this machine would tell the instance about something nobody
-/// else can look at.
+/// Hands what was read to the instance.
 pub fn publish(built: &Built, credentials: Option<&Credentials>) -> Published {
     let Some(credentials) = credentials else {
         return Published::Unknown;
     };
-
-    if git::is_dirty(&built.path).unwrap_or(false) {
-        return Published::Uncommitted;
-    }
-
-    match git::distance(&built.path) {
-        Ok(distance) if distance.ahead > 0 => return Published::NotSentYet,
-        Err(error) => return Published::Refused(format!("{error:#}")),
-        Ok(_) => {}
-    }
 
     let server = match Server::at(&credentials.server) {
         Ok(server) => server,
@@ -378,11 +388,6 @@ fn count(many: usize, noun: &str) -> String {
     }
 }
 
-/// A commit, short enough to read.
-fn short(commit: &str) -> &str {
-    &commit[..commit.len().min(8)]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,12 +398,6 @@ mod tests {
         assert_eq!(count(3, "line"), "3 lines");
         assert_eq!(count(1, "box"), "1 box");
         assert_eq!(count(2, "box"), "2 boxes");
-    }
-
-    #[test]
-    fn a_commit_is_shown_short() {
-        assert_eq!(short("0123456789abcdef"), "01234567");
-        assert_eq!(short("short"), "short");
     }
 
     #[test]
@@ -438,12 +437,6 @@ mod tests {
             Published::Unknown.to_string(),
             "not published: this machine is not signed in"
         );
-        assert!(
-            Published::Uncommitted
-                .to_string()
-                .contains("uncommitted work")
-        );
-        assert!(Published::NotSentYet.to_string().contains("stemma sync"));
     }
 
     #[test]

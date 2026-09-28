@@ -3,8 +3,10 @@
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use stemma_core::access::GroupRole;
+use stemma_core::event::{Event, GroupChange};
 use stemma_core::id::{GroupId, GroupRequestId, Slug, UserId};
 
+use super::events::{self, Audience};
 use super::{Role, id_at};
 use crate::store::users::{self, User};
 
@@ -91,6 +93,7 @@ pub fn create(
         )
         .context("cannot make the requester the owner")?;
 
+    tell(&transaction, &id, GroupChange::Created)?;
     transaction.commit()?;
 
     by_id(connection, &id)?.context("the group was created and cannot be read back")
@@ -247,7 +250,25 @@ pub fn add_member(
         )
         .context("cannot add the member")?;
 
+    if added > 0 {
+        tell(connection, group, GroupChange::Joined)?;
+    }
+
     Ok(added > 0)
+}
+
+/// Says a group changed, to everybody in it now.
+fn tell(connection: &Connection, group: &GroupId, change: GroupChange) -> Result<()> {
+    events::publish(
+        connection,
+        Audience::Group(group),
+        &Event::Group {
+            group: group.slug().as_str().to_owned(),
+            change,
+        },
+    )?;
+
+    Ok(())
 }
 
 /// What became of a request for a group.

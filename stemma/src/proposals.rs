@@ -9,12 +9,12 @@
 use std::io::Write;
 use stemma_core::proposal::Verdict;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use stemma_core::id::ProposalId;
-use stemma_core::repository::{self, Side};
 
-use crate::config::Config;
+use crate::api::AcceptedProposal;
 use crate::home::Home;
+use crate::mirror::{Applied, Instance, Mirror};
 use crate::session;
 
 /// Says what is waiting for this person.
@@ -133,10 +133,7 @@ pub fn decide(home: &Home, proposal: &str, verdict: Verdict, out: &mut impl Writ
                 out,
                 "  it is recorded as yours, with the model that proposed it"
             )?;
-            writeln!(
-                out,
-                "  run `stemma proposal apply {proposal}` to apply it here"
-            )?;
+            apply(home, proposal, out)?;
         }
         Verdict::AskAgain => {
             writeln!(out, "{proposal}  rejected, and the task was queued again")?;
@@ -147,51 +144,66 @@ pub fn decide(home: &Home, proposal: &str, verdict: Verdict, out: &mut impl Writ
     Ok(())
 }
 
-/// Fetches an accepted proposal, writes it into the matching clean clone and commits it.
+/// Merges an accepted proposal into its line and writes it as the
+/// accepter's revision, or marks it outdated when a block it changes was
+/// changed since it was made.
 pub fn apply(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
     let proposal: ProposalId = proposal
         .parse()
         .context("that is not a proposal identifier")?;
-    let (credentials, server) = session::connect(home)?;
-    let accepted = server.accepted_proposal(&credentials.token, &proposal.to_string())?;
-    stemma_core::id::Slug::parse(&accepted.group).context("the proposal names no group")?;
-    let line = repository::check_line_name(&accepted.line).context("the proposal names no line")?;
-    let config = Config::read(&home.config_file())?;
-    let side: Side = accepted
-        .side
-        .parse()
-        .context("the proposal names no repository")?;
-    let clone = config
-        .group_directory(&accepted.group, &config.workspace_or(home.workspace()))
-        .join(match side {
-            Side::Shared => crate::workspace::Side::Shared.directory(),
-            Side::Private => crate::workspace::Side::Private.directory(),
-        });
+    let instance = Instance::connect(home)?;
+    let accepted = instance
+        .server()
+        .accepted_proposal(instance.token(), &proposal.to_string())?;
 
-    if crate::git::head(&clone)? != accepted.commit {
-        bail!(
-            "the clone has moved since this proposal was made; review it again against the current line"
-        )
-    }
-    if crate::git::is_dirty(&clone)? {
-        bail!("there are uncommitted changes here: commit them before applying the proposal")
-    }
-
-    let path = repository::line_entry(&clone, &line);
-    std::fs::write(&path, &accepted.source)
-        .with_context(|| format!("cannot write {}", path.display()))?;
-    let mut paths = vec![path];
-    if let Some(lean_source) = accepted.lean_source {
-        let lean_path = repository::line_lean_entry(&clone, &line);
-        std::fs::write(&lean_path, lean_source)
-            .with_context(|| format!("cannot write {}", lean_path.display()))?;
-        paths.push(lean_path);
-    }
-    crate::git::commit_paths(&clone, &paths, &format!("Apply proposal {proposal}"))?;
-    writeln!(
-        out,
-        "Applied {proposal} to {}/{}.",
-        accepted.group, accepted.line
+    let said = applied(
+        &Mirror::at(home)?,
+        &instance,
+        &proposal.to_string(),
+        &accepted,
     )?;
+    writeln!(out, "{proposal}  {said}")?;
+
     Ok(())
+}
+
+/// Applies every proposal this person accepted that no machine of theirs
+/// has applied yet: a decision made offline, or on the web, is carried
+/// out here. Says what came of each.
+pub fn apply_waiting(mirror: &Mirror, instance: &Instance) -> Result<Vec<String>> {
+    let waiting = instance.server().accepted_proposals(instance.token())?;
+    let mut said = Vec::new();
+
+    for one in waiting {
+        let outcome = applied(mirror, instance, &one.proposal, &one.accepted)
+            .unwrap_or_else(|error| format!("not applied yet: {error:#}"));
+        said.push(format!("{}  {outcome}", one.proposal));
+    }
+
+    Ok(said)
+}
+
+/// Applies an accepted proposal and tells the instance what came of it,
+/// in words.
+pub fn applied(
+    mirror: &Mirror,
+    instance: &Instance,
+    proposal: &str,
+    accepted: &AcceptedProposal,
+) -> Result<String> {
+    Ok(match mirror.apply(instance, accepted)? {
+        Applied::Written(revision) => {
+            instance
+                .server()
+                .proposal_applied(instance.token(), proposal, revision)?;
+            format!("applied to {}/{}", accepted.group, accepted.line)
+        }
+        Applied::Outdated => {
+            instance
+                .server()
+                .proposal_outdated(instance.token(), proposal)?;
+            "outdated: a block it changes was changed since it was made".to_owned()
+        }
+        Applied::Queued(why) => format!("merged here, not sent yet: {why}"),
+    })
 }

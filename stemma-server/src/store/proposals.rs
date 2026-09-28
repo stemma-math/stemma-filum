@@ -28,6 +28,8 @@ pub struct Proposal {
     pub state: String,
     /// The person who decided, once decided.
     pub decided_by: Option<UserId>,
+    /// The revision it became on its line, once a machine applied it.
+    pub applied_revision: Option<u64>,
 }
 
 /// Keeps a validated proposal once per job.
@@ -48,14 +50,35 @@ pub fn create(connection: &Connection, job: &Job, offer: &Offer) -> Result<Propo
             ],
         )
         .context("cannot keep the proposal")?;
+    tell(connection, &id)?;
     Ok(id)
+}
+
+/// Says a proposal arrived or was decided, to the person it waits for.
+fn tell(connection: &Connection, id: &ProposalId) -> Result<()> {
+    let Some(proposal) = by_id(connection, id)? else {
+        return Ok(());
+    };
+
+    super::events::publish(
+        connection,
+        super::events::Audience::Person(&proposal.job.group, &proposal.job.launched_by),
+        &stemma_core::event::Event::Proposal {
+            group: proposal.job.group.slug().as_str().to_owned(),
+            proposal: id.to_string(),
+            state: proposal.state.as_str().to_owned(),
+        },
+    )?;
+
+    Ok(())
 }
 
 /// Finds one proposal and its job.
 pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal>> {
     let row = connection
         .query_row(
-            "SELECT job_id, source, lean_source, vendor, model, prompt_revision, state, decided_by
+            "SELECT job_id, source, lean_source, vendor, model, prompt_revision, state, decided_by,
+                applied_revision
          FROM proposals WHERE id = ?1",
             params![id.to_string()],
             |row| {
@@ -68,11 +91,22 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
                     row.get(5)?,
                     row.get(6)?,
                     row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<i64>>(8)?,
                 ))
             },
         )
         .optional()?;
-    let Some((job, source, lean_source, vendor, model, prompt_revision, state, decided_by)) = row
+    let Some((
+        job,
+        source,
+        lean_source,
+        vendor,
+        model,
+        prompt_revision,
+        state,
+        decided_by,
+        applied_revision,
+    )) = row
     else {
         return Ok(None);
     };
@@ -92,18 +126,83 @@ pub fn by_id(connection: &Connection, id: &ProposalId) -> Result<Option<Proposal
         prompt_revision,
         state,
         decided_by: decided_by.and_then(|id| id.parse().ok()),
+        applied_revision: applied_revision.map(|revision| revision.max(0) as u64),
     }))
 }
 
 /// Records the launcher's first and only decision.
 pub fn decide(connection: &Connection, id: &ProposalId, by: &UserId, accept: bool) -> Result<bool> {
     let state = if accept { "accepted" } else { "rejected" };
-    Ok(connection.execute(
+    let decided = connection.execute(
         "UPDATE proposals SET state = ?3, decided_by = ?2, decided_at = datetime('now')
          WHERE id = ?1 AND state = 'awaiting_review'
            AND job_id IN (SELECT id FROM jobs WHERE launched_by = ?2)",
         params![id.to_string(), by.to_string(), state],
-    )? > 0)
+    )? > 0;
+
+    if decided {
+        tell(connection, id)?;
+    }
+
+    Ok(decided)
+}
+
+/// Proposals this person accepted that no machine of theirs has applied
+/// yet, oldest first.
+pub fn accepted_unapplied(connection: &Connection, by: &UserId) -> Result<Vec<Proposal>> {
+    let mut statement = connection.prepare(
+        "SELECT id FROM proposals
+          WHERE state = 'accepted' AND decided_by = ?1 AND applied_revision IS NULL
+          ORDER BY decided_at, id",
+    )?;
+    let ids = statement
+        .query_map(params![by.to_string()], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut found = Vec::new();
+    for id in ids {
+        if let Some(proposal) = by_id(connection, &id.parse()?)? {
+            found.push(proposal);
+        }
+    }
+
+    Ok(found)
+}
+
+/// Notes the revision an accepted proposal became on its line.
+pub fn applied(
+    connection: &Connection,
+    id: &ProposalId,
+    by: &UserId,
+    revision: u64,
+) -> Result<bool> {
+    let applied = connection.execute(
+        "UPDATE proposals SET applied_revision = ?3
+          WHERE id = ?1 AND decided_by = ?2 AND state = 'accepted' AND applied_revision IS NULL",
+        params![id.to_string(), by.to_string(), revision as i64],
+    )? > 0;
+
+    if applied {
+        tell(connection, id)?;
+    }
+
+    Ok(applied)
+}
+
+/// Notes that an accepted proposal touches blocks that changed since the
+/// revision it was made from, so it is not applied.
+pub fn outdated(connection: &Connection, id: &ProposalId, by: &UserId) -> Result<bool> {
+    let outdated = connection.execute(
+        "UPDATE proposals SET state = 'outdated'
+          WHERE id = ?1 AND decided_by = ?2 AND state = 'accepted' AND applied_revision IS NULL",
+        params![id.to_string(), by.to_string()],
+    )? > 0;
+
+    if outdated {
+        tell(connection, id)?;
+    }
+
+    Ok(outdated)
 }
 
 /// Proposals this person still has to review.
@@ -160,7 +259,8 @@ mod tests {
                 group: group.id,
                 side: Side::Shared,
                 line: Name::parse("quotients").unwrap(),
-                commit: "0123456789abcdef".to_owned(),
+                line_id: None,
+                revision: 1,
                 against: None,
                 task: Task::Explore,
                 agent: Slug::parse("claude").unwrap(),

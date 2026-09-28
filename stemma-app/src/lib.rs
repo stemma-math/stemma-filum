@@ -13,6 +13,8 @@ mod account;
 mod claims;
 mod compose;
 mod editing;
+mod engine;
+mod live;
 mod machine;
 #[cfg(target_os = "macos")]
 mod menu;
@@ -31,13 +33,19 @@ pub fn run() {
 
     builder
         .manage(account::SigningIn::default())
+        .setup(|app| {
+            engine::start(app.handle());
+            live::start(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             account::whoami,
             account::sign_in_start,
             account::sign_in_poll,
             account::sign_out,
             account::open_link,
-            workspace::sync,
+            workspace::standing,
+            workspace::send_now,
             workspace::groups,
             workspace::managed_groups,
             workspace::lines,
@@ -46,9 +54,9 @@ pub fn run() {
             workspace::share_line,
             editing::open_line,
             editing::save_line,
-            editing::record_line,
             compose::preview,
             claims::claim,
+            claims::claim_status,
             claims::release,
             claims::request_claim,
             claims::parted,

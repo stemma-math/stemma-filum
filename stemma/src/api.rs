@@ -65,6 +65,36 @@ fn agent() -> ureq::Agent {
         .clone()
 }
 
+/// The agent a stream of events is heard through.
+///
+/// Not the one above: a stream is one answer that lasts minutes, and a
+/// limit on the whole exchange would cut every one of them short. What
+/// it has instead is a limit just past the ten minutes the instance
+/// keeps a stream open, so a stream that went silent is noticed.
+static LISTENING: std::sync::OnceLock<ureq::Agent> = std::sync::OnceLock::new();
+
+/// How long one stream may last before it is taken for dead.
+const STREAM: Duration = Duration::from_secs(11 * 60);
+
+fn listening() -> ureq::Agent {
+    LISTENING
+        .get_or_init(|| {
+            let config = ureq::Agent::config_builder()
+                .timeout_connect(Some(CONNECTING))
+                .timeout_recv_response(Some(TIMEOUT))
+                .timeout_recv_body(Some(STREAM))
+                .http_status_as_error(false)
+                .build();
+
+            ureq::Agent::with_parts(
+                config,
+                ureq::unversioned::transport::DefaultConnector::new(),
+                crate::reaching::HappyEyeballs::default(),
+            )
+        })
+        .clone()
+}
+
 /// What an instance says when a machine asks to sign in.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SignIn {
@@ -153,8 +183,21 @@ pub struct AcceptedProposal {
     pub side: String,
     /// Line directory.
     pub line: String,
-    /// Exact base commit reviewed.
-    pub commit: String,
+    /// The line, by identifier, so it is found after it moved.
+    #[serde(default)]
+    pub line_id: Option<String>,
+    /// The revision the proposal was made against.
+    pub revision: u64,
+}
+
+/// An accepted proposal no machine has applied yet.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ToApply {
+    /// The proposal's identifier.
+    pub proposal: String,
+    /// What was accepted.
+    #[serde(flatten)]
+    pub accepted: AcceptedProposal,
 }
 
 /// One machine offered as a deliberate choice for a group.
@@ -225,11 +268,14 @@ pub struct Handed {
     pub side: String,
     /// Which line of work.
     pub line: String,
-    /// The commit to work against.
-    pub commit: String,
-    /// The other version, when the job is to bring two of them together.
+    /// The line, by identifier, so it is found after it moved.
     #[serde(default)]
-    pub against: Option<String>,
+    pub line_id: Option<String>,
+    /// The revision of the line to work against.
+    pub revision: u64,
+    /// The other revision, when the job is to bring two of them together.
+    #[serde(default)]
+    pub against: Option<u64>,
     /// What is being asked.
     pub task: String,
     /// Which agent to use.
@@ -266,11 +312,11 @@ pub struct Asking {
     pub side: String,
     /// Which line of work.
     pub line: String,
-    /// The commit to work against.
-    pub commit: String,
-    /// The other version, for a job that brings two of them together.
+    /// The revision of the line to work against.
+    pub revision: u64,
+    /// The other revision, for a job that brings two of them together.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub against: Option<String>,
+    pub against: Option<u64>,
     /// What is being asked.
     pub task: String,
     /// Which agent.
@@ -362,12 +408,91 @@ pub struct Sharing {
 /// Where a line ended up.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Placed {
+    /// The line's identifier.
+    #[serde(default)]
+    pub id: Option<String>,
     /// The group's short name.
     pub group: String,
     /// Which of its repositories.
     pub side: String,
     /// What the line is called.
     pub line: String,
+    /// The revision it is at.
+    #[serde(default)]
+    pub revision: u64,
+}
+
+/// A line as the instance lists it to a machine.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Listing {
+    /// Its identifier, which it keeps for its whole life.
+    pub id: String,
+    /// The group's short name.
+    pub group: String,
+    /// Which of the group's repositories it is in.
+    pub side: String,
+    /// What it is called.
+    pub line: String,
+    /// Who started it.
+    pub author: String,
+    /// Who may write it: `author` or `anyone`.
+    pub writing: String,
+    /// The revision it is at.
+    pub revision: u64,
+    /// Whether it has been deleted.
+    pub deleted: bool,
+}
+
+/// One revision of one line, as a machine receives it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Revision {
+    /// The line's identifier.
+    pub id: String,
+    /// The group's short name.
+    pub group: String,
+    /// Which of the group's repositories the line was in.
+    pub side: String,
+    /// What the line is called.
+    pub line: String,
+    /// Which revision.
+    pub revision: u64,
+    /// What made it: `started`, `written`, `shared` or `deleted`.
+    pub kind: String,
+    /// The line, as its `line.json`.
+    pub source: String,
+    /// The Lean module beside it.
+    #[serde(default)]
+    pub lean_source: Option<String>,
+}
+
+/// What a machine sends to write a line.
+#[derive(Debug, Clone, Serialize)]
+pub struct Outgoing {
+    /// The revision it was written from.
+    pub base: u64,
+    /// The line, as its `line.json`.
+    pub source: String,
+    /// The Lean module beside it.
+    pub lean_source: Option<String>,
+    /// What it typesets to.
+    pub page: String,
+}
+
+/// What the instance made of a write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Written {
+    /// It is this revision now.
+    Taken(u64),
+    /// The line moved on from the revision it was written from; this is
+    /// where it is now.
+    Stale(Box<Revision>),
+    /// This machine does not hold the line; the one that does calls
+    /// itself this, when one does.
+    NotHeld(Option<String>),
+    /// The line has been deleted.
+    Gone,
+    /// What was sent is not something a line can be, and why.
+    Refused(String),
 }
 
 /// Which line a machine is talking to the instance about.
@@ -754,6 +879,105 @@ impl Server {
         Ok(())
     }
 
+    /// Every line this machine's owner can see, deleted ones too, and the
+    /// revision each is at.
+    pub fn lines(&self, token: &str) -> Result<Vec<Listing>> {
+        let answer: serde_json::Value = self.read(token, "/api/lines")?;
+
+        serde_json::from_value(answer["lines"].clone())
+            .context("the server sent an answer this build does not understand")
+    }
+
+    /// One revision of a line: the one it is at, or the one named.
+    pub fn revision(&self, token: &str, line: &str, number: Option<u64>) -> Result<Revision> {
+        let path = match number {
+            Some(number) => format!("/api/lines/{line}?revision={number}"),
+            None => format!("/api/lines/{line}"),
+        };
+
+        self.read(token, &path)
+    }
+
+    /// Writes a line, as the revision after the one it was written from.
+    ///
+    /// A refusal is an answer, not a failure: each says what the machine
+    /// needs to put it right. Only not reaching the instance is an error.
+    pub fn write_line(&self, token: &str, line: &str, outgoing: &Outgoing) -> Result<Written> {
+        let mut response = self
+            .agent
+            .put(self.url(&format!("/api/lines/{line}")))
+            .header("authorization", format!("Bearer {token}"))
+            .send_json(outgoing)
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        let status = response.status().as_u16();
+        let answer: serde_json::Value = response.body_mut().read_json().unwrap_or_default();
+        let said = || {
+            answer["error"]
+                .as_str()
+                .map_or_else(|| format!("refused ({status})"), str::to_owned)
+        };
+        let understood = || anyhow!("the server sent an answer this build does not understand");
+
+        Ok(match status {
+            200 => Written::Taken(answer["revision"].as_u64().ok_or_else(understood)?),
+            409 => Written::Stale(Box::new(
+                serde_json::from_value(answer["current"].clone()).map_err(|_| understood())?,
+            )),
+            423 => Written::NotHeld(answer["held_by"].as_str().map(str::to_owned)),
+            410 => Written::Gone,
+            400..=499 => Written::Refused(said()),
+            _ => bail!("{} answered with {status}: {}", self.address, said()),
+        })
+    }
+
+    /// The files at the root of one of a group's repositories, by path.
+    pub fn repository_root(
+        &self,
+        token: &str,
+        group: &str,
+        side: &str,
+    ) -> Result<std::collections::BTreeMap<String, String>> {
+        let answer: serde_json::Value =
+            self.read(token, &format!("/api/repositories/{group}/{side}"))?;
+
+        serde_json::from_value(answer["files"].clone())
+            .context("the server sent an answer this build does not understand")
+    }
+
+    /// What this person accepted and none of their machines applied yet.
+    pub fn accepted_proposals(&self, token: &str) -> Result<Vec<ToApply>> {
+        let answer: serde_json::Value = self.read(token, "/api/proposals/accepted")?;
+
+        serde_json::from_value(answer["proposals"].clone())
+            .context("the server sent an answer this build does not understand")
+    }
+
+    /// Says an accepted proposal was written, and as which revision.
+    pub fn proposal_applied(&self, token: &str, proposal: &str, revision: u64) -> Result<()> {
+        let _: serde_json::Value = self.ask(
+            token,
+            &format!("/api/proposals/{proposal}/applied"),
+            &serde_json::json!({ "revision": revision }),
+        )?;
+
+        Ok(())
+    }
+
+    /// Says an accepted proposal came too late: a block it changes was
+    /// changed since the revision it was made against.
+    pub fn proposal_outdated(&self, token: &str, proposal: &str) -> Result<()> {
+        let _: serde_json::Value = self.ask(
+            token,
+            &format!("/api/proposals/{proposal}/outdated"),
+            &serde_json::json!({}),
+        )?;
+
+        Ok(())
+    }
+
     /// Takes a line of one's own out of the repository.
     pub fn delete_line(&self, token: &str, group: &str, line: &str) -> Result<()> {
         let _: serde_json::Value = self.ask(
@@ -1001,6 +1225,33 @@ impl Server {
     }
 
     /// One of this instance's addresses.
+    /// Opens the stream of what changes on the instance, from after the
+    /// last notice this machine saw, or from now.
+    pub fn listen(&self, token: &str, last: Option<i64>) -> Result<impl std::io::BufRead + use<>> {
+        let mut request = listening()
+            .get(self.url("/api/events"))
+            .header("authorization", format!("Bearer {token}"))
+            .header("accept", "text/event-stream");
+        if let Some(last) = last {
+            request = request.header(stemma_core::event::LAST_EVENT_HEADER, last.to_string());
+        }
+
+        let response = request
+            .call()
+            .with_context(|| format!("cannot reach {}", self.address))?;
+
+        self.check_protocol(response.headers())?;
+
+        match response.status().as_u16() {
+            200 => Ok(std::io::BufReader::new(response.into_body().into_reader())),
+            401 | 403 => bail!(
+                "{} no longer accepts this machine's credential",
+                self.address
+            ),
+            status => bail!("{} answered with {status}", self.address),
+        }
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.address)
     }
