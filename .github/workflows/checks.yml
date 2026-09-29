@@ -13,10 +13,19 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Debug information makes every test binary many times larger, and the
+  # workspace links dozens of them: with it, the runner's disk fills up.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+
 jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
+      - name: Free disk space
+        # Toolchains this repository never uses.
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
