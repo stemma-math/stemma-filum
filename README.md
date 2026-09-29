@@ -217,6 +217,10 @@ version); a local build reports the version alone unless `STEMMA_BUILD` names
 one. The macOS application is not notarised, so after unzipping it, run
 `xattr -dr com.apple.quarantine Stemma.app` once before opening it.
 
+A machine that serves an instance installs and updates it from these builds
+with `scripts/stemma-platform.sh`, run as root; `--help` says what it does
+and what it needs.
+
 ## Local server
 
 The `server` and `client` recipes work on an isolated instance under
