@@ -874,13 +874,9 @@
 }
 
 .blocks__problems {
-    margin: 0;
-    padding: 10px 14px 10px 32px;
-    font-size: 13px;
-    color: var(--danger-fg);
-    background: var(--danger-bg);
-    border: 1px solid rgb(214 69 69 / 30%);
-    border-radius: var(--radius-md);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .blocks__empty {
@@ -1213,27 +1209,22 @@ button.block__label:disabled {
     caret-color: transparent;
 }
 
+/* A block's own problems, smaller than the line's. */
 .block__problems {
     display: flex;
     flex-direction: column;
     gap: 4px;
     margin: 0 16px 12px 44px;
-    padding: 8px 12px;
-    list-style: none;
+}
+
+.block__problems .message {
+    padding: 6px 10px;
     font-size: 12px;
-    color: var(--danger-fg);
-    background: var(--danger-bg);
-    border-radius: var(--radius-sm);
 }
 
-.block__problems li {
-    display: flex;
-    align-items: flex-start;
-    gap: 6px;
-}
-
-.block__problems .warning {
-    color: var(--warning-fg);
+.block__problems .glyph {
+    width: 14px;
+    height: 14px;
 }
 
 /* Typst, highlighted: the markup is quieter than the words. */

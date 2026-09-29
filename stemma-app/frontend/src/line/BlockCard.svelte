@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { untrack } from "svelte";
   import Bubble from "../components/Bubble.svelte";
   import Glyph from "../components/Glyph.svelte";
@@ -426,14 +427,12 @@
   {/if}
 
   {#if faults.length || diagnostics.length}
-    <ul class="block__problems">
-      {#each faults as fault, index (index)}<li><Glyph name="alert" small />{fault}</li>{/each}
+    <div class="block__problems">
+      {#each faults as fault, index (index)}<Message kind="error" text={fault} />{/each}
       {#each diagnostics as diagnostic, index (index)}
-        <li class:warning={!diagnostic.error}>
-          <Glyph name={diagnostic.error ? "alert" : "warning"} small />
-          {diagnostic.line === null ? "" : `Line ${diagnostic.line}: `}{diagnostic.message}
-        </li>
+        <Message kind={diagnostic.error ? "error" : "warning"}
+          text={`${diagnostic.line === null ? "" : `Line ${diagnostic.line}: `}${diagnostic.message}`} />
       {/each}
-    </ul>
+    </div>
   {/if}
 </article>
