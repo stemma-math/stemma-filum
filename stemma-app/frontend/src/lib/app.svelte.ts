@@ -6,7 +6,7 @@ import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
 import { lineLabel, sameLine, statesChanged, touchedLines, type Named } from "./lines";
 import { touchedBlocks } from "./review";
-import { fail, tell } from "./status.svelte";
+import { fail, succeed, warn } from "./status.svelte";
 import type { Known, LineDocument, LineState, Mirrored, Review, Signed, Waiting } from "./types";
 
 /** What fills the middle of the window. */
@@ -231,7 +231,7 @@ class App {
    * to this machine before it answers. */
   async changeLines(work: () => Promise<string>) {
     try {
-      tell(await work());
+      succeed(await work());
       await this.lookAgain();
       await this.goTo("welcome");
     } catch (error) {
@@ -263,7 +263,7 @@ class App {
       }
     }
     for (const aside of said.report.aside) {
-      tell(`${aside.line}: a version was kept at ${aside.path}, because ${aside.why}.`);
+      warn(`${aside.line}: a version was kept at ${aside.path}, because ${aside.why}.`);
     }
   }
 

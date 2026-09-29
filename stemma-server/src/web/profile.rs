@@ -350,10 +350,10 @@ fn body(
     let note = |part: Part| {
         html! {
             @if let Some((_, words)) = said.filter(|(about, _)| *about == part) {
-                p class="done" role="status" { (words) }
+                (super::layout::message(super::layout::Kind::Success, words))
             }
             @if let Some((_, words)) = problem.filter(|(about, _)| *about == part) {
-                p class="problem" role="alert" { (words) }
+                (super::layout::message(super::layout::Kind::Error, words))
             }
         }
     };

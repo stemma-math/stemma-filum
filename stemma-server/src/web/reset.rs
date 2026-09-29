@@ -224,7 +224,7 @@ fn body(secret: &str, problem: Option<&str>) -> Markup {
             h1 { "Set a password" }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             form method="post" action={ "/reset/" (secret) } {

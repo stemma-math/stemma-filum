@@ -12,7 +12,7 @@ import { app } from "./app.svelte";
 import { jobs } from "./jobs.svelte";
 import { subscriptions } from "./lifecycle";
 import { sameLine } from "./lines";
-import { tell } from "./status.svelte";
+import { tell, warn } from "./status.svelte";
 import type { Heard, ServerEvent } from "./types";
 
 /** How long to gather notices before acting on them: a burst of writing
@@ -94,11 +94,8 @@ class Live {
       case "formal_audit": {
         const open = app.line?.opened.entry;
         if (open && open.group === event.group && open.name === event.line) {
-          tell(
-            event.state === "audit_withdrawn"
-              ? `The formal audit for ${event.block} was withdrawn; dependent work should be checked.`
-              : `The formal statement for ${event.block} was audited.`,
-          );
+          if (event.state === "audit_withdrawn") warn(`The formal audit for ${event.block} was withdrawn; dependent work should be checked.`);
+          else tell(`The formal statement for ${event.block} was audited.`);
         }
         break;
       }

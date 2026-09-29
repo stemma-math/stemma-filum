@@ -3,7 +3,7 @@
  * Served after the identity's `fonts.css`, `tokens.css` and
  * `components.css`, which define every custom property used here and the
  * shared components: buttons, fields, chips, cards, tables, menus,
- * dialogs and notices. What is here is layout: the public pages, the
+ * dialogs and messages. What is here is layout: the public pages, the
  * front page, the signed-in shell and each page's own arrangement.
  */
 
@@ -199,14 +199,6 @@ form > .button {
 
 .actions form {
     display: inline-flex;
-}
-
-.done {
-    padding: 10px 14px;
-    font: var(--text-meta);
-    color: var(--success-fg);
-    background: var(--success-bg);
-    border-radius: var(--radius-md);
 }
 
 /* Something given out once, which has to be copied before it is gone. */

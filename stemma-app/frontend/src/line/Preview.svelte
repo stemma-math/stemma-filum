@@ -1,6 +1,7 @@
 <script lang="ts">
   // The typeset line, a page at a time: zoom, where you are, and what went
   // wrong when the last change did not typeset.
+  import Message from "../components/Message.svelte";
   import Glyph from "../components/Glyph.svelte";
   import { app } from "../lib/app.svelte";
   import { blockCard } from "../lib/dom";
@@ -70,19 +71,14 @@
   </div>
 
   {#if stale || line.previewError}
-    <div class="preview__notice notice notice--warning" role="alert">
-      <Glyph name="warning" small />
-      <span>
-        {#if line.previewError}
-          {line.previewError}
-        {:else}
-          This change does not typeset: {errors[0].message}. The page shows the last version that did.
+    <Message kind="warning" class="preview__notice"
+      text={line.previewError ?? `This change does not typeset: ${errors[0].message}. The page shows the last version that did.`}>
+      {#snippet actions()}
+        {#if !line.previewError && errors[0].block}
+          <button type="button" class="button button--link" onclick={() => goTo(errors[0].block)}>Go to block</button>
         {/if}
-      </span>
-      {#if !line.previewError && errors[0].block}
-        <button type="button" class="button button--link" onclick={() => goTo(errors[0].block)}>Go to block</button>
-      {/if}
-    </div>
+      {/snippet}
+    </Message>
   {/if}
 
   <div class="preview__scroll">

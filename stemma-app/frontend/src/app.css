@@ -1536,10 +1536,6 @@ button.block__label:disabled {
     vertical-align: -2px;
 }
 
-.panel__text--failed {
-    color: var(--danger-fg);
-}
-
 .agent-pick__button {
     display: flex;
     align-items: center;
@@ -1886,10 +1882,6 @@ button.block__label:disabled {
 .setting__note {
     font-size: 13px;
     color: var(--ink-3);
-}
-
-.setting__note--failed {
-    color: var(--danger-fg);
 }
 
 .setting__skeleton {
@@ -2302,44 +2294,32 @@ button.block__label:disabled {
 
 /* ── Toasts and tooltips ───────────────────────────────────────────── */
 
+/* A popover in the top layer, so none of the browser's own look. */
 .toasts {
     position: fixed;
-    bottom: 24px;
-    left: calc(var(--sidebar-desktop) + (100vw - var(--sidebar-desktop)) / 2);
-    z-index: 60;
+    inset: auto auto 24px calc(var(--sidebar-desktop) + (100vw - var(--sidebar-desktop)) / 2);
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    width: max-content;
+    max-width: calc(100vw - var(--sidebar-desktop) - 48px);
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    background: transparent;
+    border: 0;
     pointer-events: none;
     transform: translateX(-50%);
+}
+
+.toasts:not(:popover-open) {
+    display: none;
 }
 
 .toasts .toast {
     pointer-events: auto;
     animation: toast-in var(--dur-ui) var(--ease-out);
-}
-
-.toast__message {
-    flex: 1;
-}
-
-.toast__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    color: inherit;
-    background: transparent;
-    border: 0;
-    border-radius: var(--radius-xs);
-    opacity: 0.7;
-    cursor: pointer;
-}
-
-.toast__close:hover {
-    opacity: 1;
 }
 
 @keyframes toast-in {

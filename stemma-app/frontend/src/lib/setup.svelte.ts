@@ -3,7 +3,7 @@
 // dialogs is open.
 
 import { api, said } from "./api";
-import { fail, tell } from "./status.svelte";
+import { fail, succeed } from "./status.svelte";
 import type { Survey } from "./types";
 
 class Setup {
@@ -39,7 +39,7 @@ class Setup {
   /** Does one item and looks again. */
   async act(work: () => Promise<string>) {
     try {
-      tell(await work());
+      succeed(await work());
     } catch (error) {
       fail(error);
     }

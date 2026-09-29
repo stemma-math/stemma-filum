@@ -324,7 +324,7 @@ fn authenticate_body(signed: &SignedIn, next: Option<&str>, problem: Option<&str
             }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             form method="post" action="/admin/authenticate" {

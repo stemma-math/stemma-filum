@@ -234,7 +234,7 @@ fn ask(signed: &SignedIn, code: &str, problem: Option<&str>) -> Markup {
             }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             form method="get" action="/device" {

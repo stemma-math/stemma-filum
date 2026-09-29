@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { onMount } from "svelte";
   import Glyph from "../components/Glyph.svelte";
   import { app, type View } from "../lib/app.svelte";
@@ -160,7 +161,7 @@
           <Blocks {line} document={line.document} onask={ask} />
         {:else}
           <div class="blocks">
-            <p class="problem">This file is not a valid line, so it cannot be edited here.</p>
+            <Message kind="error" text="This file is not a valid line, so it cannot be edited here." />
             {#each line.opened.faults as fault, index (index)}<p class="quiet">{fault.message}</p>{/each}
             <pre class="source">{line.opened.source}</pre>
           </div>

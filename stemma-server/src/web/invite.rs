@@ -275,7 +275,7 @@ fn body(
             p class="quiet identifier" { (group.id.to_string()) }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             @match &visitor.0 {

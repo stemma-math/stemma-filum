@@ -579,7 +579,7 @@ fn asked(
             h1 { "New line of work" }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             form method="post" action={ "/g/" (group.slug()) "/lines" } class="stack" {
@@ -655,7 +655,7 @@ fn offered(
             }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             @if !held.is_empty() {

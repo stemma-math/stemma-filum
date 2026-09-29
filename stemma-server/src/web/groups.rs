@@ -247,7 +247,7 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
             }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             form method="post" action="/groups/new" {
@@ -708,10 +708,10 @@ fn edit_body(
 
         div class="settings-page" {
             @if let Some(said) = said {
-                p class="done" role="status" { (said) }
+                (super::layout::message(super::layout::Kind::Success, said))
             }
             @if let Some(problem) = problem {
-                p class="problem" role="alert" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             section class="block" aria-labelledby="picture-title" {

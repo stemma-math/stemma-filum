@@ -302,7 +302,7 @@ pub(super) fn login_body(
             h1 { "Log in" }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             form method="post" action="/login" {
@@ -350,7 +350,7 @@ pub(super) fn register_body(problem: Option<&str>, given: Option<&Registration>)
             }
 
             @if let Some(problem) = problem {
-                p class="problem" { (problem) }
+                (super::layout::message(super::layout::Kind::Error, problem))
             }
 
             form method="post" action="/register" {

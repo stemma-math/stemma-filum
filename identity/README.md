@@ -45,7 +45,7 @@ system unless the root says `data-theme="light"` or `data-theme="dark"`.
 HTML, in cascade layers so each surface's own rules win: `.button` (with
 `--primary`, `--quiet`, `--danger`, `--link` and `--icon`), `.field`,
 `.input`, `.choice`, `.fieldset`, `.chip`, `.count`, `.avatar`, `.badge`,
-`.card`, `.table`, `.menu`, `.dialog`, `.problem`, `.notice`, `.toast`,
+`.card`, `.table`, `.menu`, `.dialog`, `.message`, `.toast`,
 `.tooltip`, `.segmented`, `.skeleton`, `.spinner`, `.label` and the
 wordmark. Controls are comfortable by default and compact inside
 `[data-density="compact"]`.

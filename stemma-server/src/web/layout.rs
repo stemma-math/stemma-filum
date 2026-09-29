@@ -401,6 +401,77 @@ pub fn glyph(name: &str) -> Markup {
     }
 }
 
+/// What a message says, as the identity draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// What was asked could not be done.
+    Error,
+    /// Something to keep in mind.
+    Warning,
+    /// What was asked was done.
+    Success,
+    /// Worth knowing, and nothing more.
+    Info,
+}
+
+/// A message of one of the four kinds: its glyph, then its words, whose
+/// web addresses are links. Every page says things this way.
+pub fn message(kind: Kind, words: &str) -> Markup {
+    let (class, glyph_name, role) = match kind {
+        Kind::Error => ("message message--error", "alert", "alert"),
+        Kind::Warning => ("message message--warning", "warning", "alert"),
+        Kind::Success => ("message message--success", "done", "status"),
+        Kind::Info => ("message message--info", "info", "status"),
+    };
+    html! {
+        div class=(class) role=(role) {
+            (glyph(glyph_name))
+            p class="message__text" {
+                @for (text, link) in pieces(words) {
+                    @if link {
+                        a href=(text) { (text) }
+                    } @else {
+                        (text)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Splits words into plain runs and HTTP(S) addresses, in order; each run
+/// says whether it is an address. Punctuation that ends a sentence stays
+/// out of the address before it.
+fn pieces(words: &str) -> Vec<(&str, bool)> {
+    let mut found = Vec::new();
+    let mut from = 0;
+    while let Some(at) = next_address(&words[from..]).map(|at| from + at) {
+        let rest = &words[at..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\''))
+            .unwrap_or(rest.len());
+        let address = rest[..end].trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']']);
+        if at > from {
+            found.push((&words[from..at], false));
+        }
+        let host = address.split_once("://").map_or("", |(_, host)| host);
+        found.push((address, !host.is_empty()));
+        from = at + address.len();
+    }
+    if from < words.len() {
+        found.push((&words[from..], false));
+    }
+    found
+}
+
+/// Where the next `http://` or `https://` starts.
+fn next_address(words: &str) -> Option<usize> {
+    [words.find("http://"), words.find("https://")]
+        .into_iter()
+        .flatten()
+        .min()
+}
+
 /// Up to two initials for a person or a group: the first letters of its
 /// first two words, or the first two of a single word.
 pub fn initials(name: &str) -> String {
@@ -464,4 +535,37 @@ pub fn failure(error: &WebError) -> Markup {
             }
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pieces;
+
+    #[test]
+    fn words_without_an_address_are_one_plain_run() {
+        assert_eq!(
+            pieces("Nothing to follow."),
+            [("Nothing to follow.", false)]
+        );
+    }
+
+    #[test]
+    fn an_address_is_a_link_and_the_full_stop_stays_outside() {
+        assert_eq!(
+            pieces("See https://stemma.uv.es/help. Then retry."),
+            [
+                ("See ", false),
+                ("https://stemma.uv.es/help", true),
+                (". Then retry.", false),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_bare_scheme_and_other_schemes_stay_words() {
+        assert_eq!(
+            pieces("http:// or file:///etc"),
+            [("http://", false), (" or file:///etc", false)]
+        );
+    }
 }
