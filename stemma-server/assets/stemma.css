@@ -30,6 +30,11 @@
         color: var(--ink-1);
         background: var(--surface-page);
         -webkit-font-smoothing: antialiased;
+        /* A word longer than its room breaks rather than overflow, and the
+         * page never scrolls sideways; what may, like a table or code,
+         * scrolls inside its own box. */
+        overflow-wrap: break-word;
+        overflow-x: clip;
     }
 
     h1,
@@ -675,6 +680,7 @@ html:has(.landing-page) {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
+    overflow-x: hidden;
     color: var(--ink-1);
     text-align: left;
     visibility: hidden;
@@ -787,6 +793,7 @@ html:has(.shell) {
     margin: 0 -6px;
     padding: 0 6px;
     overflow-y: auto;
+    overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: rgb(170 200 240 / 25%) transparent;
 }
@@ -2019,49 +2026,9 @@ a.machine-row:hover {
     }
 }
 
-/* A form that is only wanted now and then waits behind its summary. */
-.page details:not(.launcher) {
-    background: var(--surface-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-card);
-}
-
-.page details:not(.launcher) > summary {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 16px 24px;
-    font-weight: 500;
-    list-style: none;
-    cursor: pointer;
-}
-
-.page details:not(.launcher) > summary::-webkit-details-marker {
-    display: none;
-}
-
-.page details:not(.launcher) > summary::before {
-    width: 8px;
-    height: 8px;
-    content: "";
-    border-right: 1.5px solid var(--ink-3);
-    border-bottom: 1.5px solid var(--ink-3);
-    transform: rotate(-45deg);
-    transition: transform var(--dur-ui) var(--ease-out);
-}
-
-.page details:not(.launcher)[open] > summary::before {
-    transform: rotate(45deg);
-}
-
-.page details:not(.launcher) > form,
-.page details:not(.launcher) > :not(summary) {
-    padding: 0 24px 24px;
-}
-
-.page details:not(.launcher) details:not(.launcher) {
-    margin: 0 24px 24px;
+/* A form that is only wanted now and then waits behind its summary, as a
+ * `.card.disclosure`; one inside another is flat. */
+.disclosure .disclosure {
     box-shadow: none;
 }
 

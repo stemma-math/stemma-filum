@@ -44,7 +44,7 @@
       <span class="agent-pick__icon"><Glyph name="machine" /></span>
       <span class="agent-pick__words">
         <span class="agent-pick__agent">{chosenAgent?.agent ?? "Choose an agent"}</span>
-        {#if chosenAgent}<span class="agent-pick__machine">on {chosenAgent.machine}</span>{/if}
+        {#if chosenAgent}<span class="agent-pick__machine" title="on {chosenAgent.machine}">on {chosenAgent.machine}</span>{/if}
       </span>
       <Glyph name="chevron-up-down" small />
     </button>

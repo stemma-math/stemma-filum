@@ -414,7 +414,7 @@
   <div class="block__content" class:block__content--proof={block.kind === "proof"} {@attach mount}></div>
 
   {#if statement && formal}
-    <details class="block__formal">
+    <details class="disclosure block__formal">
       <summary>Formal statement · {formal.state}</summary>
       {#each formal.declarations as declaration (declaration.name)}
         <p class="identifier">{declaration.name} · {declaration.module}</p>

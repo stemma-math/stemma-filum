@@ -11,7 +11,7 @@
 <div class="claim" data-tip={line.claim?.said ?? null}>
   {#if line.claimError}
     <Glyph name="alert" small />
-    <span class="claim__words claim__words--failed">{line.claimError}</span>
+    <span class="claim__words claim__words--failed" title={line.claimError}>{line.claimError}</span>
     <button type="button" class="button button--small" onclick={() => line.takeClaim()}>Retry</button>
   {:else if line.claim}
     {@const claim = line.claim}

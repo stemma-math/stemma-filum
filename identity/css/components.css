@@ -46,10 +46,13 @@
     }
 
     /* Identifiers are verbatim: `usr:`, `grp:`, `thm:`, paths, versions. */
+    /* One may be longer than the room it has, so it breaks anywhere
+     * rather than push past it. */
     .identifier {
         font-family: var(--font-mono);
         font-size: 0.87em;
         font-weight: 400;
+        overflow-wrap: anywhere;
     }
 
     .visually-hidden {
@@ -739,6 +742,65 @@
         padding: 0 10px;
         font: 400 13px / 1.3 var(--font-ui);
         color: var(--ink-3);
+    }
+
+    /* ── Disclosure ────────────────────────────────────────────────────
+     *
+     * On a `details`: what is only wanted now and then waits behind its
+     * summary, which leads with a chevron. Everything in it is inset as far
+     * as the summary, by `--disclosure-inset`; on a `.card` that is the
+     * card's own inset. */
+
+    .disclosure {
+        --disclosure-inset: 16px;
+        --disclosure-block: 12px;
+    }
+
+    .card.disclosure {
+        --disclosure-inset: 24px;
+        --disclosure-block: 16px;
+    }
+
+    .disclosure > summary {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: var(--disclosure-block) var(--disclosure-inset);
+        font-weight: 500;
+        list-style: none;
+        cursor: pointer;
+    }
+
+    .disclosure > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .disclosure > summary::before {
+        flex-shrink: 0;
+        width: 7px;
+        height: 7px;
+        content: "";
+        border-right: 1.5px solid var(--ink-3);
+        border-bottom: 1.5px solid var(--ink-3);
+        transform: rotate(-45deg);
+        transition: transform var(--dur-ui) var(--ease-out);
+    }
+
+    .disclosure[open] > summary::before {
+        transform: rotate(45deg);
+    }
+
+    .disclosure > :not(summary) {
+        margin-right: var(--disclosure-inset);
+        margin-left: var(--disclosure-inset);
+    }
+
+    .disclosure > :not(summary) + :not(summary) {
+        margin-top: var(--space-2);
+    }
+
+    .disclosure > :last-child:not(summary) {
+        margin-bottom: var(--disclosure-inset);
     }
 
     /* ── Dialog ────────────────────────────────────────────────────────

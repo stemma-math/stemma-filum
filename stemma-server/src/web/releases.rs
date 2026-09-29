@@ -387,40 +387,38 @@ fn manage_body(signed: &SignedIn, group: &Group, role: GroupRole, releases: &[Re
             span aria-hidden="true" { "/" }
             span aria-current="page" { "Library releases" }
         }
-        div class="stack" {
-            header class="page-head" {
-                h1 class="page-title" { "Library releases" }
-                p class="page-subtitle" {
-                    "A release is the only part of this library visible outside the group. "
-                    "Its source, documentation and citation pages never change."
-                }
+        header class="page-head" {
+            h1 class="page-title" { "Library releases" }
+            p class="page-subtitle" {
+                "A release is the only part of this library visible outside the group. "
+                "Its source, documentation and citation pages never change."
             }
-            @if role.is_at_least(GroupRole::Admin) {
-                section class="card" {
-                    h2 { "Publish the current shared library" }
-                    p {
-                        "Every central result must have a current formal audit and a sorry-free Lean declaration."
-                    }
-                    form method="post" action={ "/g/" (group.slug()) "/releases" } class="stack" {
-                        (signature(signed))
-                        div class="field" {
-                            label class="field__label" for="version" { "Version" }
-                            input class="input" id="version" name="version" placeholder="1.0.0" required;
-                            span class="field__hint" { "Versions are permanent and cannot be replaced." }
-                        }
-                        button class="button button--primary" type="submit" { "Publish release" }
-                    }
-                }
-            }
-            (release_list(group, releases))
         }
+        @if role.is_at_least(GroupRole::Admin) {
+            section class="block" {
+                h2 class="block__title" { "Publish the current shared library" }
+                p {
+                    "Every central result must have a current formal audit and a sorry-free Lean declaration."
+                }
+                form method="post" action={ "/g/" (group.slug()) "/releases" } class="stack" {
+                    (signature(signed))
+                    div class="field" {
+                        label class="field__label" for="version" { "Version" }
+                        input class="input" id="version" name="version" placeholder="1.0.0" required;
+                        span class="field__hint" { "Versions are permanent and cannot be replaced." }
+                    }
+                    button class="button button--primary" type="submit" { "Publish release" }
+                }
+            }
+        }
+        (release_list(group, releases))
     }
 }
 
 fn release_list(group: &Group, releases: &[Release]) -> Markup {
     html! {
-        section class="card" {
-            h2 { "Published versions" }
+        section class="block" {
+            h2 class="block__title" { "Published versions" }
             @if releases.is_empty() {
                 p class="empty" { "No release has been published yet." }
             } @else {
@@ -443,15 +441,13 @@ fn release_list(group: &Group, releases: &[Release]) -> Markup {
 
 fn public_group_body(group: &Group, releases: &[Release]) -> Markup {
     html! {
-        div class="stack" {
-            header class="page-head" {
-                h1 class="page-title" { (group.name) " library" }
-                @if let Some(description) = &group.description {
-                    p class="page-subtitle" { (description) }
-                }
+        header class="page-head" {
+            h1 class="page-title" { (group.name) " library" }
+            @if let Some(description) = &group.description {
+                p class="page-subtitle" { (description) }
             }
-            (release_list(group, releases))
         }
+        (release_list(group, releases))
     }
 }
 
@@ -463,36 +459,34 @@ fn documentation_body(group: &Group, release: &Release, git: &str) -> Markup {
             span aria-hidden="true" { "/" }
             span aria-current="page" { "Version " (release.version) }
         }
-        div class="stack" {
-            header class="page-head" {
-                h1 class="page-title" { (group.name) " " (release.version) }
-                p class="page-subtitle" {
-                    (release.results.len()) " audited central results, published " (release.published_at) "."
+        header class="page-head" {
+            h1 class="page-title" { (group.name) " " (release.version) }
+            p class="page-subtitle" {
+                (release.results.len()) " audited central results, published " (release.published_at) "."
+            }
+        }
+        section class="block" {
+            h2 class="block__title" { "Use this release" }
+            pre { code {
+                "[[require]]\nname = \"" (package) "\"\ngit = \"" (git)
+                "\"\nrev = \"v" (release.version) "\""
+            } }
+            p { "Git repository: " code { (git) } }
+            p {
+                a href={ "/releases/" (group.slug()) "/" (release.version) "/source/stemma.toml" } {
+                    "View the released source manifest"
                 }
             }
-            section class="card" {
-                h2 { "Use this release" }
-                pre { code {
-                    "[[require]]\nname = \"" (package) "\"\ngit = \"" (git)
-                    "\"\nrev = \"v" (release.version) "\""
-                } }
-                p { "Git repository: " code { (git) } }
-                p {
-                    a href={ "/releases/" (group.slug()) "/" (release.version) "/source/stemma.toml" } {
-                        "View the released source manifest"
-                    }
-                }
-            }
-            section class="card" {
-                h2 { "Documentation" }
-                ul class="stack" {
-                    @for result in &release.results {
-                        li {
-                            a href={ "/releases/" (group.slug()) "/" (release.version) "/" (result.line) "/" (result.block) } {
-                                (result.name())
-                            }
-                            span class="quiet" { " · " (result.line_title) }
+        }
+        section class="block" {
+            h2 class="block__title" { "Documentation" }
+            ul class="stack" {
+                @for result in &release.results {
+                    li {
+                        a href={ "/releases/" (group.slug()) "/" (release.version) "/" (result.line) "/" (result.block) } {
+                            (result.name())
                         }
+                        span class="quiet" { " · " (result.line_title) }
                     }
                 }
             }
@@ -509,34 +503,32 @@ fn result_body(group: &Group, release: &Release, result: &ResultPage) -> Markup 
             span aria-hidden="true" { "/" }
             span aria-current="page" { (result.name()) }
         }
-        article class="stack" {
-            header class="page-head" {
-                p class="label" { (result.environment) }
-                h1 class="page-title" { (result.name()) }
-                p class="page-subtitle" { (result.line_title) }
-            }
-            section class="card" {
-                h2 { "Prose statement" }
-                p { (result.prose) }
-            }
-            section class="card" {
-                h2 { "Lean statement" }
-                @for declaration in &result.declarations {
-                    div class="stack" {
-                        p class="identifier" { (declaration.name) }
-                        pre { code { (declaration.statement) } }
-                        p {
-                            a href={ "/releases/" (group.slug()) "/" (release.version) "/source/"
-                                (declaration.module.replace('.', "/")) ".lean" } {
-                                "View " (declaration.module) " in the released source"
-                            }
+        header class="page-head" {
+            p class="label" { (result.environment) }
+            h1 class="page-title" { (result.name()) }
+            p class="page-subtitle" { (result.line_title) }
+        }
+        section class="block" {
+            h2 class="block__title" { "Prose statement" }
+            p { (result.prose) }
+        }
+        section class="block" {
+            h2 class="block__title" { "Lean statement" }
+            @for declaration in &result.declarations {
+                div class="stack" {
+                    p class="identifier" { (declaration.name) }
+                    pre { code { (declaration.statement) } }
+                    p {
+                        a href={ "/releases/" (group.slug()) "/" (release.version) "/source/"
+                            (declaration.module.replace('.', "/")) ".lean" } {
+                            "View " (declaration.module) " in the released source"
                         }
                     }
                 }
             }
-            footer class="quiet" {
-                "Permanent result id " (result.block) " · release commit " (release.release_commit)
-            }
+        }
+        footer class="quiet" {
+            "Permanent result id " (result.block) " · release commit " (release.release_commit)
         }
     }
 }

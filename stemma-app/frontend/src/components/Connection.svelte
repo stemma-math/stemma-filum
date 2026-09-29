@@ -41,7 +41,7 @@
     <span class="sync__dot" aria-hidden="true"></span>
     <span class="sync__words">
       <span class="sync__headline">{shown.headline}</span>
-      <span class="sync__detail">{shown.detail}</span>
+      <span class="sync__detail" title={shown.detail}>{shown.detail}</span>
     </span>
   </button>
   <Bubble bind:open label="Connection" place="above">
