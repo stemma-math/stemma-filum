@@ -1015,6 +1015,15 @@ html:has(.shell) {
     display: none;
 }
 
+/* Beside the sidebar every dialog is centred on the work rather than on
+ * the window, as in the desktop application. Once the sidebar becomes a
+ * drawer, the work is the window. */
+@media (min-width: 1024px) {
+    body:has(.shell__work) .dialog {
+        translate: calc(var(--sidebar-web) / 2) 0;
+    }
+}
+
 .shell__scrim {
     display: none;
 }

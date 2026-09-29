@@ -1779,11 +1779,12 @@ button.block__label:disabled {
     width: var(--dialog-width);
 }
 
-/* Beside the sidebar a dialog is centred on the stage, as the toasts are,
- * rather than on the window. In a narrow window the stage is narrower than
- * the dialog, so it moves only as far as keeps 24px clear on the right.
- * The fallback is the identity's own dialog width. */
-.app-shell .dialog {
+/* Every dialog is centred on the stage beside the sidebar, as the toasts
+ * are, rather than on the window, wherever in the page it is drawn. In a
+ * narrow window the stage is narrower than the dialog, so it moves only as
+ * far as keeps 24px clear on the right. The fallback is the identity's own
+ * dialog width. Without the sidebar, the stage is the window. */
+body:has(.app-shell) .dialog {
     translate: min(var(--sidebar-desktop) / 2, max(0px, (100vw - var(--dialog-width, min(520px, 100vw - 32px))) / 2 - 24px)) 0;
 }
 
@@ -2312,14 +2313,15 @@ button.block__label:disabled {
 
 /* A popover in the top layer, so none of the browser's own look. */
 .toasts {
+    --beside: 0px;
     position: fixed;
-    inset: auto auto 24px calc(var(--sidebar-desktop) + (100vw - var(--sidebar-desktop)) / 2);
+    inset: auto auto 24px calc(var(--beside) + (100vw - var(--beside)) / 2);
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
     width: max-content;
-    max-width: calc(100vw - var(--sidebar-desktop) - 48px);
+    max-width: calc(100vw - var(--beside) - 48px);
     margin: 0;
     padding: 0;
     overflow: visible;
@@ -2327,6 +2329,10 @@ button.block__label:disabled {
     border: 0;
     pointer-events: none;
     transform: translateX(-50%);
+}
+
+body:has(.app-shell) .toasts {
+    --beside: var(--sidebar-desktop);
 }
 
 .toasts:not(:popover-open) {
