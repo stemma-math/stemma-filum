@@ -23,6 +23,12 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
+      # The runner's image leaves too little room for the workspace's test
+      # binaries. Removing apt packages is slow and nothing here needs it.
+      - uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          large-packages: false
+
       - uses: actions/checkout@v4
 
       - uses: ./.github/actions/setup
