@@ -256,7 +256,7 @@ fn sidebar(chrome: &Chrome) -> Markup {
                         span class="brand__instance" { (chrome.instance) }
                     }
                 }
-                span class="sidebar__version" { "v" (env!("CARGO_PKG_VERSION")) }
+                span class="sidebar__version" { "v" (stemma_core::VERSION) }
             }
 
             nav class="sidebar__nav" aria-label="Workspace" {
@@ -386,7 +386,7 @@ fn foot(chrome: &Chrome) -> Markup {
     html! {
         footer class="foot" {
             span { (chrome.instance) }
-            span { "stemma " (env!("CARGO_PKG_VERSION")) }
+            span { "stemma " (stemma_core::VERSION) }
             (super::appearance::switch("appearance--foot"))
         }
     }

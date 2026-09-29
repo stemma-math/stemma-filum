@@ -15,7 +15,7 @@ use crate::config::Overrides;
 #[derive(Debug, Parser)]
 #[command(
     name = "stemma-server",
-    version,
+    version = stemma_core::VERSION,
     about = "Runs a Stemma instance.",
     disable_help_subcommand = true
 )]

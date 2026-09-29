@@ -226,7 +226,7 @@ async fn health(State(instance): State<Instance>) -> impl IntoResponse {
 async fn version(State(instance): State<Instance>) -> impl IntoResponse {
     Json(json!({
         "name": "stemma-server",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": stemma_core::VERSION,
         "protocol": PROTOCOL_VERSION.to_string(),
         "public_url": instance.settings.public_url.as_str(),
     }))

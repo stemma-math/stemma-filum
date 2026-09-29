@@ -120,7 +120,7 @@ fn inside(name: &str, policy: &Policy) -> Markup {
             }
             footer class="foot" {
                 span { (name) }
-                span { "stemma " (env!("CARGO_PKG_VERSION")) }
+                span { "stemma " (stemma_core::VERSION) }
             }
         }
     }
