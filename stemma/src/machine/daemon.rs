@@ -471,8 +471,9 @@ impl Started {
     }
 }
 
-/// The version of this client.
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The version of this client, build included, so a daemon from another
+/// build of the same version is still told apart.
+const VERSION: &str = stemma_core::VERSION;
 
 /// A time as whole seconds since the epoch.
 fn seconds(time: SystemTime) -> u64 {

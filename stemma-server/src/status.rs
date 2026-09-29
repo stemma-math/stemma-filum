@@ -50,7 +50,7 @@ impl Status {
         let database = Database::open(&settings.paths.database()).ok();
 
         Self {
-            version: env!("CARGO_PKG_VERSION"),
+            version: stemma_core::VERSION,
             protocol: stemma_core::PROTOCOL_VERSION.to_string(),
             public_url: settings.public_url.to_string(),
             listen: settings.listen.to_string(),

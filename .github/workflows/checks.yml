@@ -1,0 +1,56 @@
+name: Checks
+
+# Everything `just check` runs, on every pull request, and before every
+# build of `main`.
+on:
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Full debug information makes every test binary many times larger, and
+  # the workspace links dozens of them: with it, the runner's disk fills up.
+  # Line tables alone keep file and line in a failing test's backtrace.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      # The runner's image leaves too little room for the workspace's test
+      # binaries. Removing apt packages is slow and nothing here needs it.
+      - uses: jlumbroso/free-disk-space@v2.0.0
+        with:
+          large-packages: false
+
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+        with:
+          lean: "true"
+
+      - uses: actions/cache@v4
+        with:
+          path: lean/.lake
+          key: lake-${{ hashFiles('lean/lean-toolchain', 'lean/lake-manifest.json', 'lean/**/*.lean') }}
+          restore-keys: lake-
+
+      # Some tests commit to scratch repositories.
+      - name: Git identity
+        run: |
+          git config --global user.name "Stemma CI"
+          git config --global user.email "ci@stemma.invalid"
+
+      - run: just check
+
+      - name: Disk left
+        if: always()
+        run: |
+          df -h /
+          du -sh target

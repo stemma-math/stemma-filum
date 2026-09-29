@@ -194,6 +194,29 @@ just test-repositories    # the Git repository transport
 just format               # format the Rust code in place
 ```
 
+## Continuous integration and builds
+
+GitHub Actions runs `just check` on every pull request (`checks.yml`). Every
+push to `main` runs it again and, when it passes, builds `main` for macOS and
+Linux (`builds.yml`, which can also be started by hand). The files replace
+those of the `main-build` pre-release:
+
+| File | What it is |
+|---|---|
+| `Stemma-macos-arm64.zip` | The macOS application, for Apple Silicon, with an ad-hoc signature |
+| `Stemma-linux-x86_64.AppImage` | The Linux application |
+| `stemma-<platform>.tar.gz` | The `stemma` command line alone |
+| `stemma-server-linux-x86_64.tar.gz` | The `stemma-server` binary |
+| `build.json` | The commit the files were built from |
+| `SHA256SUMS` | A checksum of every file |
+
+These are test builds of `main`, not versioned releases. Every binary
+reports the commit it was built from as build metadata (`stemma --version`
+says `0.0.0+1a2b3c4`, and the application's About window shows it beside the
+version); a local build reports the version alone unless `STEMMA_BUILD` names
+one. The macOS application is not notarised, so after unzipping it, run
+`xattr -dr com.apple.quarantine Stemma.app` once before opening it.
+
 ## Local server
 
 The `server` and `client` recipes work on an isolated instance under

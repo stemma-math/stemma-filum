@@ -273,7 +273,7 @@ fn assemble(
     Ok(Manifest {
         name,
         taken_at,
-        version: env!("CARGO_PKG_VERSION"),
+        version: stemma_core::VERSION,
         protocol: stemma_core::PROTOCOL_VERSION.to_string(),
         schema,
         data_dir: paths.data_dir().to_owned(),

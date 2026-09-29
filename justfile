@@ -128,8 +128,20 @@ app-bin: sidecar frontend
 [group("build")]
 [doc("Build and ad-hoc sign the macOS application.")]
 app: sidecar
-    npm run tauri:build --prefix {{ frontend_dir }}
+    npm run tauri:build --prefix {{ frontend_dir }} -- --bundles app
+    # A build named by `STEMMA_BUILD` shows it in About, beside the version.
+    if [ -n "${STEMMA_BUILD:-}" ]; then plutil -replace CFBundleVersion -string "$STEMMA_BUILD" "{{ app_bundle }}/Contents/Info.plist"; fi
     codesign --force --sign - "{{ app_bundle }}"
+
+[group("build")]
+[doc("Build the Linux application as an AppImage.")]
+appimage: sidecar
+    npm run tauri:build --prefix {{ frontend_dir }} -- --bundles appimage
+
+[group("build")]
+[doc("Build the server for release.")]
+server-release:
+    cargo build --release -p stemma-server
 
 [group("build")]
 [doc("Build the macOS application and validate its bundle.")]

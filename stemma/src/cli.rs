@@ -14,7 +14,7 @@ use stemma_core::vault::{AuditTarget, AuditVerb, BridgeKind};
 #[derive(Debug, Parser)]
 #[command(
     name = "stemma",
-    version,
+    version = stemma_core::VERSION,
     about = "Work with a Stemma server from this machine.",
     disable_help_subcommand = true
 )]
