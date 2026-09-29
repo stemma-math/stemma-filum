@@ -1,0 +1,38 @@
+name: Checks
+
+# Everything `just check` runs, on every pull request, and before every
+# build of `main`.
+on:
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+        with:
+          lean: "true"
+
+      - uses: actions/cache@v4
+        with:
+          path: lean/.lake
+          key: lake-${{ hashFiles('lean/lean-toolchain', 'lean/lake-manifest.json', 'lean/**/*.lean') }}
+          restore-keys: lake-
+
+      # Some tests commit to scratch repositories.
+      - name: Git identity
+        run: |
+          git config --global user.name "Stemma CI"
+          git config --global user.email "ci@stemma.invalid"
+
+      - run: just check

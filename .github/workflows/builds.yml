@@ -1,0 +1,130 @@
+name: Builds
+
+# Every push to `main` that passes the checks is built for macOS and Linux and
+# published as the `main-build` pre-release, which each build replaces. These
+# are test builds of the current `main`, not versioned releases: every binary
+# reports the commit it was built from (`stemma --version` says
+# `0.0.0+<commit>`), and each run also keeps its files as workflow artifacts.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push makes an older build pointless.
+concurrency:
+  group: builds-main
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: main-build
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  build:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported runner, so the binaries run on older glibc.
+          - runner: ubuntu-22.04
+            platform: linux-x86_64
+          - runner: macos-14
+            platform: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Name the build
+        run: echo "STEMMA_BUILD=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/setup
+
+      - name: Application (macOS)
+        if: runner.os == 'macOS'
+        run: just app
+
+      - name: Application (Linux)
+        if: runner.os == 'Linux'
+        # linuxdeploy is itself an AppImage, and runners have no FUSE.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: just appimage
+
+      - name: Server (Linux)
+        if: runner.os == 'Linux'
+        run: just server-release
+
+      - name: Package
+        run: |
+          mkdir dist
+          tar -czf "dist/stemma-$PLATFORM.tar.gz" -C target/release stemma
+          if [ "$RUNNER_OS" = macOS ]; then
+            # ditto keeps the bundle's symlinks and signature intact.
+            ditto -c -k --keepParent target/release/bundle/macos/Stemma.app "dist/Stemma-$PLATFORM.zip"
+          else
+            cp target/release/bundle/appimage/*.AppImage "dist/Stemma-$PLATFORM.AppImage"
+            tar -czf "dist/stemma-server-$PLATFORM.tar.gz" -C target/release stemma-server
+          fi
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Describe the build
+        working-directory: dist
+        run: |
+          build="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          jq -n \
+            --arg commit "$GITHUB_SHA" \
+            --arg build "$build" \
+            --arg version "0.0.0+$build" \
+            --arg built_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{commit: $commit, build: $build, version: $version, built_at: $built_at}' \
+            > build.json
+          sha256sum -- * > SHA256SUMS
+          cat build.json SHA256SUMS
+
+      - name: Replace the pre-release
+        run: |
+          build="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          cat > notes.md <<EOF
+          The latest build of \`main\`, at [\`$build\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA). It is replaced by every push to \`main\`, and is for testing only.
+
+          - **macOS (Apple Silicon):** \`Stemma-macos-arm64.zip\`. The build is not notarised: after unzipping, run \`xattr -dr com.apple.quarantine Stemma.app\` once before opening it.
+          - **Linux (x86_64):** \`Stemma-linux-x86_64.AppImage\`. Make it executable (\`chmod +x\`) and run it.
+          - **Command line alone:** \`stemma-<platform>.tar.gz\`.
+          - **Server:** \`stemma-server-linux-x86_64.tar.gz\`.
+
+          \`build.json\` names the commit, and \`SHA256SUMS\` holds a checksum of every file.
+          EOF
+          gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          gh release create "$RELEASE_TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Latest build of main ($build)" \
+            --notes-file notes.md
