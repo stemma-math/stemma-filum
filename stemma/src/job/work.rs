@@ -15,17 +15,17 @@ use stemma_core::line::Line;
 use stemma_core::proposal::{FormalReview, LibraryChange, LibraryFileChange, Offer, Operation};
 use stemma_core::repository::{self, Side};
 
-use crate::agents::{self, Ran};
 use crate::api::Handed;
 use crate::config::Config;
 use crate::home::Home;
+use crate::job::agents::{self, Ran};
 use crate::mirror::{Instance, Mirror, Remote, Which};
 
 /// Which revision of the prompt this build sends.
 ///
 /// It is recorded with every run, because "an agent said so" is not an
 /// attribution: the vendor, the model and the words it was given are.
-pub const PROMPT_REVISION: &str = crate::job_workspace::INSTRUCTION_REVISION;
+pub const PROMPT_REVISION: &str = crate::job::workspace::INSTRUCTION_REVISION;
 
 /// Carries out one job and says what came of it.
 ///
@@ -66,10 +66,7 @@ pub fn carry_out_controlled(
             return Completed::only(Outcome::out_of_reach(format!(
                 "`{}` cannot be read at that revision: {}",
                 handed.line,
-                faults
-                    .first()
-                    .map(ToString::to_string)
-                    .unwrap_or_else(|| "it is not a line".to_owned())
+                first_fault(&faults, "it is not a line")
             )));
         }
     };
@@ -90,7 +87,8 @@ pub fn carry_out_controlled(
     };
 
     let repository = repository_of(home, handed);
-    let workspace = match crate::job_workspace::prepare(
+    let workspace = match crate::job::workspace::prepare(
+        home,
         handed,
         &task,
         &source,
@@ -134,7 +132,7 @@ pub fn carry_out_controlled(
             return Completed::at(Outcome::out_of_reach(format!("{error:#}")), workspace.root);
         }
     };
-    let state = crate::job_api::read(&workspace.state).ok();
+    let state = crate::job::answer::read(&workspace.state).ok();
     let was_cancelled = matches!(&ran, Ran::Finished(finished) if finished.cancelled);
     let failure = stemma_core::id::Slug::parse(&handed.agent)
         .ok()
@@ -230,103 +228,18 @@ pub fn carry_out_controlled(
         .as_ref()
         .is_some_and(|offer| offer.library_change.is_some());
     if reviews_library || needs_lean_check(&task, &outcome) {
-        let checked = proposal
-            .as_mut()
-            .ok_or_else(|| "the agent offered no formal change".to_owned())
-            .and_then(|offer| {
-                if let Some(change) = &offer.library_change {
-                    check_library_offer(change, &task, &line, &handed.line)?;
-                    let clone = repository_of(home, handed).ok_or_else(|| {
-                        "this machine does not have the line's repository yet".to_owned()
-                    })?;
-                    let manifest =
-                        crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
-                    let pins = crate::build::group_pins(&clone, &manifest);
-                    let name = stemma_core::line::Name::parse(&handed.line)
-                        .map_err(|error| error.to_string())?;
-                    let targets = formal_targets(&task, &line)?;
-                    let review = crate::lean::review_change(
-                        &clone,
-                        &name,
-                        &pins,
-                        change,
-                        &offer.source,
-                        &home.cache_dir().join("lean").join(&handed.job),
-                        &targets,
-                    )
-                    .map_err(|error| format!("{error:#}"))?;
-                    let proposed_line = Line::read(&offer.source).map_err(|faults| {
-                        faults
-                            .first()
-                            .map(ToString::to_string)
-                            .unwrap_or_else(|| "the proposed line is unreadable".to_owned())
-                    })?;
-                    check_review(&review, &targets, &proposed_line)?;
-                    offer.formal_review = Some(Box::new(review));
-                    return Ok(());
-                }
-                let lean_source = offer
-                    .lean_source
-                    .as_deref()
-                    .ok_or_else(|| "the agent offered no complete Lean module".to_owned())?;
-                let clone = repository_of(home, handed).ok_or_else(|| {
-                    "this machine does not have the line's repository yet".to_owned()
-                })?;
-                let manifest = crate::build::read_manifest(&clone).map_err(|e| e.to_string())?;
-                let pins = crate::build::group_pins(&clone, &manifest);
-                crate::lean::check_offered(
-                    &clone,
-                    &pins,
-                    lean_source,
-                    &home
-                        .cache_dir()
-                        .join("lean")
-                        .join(format!("{}.lean", handed.job)),
-                )?;
-                let declared = crate::lean::declared_statements(lean_source);
-                match &task {
-                    Task::Formalize { block } | Task::FollowRoute { block } => {
-                        let statement = line
-                            .node_at(block)
-                            .ok_or_else(|| "the statement block is no longer there".to_owned())?;
-                        if declared.contains(&statement.siglum) {
-                            Ok(())
-                        } else {
-                            Err(format!(
-                                "the compiled module does not declare that it verifies `{block}`"
-                            ))
-                        }
-                    }
-                    Task::Verify { after } => {
-                        let black_box = line
-                            .boxes()
-                            .into_iter()
-                            .find(|black_box| &black_box.after == after)
-                            .ok_or_else(|| "the black box is no longer there".to_owned())?;
-                        let missing: Vec<String> = black_box
-                            .interior
-                            .iter()
-                            .filter_map(|block| line.node_at(block))
-                            .filter(|statement| !declared.contains(&statement.siglum))
-                            .map(|statement| statement.block.to_string())
-                            .collect();
-                        if missing.is_empty() {
-                            Ok(())
-                        } else {
-                            Err(format!(
-                                "the compiled module does not verify {}",
-                                missing.join(", ")
-                            ))
-                        }
-                    }
-                    _ => Ok(()),
-                }
-            });
+        let checked = match proposal.as_mut() {
+            Some(offer) => check_formal(home, handed, &task, &line, repository.as_deref(), offer),
+            None => Err("the agent offered no formal change".to_owned()),
+        };
         if let Err(said) = checked {
-            return Completed::only(Outcome::Broke {
-                code: "lean_rejected".to_owned(),
-                said,
-            });
+            return Completed::at(
+                Outcome::Broke {
+                    code: "lean_rejected".to_owned(),
+                    said,
+                },
+                workspace.root,
+            );
         }
     }
 
@@ -339,16 +252,16 @@ pub fn carry_out_controlled(
         (Outcome::Produced { .. }, Some(offer)) => match Line::read(&offer.source) {
             Ok(_) => outcome,
             Err(faults) => {
-                return Completed::only(Outcome::Broke {
-                    code: "invalid_line".to_owned(),
-                    said: format!(
-                        "the agent offered something that is not a valid line: {}",
-                        faults
-                            .first()
-                            .map(ToString::to_string)
-                            .unwrap_or_else(|| "it is not a line".to_owned())
-                    ),
-                });
+                return Completed::at(
+                    Outcome::Broke {
+                        code: "invalid_line".to_owned(),
+                        said: format!(
+                            "the agent offered something that is not a valid line: {}",
+                            first_fault(&faults, "it is not a line")
+                        ),
+                    },
+                    workspace.root,
+                );
             }
         },
         _ => outcome,
@@ -358,6 +271,99 @@ pub fn carry_out_controlled(
         proposal,
         workspace: Some(workspace.root),
     }
+}
+
+/// Checks the formal side of an offer before it may travel: a library
+/// change is built before and after in Lean and its evidence attached to
+/// the offer; a complete module is compiled and must declare what the
+/// task asked it to establish.
+fn check_formal(
+    home: &Home,
+    handed: &Handed,
+    task: &Task,
+    line: &Line,
+    repository: Option<&Path>,
+    offer: &mut Offer,
+) -> Result<(), String> {
+    let clone = repository
+        .ok_or_else(|| "this machine does not have the line's repository yet".to_owned())?;
+    let pins = || -> Result<_, String> {
+        let manifest = crate::repository::read_manifest(clone).map_err(|e| e.to_string())?;
+        Ok(crate::repository::group_pins(clone, &manifest))
+    };
+
+    if let Some(change) = &offer.library_change {
+        check_library_offer(change, task, line, &handed.line)?;
+        let pins = pins()?;
+        let name =
+            stemma_core::line::Name::parse(&handed.line).map_err(|error| error.to_string())?;
+        let targets = formal_targets(task, line)?;
+        let review = crate::lean::review_change(
+            clone,
+            &name,
+            &pins,
+            change,
+            &offer.source,
+            &home.cache_dir().join("lean").join(&handed.job),
+            &targets,
+        )
+        .map_err(|error| format!("{error:#}"))?;
+        let proposed_line = Line::read(&offer.source)
+            .map_err(|faults| first_fault(&faults, "the proposed line is unreadable"))?;
+        check_review(&review, &targets, &proposed_line)?;
+        offer.formal_review = Some(Box::new(review));
+        return Ok(());
+    }
+
+    let lean_source = offer
+        .lean_source
+        .as_deref()
+        .ok_or_else(|| "the agent offered no complete Lean module".to_owned())?;
+    crate::lean::check_offered(
+        clone,
+        &pins()?,
+        lean_source,
+        &home
+            .cache_dir()
+            .join("lean")
+            .join(format!("{}.lean", handed.job)),
+    )?;
+    let declared = crate::lean::declared_statements(lean_source);
+    let statements = match task {
+        Task::Formalize { block } | Task::FollowRoute { block } => vec![
+            line.node_at(block)
+                .ok_or_else(|| "the statement block is no longer there".to_owned())?,
+        ],
+        // A box holds prose too; only its statements are declared.
+        _ => formal_targets(task, line)?
+            .iter()
+            .filter_map(|block| line.node_at(block))
+            .collect(),
+    };
+    let missing: Vec<String> = statements
+        .into_iter()
+        .filter(|statement| !declared.contains(&statement.siglum))
+        .map(|statement| statement.block.to_string())
+        .collect();
+
+    match (task, missing.is_empty()) {
+        (_, true) => Ok(()),
+        (Task::Formalize { block } | Task::FollowRoute { block }, false) => Err(format!(
+            "the compiled module does not declare that it verifies `{block}`"
+        )),
+        (_, false) => Err(format!(
+            "the compiled module does not verify {}",
+            missing.join(", ")
+        )),
+    }
+}
+
+/// The first thing wrong with something that is not a line, in words.
+fn first_fault(faults: &[stemma_core::line::Fault], otherwise: &str) -> String {
+    faults
+        .first()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| otherwise.to_owned())
 }
 
 fn task_kind(task: &Task) -> &'static str {
@@ -449,18 +455,7 @@ fn check_library_offer(
                 .filter_map(|rest| rest.split_once('"').map(|(mark, _)| mark.to_owned()))
         })
         .collect();
-    let required: Vec<BlockId> = match task {
-        Task::Formalize { block } | Task::FollowRoute { block } => vec![*block],
-        Task::Verify { after } => {
-            line.boxes()
-                .into_iter()
-                .find(|black_box| &black_box.after == after)
-                .ok_or_else(|| "the black box is no longer there".to_owned())?
-                .interior
-        }
-        _ => Vec::new(),
-    };
-    let missing: Vec<_> = required
+    let missing: Vec<_> = formal_targets(task, line)?
         .into_iter()
         .filter(|block| !marked.contains(&format!("{line_name}/{block}")))
         .map(|block| block.to_string())
@@ -588,7 +583,7 @@ fn build(home: &Home, instance: &Instance, handed: &Handed) -> Completed {
 
         let side: Side = handed.side.parse()?;
         let built = crate::build::read(&mirror, &handed.group, side)?;
-        let credentials = crate::credentials::Credentials::read(&home.credentials_file())?;
+        let credentials = crate::account::credentials::Credentials::read(&home.credentials_file())?;
         let published = crate::build::publish(&built, credentials.as_ref());
         if published == crate::build::Published::Kept {
             mirror.built(&built.nodes)?;
@@ -613,7 +608,7 @@ pub fn output_of(home: &Home, job: &str) -> PathBuf {
 
 /// Whether the file holding a job's output is still there.
 pub fn output_exists(home: &Home, job: &str) -> bool {
-    Path::new(&output_of(home, job)).is_file()
+    output_of(home, job).is_file()
 }
 
 #[cfg(test)]

@@ -16,19 +16,19 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use sha2::{Digest, Sha256};
 use stemma_core::artefact::{LineDigest, Nodes};
 use stemma_core::document::Document;
 use stemma_core::line::{Fault, Line, Name};
-use stemma_core::repository::{self, Manifest};
+use stemma_core::repository::{self, Side};
 
+use crate::account::credentials::Credentials;
 use crate::api::Server;
-use crate::credentials::Credentials;
 use crate::home::Home;
-use crate::mirror::{self, Mirror};
-use crate::pin;
-use crate::workspace::Side;
+use crate::mirror::Mirror;
+use crate::repository::{group_pins, read_manifest};
+use crate::typeset::pin;
 
 /// What one repository turned out to hold.
 #[derive(Debug, Clone)]
@@ -65,11 +65,11 @@ pub struct Faulty {
 /// and publishes what each holds.
 pub fn run(home: &Home, here: &Path, out: &mut impl Write) -> Result<Vec<Built>> {
     let mirror = Mirror::at(home)?;
-    let inside = mirror::repository_of(here)
+    let inside = crate::repository::repository_of(here)
         .and_then(|root| read_manifest(&root).ok())
         .map(|manifest| (manifest.group.slug().as_str().to_owned(), manifest.side));
 
-    let repositories: Vec<(String, repository::Side)> = mirror
+    let repositories: Vec<(String, Side)> = mirror
         .repositories()?
         .into_iter()
         .filter(|found| inside.as_ref().is_none_or(|inside| inside == found))
@@ -110,6 +110,10 @@ pub fn run(home: &Home, here: &Path, out: &mut impl Write) -> Result<Vec<Built>>
 /// Builds and publishes every repository whose writing is over and has
 /// not been built, and says which it published. For the engine, after a
 /// round; what fails is tried again after the next.
+///
+/// One repository that cannot be built or published does not hold the
+/// others back: each is tried, and what failed is the error, once every
+/// one has been.
 pub fn publish_due(
     home: &Home,
     mirror: &Mirror,
@@ -123,23 +127,34 @@ pub fn publish_due(
 
     let credentials = Credentials::read(&home.credentials_file())?;
     let mut published = Vec::new();
+    let mut failed = Vec::new();
 
     for (group, side) in due {
-        let built = read(mirror, &group, side)?;
-        match publish(&built, credentials.as_ref()) {
-            Published::Kept => {
-                mirror.built(&built.nodes)?;
-                published.push(format!("{group}/{side}"));
+        let outcome = read(mirror, &group, side).and_then(|built| {
+            match publish(&built, credentials.as_ref()) {
+                Published::Kept => mirror.built(&built.nodes).map(|()| true),
+                other => {
+                    failed.push(format!("{group}/{side}: {other}"));
+                    Ok(false)
+                }
             }
-            other => anyhow::bail!("{group}/{side}: {other}"),
+        });
+
+        match outcome {
+            Ok(true) => published.push(format!("{group}/{side}")),
+            Ok(false) => {}
+            Err(error) => failed.push(format!("{group}/{side}: {error:#}")),
         }
     }
 
-    Ok(published)
+    match failed.is_empty() {
+        true => Ok(published),
+        false => anyhow::bail!("{}", failed.join("; ")),
+    }
 }
 
 /// Reads one repository, as this machine has it.
-pub fn read(mirror: &Mirror, group: &str, side: repository::Side) -> Result<Built> {
+pub fn read(mirror: &Mirror, group: &str, side: Side) -> Result<Built> {
     let root = mirror.repository(group, side);
     let manifest = read_manifest(&root)?;
     let pins = group_pins(&root, &manifest);
@@ -155,6 +170,9 @@ pub fn read(mirror: &Mirror, group: &str, side: repository::Side) -> Result<Buil
     records.sort_by(|one, other| one.name.cmp(&other.name));
 
     let mut faults = Vec::new();
+    // Checking the Lean library builds the whole of it, so it is done
+    // once for the repository, and only when a line is there to read it.
+    let mut library = None;
 
     for record in records {
         let Ok(name) = Name::parse(&record.name) else {
@@ -166,7 +184,11 @@ pub fn read(mirror: &Mirror, group: &str, side: repository::Side) -> Result<Buil
 
         match read {
             Ok((document, line)) => {
-                let lean = crate::lean::check(&root, &name, &pins)?;
+                let library = match &library {
+                    Some(library) => library,
+                    None => library.insert(crate::lean::check_library(&root, &pins)?),
+                };
+                let lean = library.digest(&root, &name);
                 let sent = !record.pending() && record.there.is_none();
                 nodes.lines.push(LineDigest {
                     name,
@@ -189,10 +211,7 @@ pub fn read(mirror: &Mirror, group: &str, side: repository::Side) -> Result<Buil
 
     Ok(Built {
         path: root,
-        side: match manifest.side {
-            repository::Side::Shared => Side::Shared,
-            repository::Side::Private => Side::Private,
-        },
+        side: manifest.side,
         nodes,
         faults,
     })
@@ -209,82 +228,6 @@ fn named(nodes: &Nodes) -> String {
         .take(20)
         .map(|byte| format!("{byte:02x}"))
         .collect()
-}
-
-/// What the group has pinned, wherever it is written down.
-///
-/// The pin belongs to the group, not to a repository: a private line is
-/// written against the same environment as the group's own work, or the
-/// two would not compose to the same thing. So a private clone with no
-/// pin of its own takes the group's, from the shared clone beside it.
-pub fn group_pin(clone: &Path, manifest: &Manifest) -> Option<String> {
-    group_pins(clone, manifest).typst
-}
-
-/// Every compiler pin belonging to the group, inherited by its private side.
-pub fn group_pins(clone: &Path, manifest: &Manifest) -> stemma_core::repository::Pins {
-    let mut pins = manifest.pins.clone();
-
-    if manifest.side != repository::Side::Private
-        || (pins.typst.is_some()
-            && pins.lean.is_some()
-            && pins.mathlib.is_some()
-            && pins.stemma.is_some())
-    {
-        return pins;
-    }
-
-    let Some(parent) = clone.parent() else {
-        return pins;
-    };
-    let beside = parent.join(Side::Shared.directory());
-    let Ok(shared) = read_manifest(&beside) else {
-        return pins;
-    };
-
-    if shared.group == manifest.group {
-        pins.typst = pins.typst.or(shared.pins.typst);
-        pins.lean = pins.lean.or(shared.pins.lean);
-        pins.mathlib = pins.mathlib.or(shared.pins.mathlib);
-        pins.stemma = pins.stemma.or(shared.pins.stemma);
-        if pins.dependencies.is_empty() {
-            pins.dependencies = shared.pins.dependencies;
-        }
-    }
-    pins
-}
-
-/// Reads the file at the root that says what the repository is.
-pub fn read_manifest(clone: &Path) -> Result<Manifest> {
-    let path = clone.join(repository::MANIFEST);
-    let text = std::fs::read_to_string(&path).with_context(|| {
-        format!(
-            "{} has no {}, so it is not a Stemma repository",
-            clone.display(),
-            repository::MANIFEST
-        )
-    })?;
-
-    Manifest::parse(&text).with_context(|| format!("cannot use {}", path.display()))
-}
-
-/// The lines in a repository, in the order their directories sort.
-pub fn lines_in(clone: &Path) -> Result<Vec<Name>> {
-    let directory = clone.join(repository::LINES);
-
-    let Ok(entries) = std::fs::read_dir(&directory) else {
-        return Ok(Vec::new());
-    };
-
-    let mut names: Vec<Name> = entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().join(repository::ENTRY).is_file())
-        .filter_map(|entry| Name::parse(entry.file_name().to_str()?).ok())
-        .collect();
-
-    names.sort_by(|one, other| one.as_str().cmp(other.as_str()));
-
-    Ok(names)
 }
 
 /// Says what one repository holds, and what is wrong with it.
@@ -408,48 +351,10 @@ mod tests {
     }
 
     #[test]
-    fn a_private_clone_takes_the_group_pin_from_the_shared_one_beside_it() {
-        use stemma_core::repository::{Manifest, Side as Which};
-
-        let root = std::env::temp_dir().join(format!("stemma-pin-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-
-        let group = "grp:algebra".parse().unwrap();
-        let shared = root.join("algebra/shared");
-        let private = root.join("algebra/private");
-        std::fs::create_dir_all(&shared).unwrap();
-        std::fs::create_dir_all(&private).unwrap();
-
-        let mut theirs = Manifest::new(group, Which::Shared, "Algebra");
-        theirs.pins.typst = Some("0.13.1".to_owned());
-        std::fs::write(
-            shared.join(stemma_core::repository::MANIFEST),
-            theirs.to_text(),
-        )
-        .unwrap();
-
-        let mine = Manifest::new("grp:algebra".parse().unwrap(), Which::Private, "Mine");
-        assert_eq!(group_pin(&private, &mine).as_deref(), Some("0.13.1"));
-
-        // A group that has pinned nothing pins nothing either way.
-        let others = Manifest::new("grp:topology".parse().unwrap(), Which::Private, "Mine");
-        assert_eq!(group_pin(&private, &others), None);
-
-        std::fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
     fn a_machine_with_nothing_to_send_to_says_so_rather_than_failing() {
         assert_eq!(
             Published::Unknown.to_string(),
             "not published: this machine is not signed in"
         );
-    }
-
-    #[test]
-    fn a_repository_that_is_not_one_says_so() {
-        let error = read_manifest(Path::new("/nonexistent/clone")).unwrap_err();
-
-        assert!(error.to_string().contains("not a Stemma repository"));
     }
 }

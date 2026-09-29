@@ -22,6 +22,7 @@ pub mod jobs;
 pub mod layout;
 pub mod lines;
 pub mod machines;
+pub mod membership;
 pub mod pictures;
 pub mod profile;
 pub mod proposals;
@@ -125,7 +126,7 @@ impl Instance {
             .map_err(|error| {
                 WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
             })?
-            .map_err(WebError::Internal)
+            .map_err(WebError::from)
     }
 
     /// Runs synchronous I/O or expensive computation on the blocking pool.
@@ -139,7 +140,7 @@ impl Instance {
             .map_err(|error| {
                 WebError::Internal(anyhow::anyhow!("the work did not finish: {error}"))
             })?
-            .map_err(WebError::Internal);
+            .map_err(WebError::from);
 
         // Most work reads and changes nothing, and a stream woken for
         // nothing reads once and goes back to sleep: cheaper than
@@ -463,7 +464,23 @@ pub enum WebError {
     BadRequest(String),
     /// The server could not do its part.
     #[error(transparent)]
-    Internal(#[from] anyhow::Error),
+    Internal(anyhow::Error),
+}
+
+/// What a piece of work that failed comes to.
+///
+/// Work fails with an [`anyhow::Error`]. A refusal it raised on purpose,
+/// with `anyhow::bail!(WebError::…)`, travels inside that error and comes
+/// back out as itself, so a check made in the same breath as the work it
+/// guards can still answer as a missing page or a bad request; anything
+/// else is the server failing to do its part.
+impl From<anyhow::Error> for WebError {
+    fn from(error: anyhow::Error) -> Self {
+        match error.downcast::<Self>() {
+            Ok(refusal) => refusal,
+            Err(error) => Self::Internal(error),
+        }
+    }
 }
 
 impl WebError {

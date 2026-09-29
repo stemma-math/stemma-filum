@@ -1,4 +1,4 @@
-//! Enums whose variants each have one fixed spelling.
+//! Types that are written down as one fixed piece of text.
 
 /// Implements `as_str` and `Display` for a fieldless enum, spelling each
 /// variant as given. With an error type and message it also implements
@@ -44,4 +44,95 @@ macro_rules! spelled {
             }
         }
     };
+}
+
+/// Implements `Serialize` and `Deserialize` for a type through its
+/// `Display` and `FromStr`, so that it travels as the one string it is
+/// shown as and nothing that fails to parse is ever read back.
+macro_rules! serde_as_text {
+    ($type:ty) => {
+        impl serde::Serialize for $type {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                serializer.collect_str(self)
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for $type {
+            fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+                let raw = <String as serde::Deserialize>::deserialize(deserializer)?;
+                raw.parse().map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use serde::Serialize;
+
+    use crate::access::{Grant, GroupRole, WhoWrites};
+    use crate::artefact::Kind;
+    use crate::document::BlockKind;
+    use crate::job::JobState;
+    use crate::machine::{Availability, Presence};
+    use crate::model::Verification;
+    use crate::proposal::Verdict;
+    use crate::reconcile::Keep;
+    use crate::repository::Side;
+    use crate::vault::{AuditTarget, AuditVerb, BridgeKind};
+
+    /// Checks that every value is spelled as serde names it.
+    fn agree<T: Serialize + std::fmt::Display>(values: &[T]) {
+        for value in values {
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                value.to_string(),
+                "`{value}` is spelled one way and sent another"
+            );
+        }
+    }
+
+    #[test]
+    fn every_spelling_is_the_name_it_travels_under() {
+        agree(&[GroupRole::Member, GroupRole::Admin, GroupRole::Owner]);
+        agree(&[Grant::Maintainer]);
+        agree(&[WhoWrites::Author, WhoWrites::Anyone]);
+        agree(&[Kind::Nodes]);
+        agree(&[
+            BlockKind::Prose,
+            BlockKind::Definition,
+            BlockKind::Theorem,
+            BlockKind::Proof,
+        ]);
+        agree(&[
+            JobState::Queued,
+            JobState::Running,
+            JobState::Done,
+            JobState::Withdrawn,
+        ]);
+        agree(&[Presence::Awake, Presence::Asleep]);
+        agree(&[
+            Availability::Ready,
+            Availability::NotInstalled,
+            Availability::NotSignedIn,
+            Availability::RateLimited,
+        ]);
+        agree(&[
+            Verification::Unverified,
+            Verification::Verified,
+            Verification::Refuted,
+        ]);
+        agree(&[Verdict::Accept, Verdict::Reject, Verdict::AskAgain]);
+        agree(&[Keep::Here, Keep::There]);
+        agree(&[Side::Shared, Side::Private]);
+        agree(&[BridgeKind::Predicate, BridgeKind::Structure]);
+        agree(&[AuditTarget::Entry, AuditTarget::Bridge]);
+        agree(&[AuditVerb::Attest, AuditVerb::Withdraw]);
+    }
+
+    #[test]
+    fn a_spelling_is_read_back_whatever_surrounds_it() {
+        assert_eq!(" admin\n".parse(), Ok(GroupRole::Admin));
+        assert!("Admin".parse::<GroupRole>().is_err(), "spellings are exact");
+    }
 }

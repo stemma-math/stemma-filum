@@ -8,6 +8,7 @@
 //! and their plan, so it is written to a file here and never sent
 //! anywhere. What travels is the type and one line.
 
+use std::ffi::OsStr;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -158,6 +159,8 @@ pub struct Finished {
     pub output: String,
     /// Whether it was still going when the time ran out.
     pub gave_up: bool,
+    /// How long it was allowed to run.
+    pub limit: Duration,
     /// Whether the launcher cancelled the run.
     pub cancelled: bool,
 }
@@ -171,17 +174,21 @@ impl Finished {
 
 /// Runs an agent against one prompt, keeping what it says here.
 pub fn run(config: &Config, slug: &str, prompt: &str, into: &Path) -> Result<Ran> {
-    let Some(program) = program(config, slug) else {
+    let Some(mut command) = asking(config, slug, prompt) else {
         return Ok(Ran::Missing);
     };
-    let Some(invocation) = invocation(slug) else {
-        return Ok(Ran::Missing);
-    };
-
-    let mut command = Command::new(program);
-    command.args(invocation.run).arg(prompt);
 
     Ok(Ran::Finished(wait_for(&mut command, into, RUN_LIMIT)?))
+}
+
+/// The command that asks an agent one prompt, when this machine has the
+/// agent and this build knows how to ask it.
+fn asking(config: &Config, slug: &str, prompt: &str) -> Option<Command> {
+    let program = program(config, slug)?;
+    let mut command = Command::new(program);
+    command.args(invocation(slug)?.run).arg(prompt);
+
+    Some(command)
 }
 
 /// How long trying an agent out may take.
@@ -190,22 +197,14 @@ const TRY_LIMIT: Duration = Duration::from_secs(2 * 60);
 /// Asks an agent for one word, to find out whether it is installed and
 /// signed in. What it says stays in this machine's cache.
 pub fn try_out(home: &Home, config: &Config, slug: &str) -> Result<Ran> {
-    let Some(program) = program(config, slug) else {
-        return Ok(Ran::Missing);
-    };
-    let Some(invocation) = invocation(slug) else {
+    let Some(mut command) = asking(config, slug, "Answer with the single word: ready") else {
         return Ok(Ran::Missing);
     };
 
     let directory = scratch(home)?.join("tried");
     std::fs::create_dir_all(&directory)
         .with_context(|| format!("cannot create {}", directory.display()))?;
-
-    let mut command = Command::new(program);
-    command
-        .current_dir(&directory)
-        .args(invocation.run)
-        .arg("Answer with the single word: ready");
+    command.current_dir(&directory);
 
     Ok(Ran::Finished(wait_for(
         &mut command,
@@ -276,7 +275,7 @@ pub fn run_in_workspace(
         .current_dir(workspace)
         .env("PATH", std::env::join_paths(paths)?)
         .env(
-            crate::job_api::STATE_VARIABLE,
+            crate::job::answer::STATE_VARIABLE,
             workspace.join(".stemma/job.json"),
         );
 
@@ -310,7 +309,25 @@ fn wait_for_controlled(
             .with_context(|| format!("cannot create {}", directory.display()))?;
     }
 
-    let file = File::create(into).with_context(|| format!("cannot write {}", into.display()))?;
+    // What an agent says carries its owner's account, so nobody else on
+    // the machine may read it.
+    let mut options = File::options();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options
+        .open(into)
+        .with_context(|| format!("cannot write {}", into.display()))?;
+    #[cfg(unix)]
+    {
+        // A file left from an earlier run keeps the mode it was made with.
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("cannot write {}", into.display()))?;
+    }
     let errors = file
         .try_clone()
         .with_context(|| format!("cannot write {}", into.display()))?;
@@ -330,15 +347,13 @@ fn wait_for_controlled(
         match child.try_wait().context("cannot wait for the agent")? {
             Some(status) => break status.code(),
             None if Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop(&mut child);
                 gave_up = true;
 
                 break None;
             }
             None if cancelled.load(std::sync::atomic::Ordering::Relaxed) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop(&mut child);
                 was_cancelled = true;
                 break None;
             }
@@ -350,8 +365,50 @@ fn wait_for_controlled(
         status,
         output: std::fs::read_to_string(into).unwrap_or_default(),
         gave_up,
+        limit,
         cancelled: was_cancelled,
     })
+}
+
+/// Stops an agent and everything it started.
+///
+/// An agent runs tools of its own (shells, compilers, `lake`), and
+/// killing only the agent would leave them working in the job's
+/// workspace after the job is over. The agent stays in the daemon's
+/// process group, so a service manager stopping the daemon, or Ctrl-C at
+/// a terminal, still reaches all of them.
+fn stop(child: &mut std::process::Child) {
+    let mut family = descendants(child.id());
+    family.push(child.id());
+    let _ = Command::new("kill")
+        .arg("-KILL")
+        .args(family.iter().map(u32::to_string))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// Every process below `parent`, deepest first, as `pgrep` sees them.
+fn descendants(parent: u32) -> Vec<u32> {
+    let Ok(listed) = Command::new("pgrep")
+        .args(["-P", &parent.to_string()])
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+
+    String::from_utf8_lossy(&listed.stdout)
+        .split_whitespace()
+        .filter_map(|pid| pid.parse::<u32>().ok())
+        .flat_map(|child| {
+            let mut below = descendants(child);
+            below.push(child);
+            below
+        })
+        .collect()
 }
 
 /// Words that mean the owner has not signed this agent in.
@@ -413,7 +470,7 @@ pub fn trouble(agent: &Slug, ran: &Ran) -> Option<AgentFailure> {
         summary: match (finished.gave_up, finished.status) {
             (true, _) => format!(
                 "it was still running after {} minutes",
-                RUN_LIMIT.as_secs() / 60
+                finished.limit.as_secs().div_ceil(60)
             ),
             (false, Some(status)) => format!("it exited with status {status}"),
             (false, None) => "it was stopped".to_owned(),
@@ -445,7 +502,7 @@ fn scratch(home: &Home) -> Result<PathBuf> {
 pub fn output_path(home: &Home, job: &str) -> PathBuf {
     home.cache_dir()
         .join("jobs")
-        .join(format!("{}.log", job.replace(':', "-")))
+        .join(format!("{}.log", crate::storage::file_name(job)))
 }
 
 /// The first place this machine keeps programs that has one of this
@@ -466,9 +523,7 @@ pub fn on_path(program: &str) -> Option<PathBuf> {
 /// installed into. Without these, an agent sitting right there is
 /// reported to the group as not installed.
 pub fn where_programs_are() -> Vec<PathBuf> {
-    let on_path = std::env::var_os("PATH")
-        .and_then(|path| path.to_str().map(str::to_owned))
-        .unwrap_or_default();
+    let on_path = std::env::var_os("PATH").unwrap_or_default();
 
     beside(&on_path, dirs::home_dir())
 }
@@ -478,11 +533,9 @@ pub fn where_programs_are() -> Vec<PathBuf> {
 /// The home is given rather than read so that this can be tried: what
 /// it does is only true of a machine somebody has installed things on,
 /// and a test has to be able to be that machine.
-fn beside(on_path: &str, home: Option<PathBuf>) -> Vec<PathBuf> {
-    let mut places: Vec<PathBuf> = on_path
-        .split(':')
-        .filter(|directory| !directory.is_empty())
-        .map(PathBuf::from)
+fn beside(on_path: &OsStr, home: Option<PathBuf>) -> Vec<PathBuf> {
+    let mut places: Vec<PathBuf> = std::env::split_paths(on_path)
+        .filter(|directory| !directory.as_os_str().is_empty())
         .collect();
 
     for known in installed_into(home) {
@@ -589,7 +642,10 @@ mod tests {
 
         // What a service is started with on macOS, and what made an
         // agent sitting right there be reported as not installed.
-        let places = beside("/usr/bin:/bin:/usr/sbin:/sbin", Some(machine.clone()));
+        let places = beside(
+            OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"),
+            Some(machine.clone()),
+        );
 
         assert!(
             places
@@ -604,7 +660,10 @@ mod tests {
 
     #[test]
     fn where_a_program_might_be_keeps_the_path_ahead_of_the_guesses() {
-        let places = beside("/somewhere/of/my/own", Some(PathBuf::from("/home/ana")));
+        let places = beside(
+            OsStr::new("/somewhere/of/my/own"),
+            Some(PathBuf::from("/home/ana")),
+        );
 
         assert_eq!(places[0], PathBuf::from("/somewhere/of/my/own"));
         assert!(places.contains(&PathBuf::from("/home/ana/.local/bin")));
@@ -774,5 +833,84 @@ mod tests {
             stemma_core::agent::Attempt::NotMade,
             "a missing agent must never look like a failed proof"
         );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod private_output {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    #[test]
+    fn what_an_agent_says_is_readable_by_its_owner_alone() {
+        let root = std::env::temp_dir().join(format!(
+            "stemma-agents-private-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let kept = root.join("one.log");
+        std::fs::write(&kept, "left from before").unwrap();
+        std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        let mut command = Command::new("sh");
+        command.args(["-c", "echo secret; exit 2"]);
+        let finished = wait_for(&mut command, &kept, Duration::from_secs(30)).unwrap();
+
+        assert_eq!(finished.output, "secret\n");
+        assert_eq!(
+            std::fs::metadata(&kept).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_agent_out_of_time_takes_what_it_started_with_it() {
+        let root = std::env::temp_dir().join(format!(
+            "stemma-agents-family-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let marker = root.join("still-running");
+
+        // The agent starts a tool that would write the marker after the
+        // job is over, then waits.
+        let mut command = Command::new("sh");
+        command.args([
+            "-c",
+            &format!("(sleep 2; touch '{}') & sleep 30", marker.display()),
+        ]);
+        let finished = wait_for(
+            &mut command,
+            &root.join("out.log"),
+            Duration::from_millis(500),
+        )
+        .unwrap();
+        assert!(finished.gave_up);
+
+        std::thread::sleep(Duration::from_secs(3));
+        assert!(!marker.exists(), "a tool the agent started outlived it");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn an_agent_that_ran_out_of_time_says_how_long_it_had() {
+        let ran = Ran::Finished(Finished {
+            status: None,
+            output: String::new(),
+            gave_up: true,
+            limit: Duration::from_secs(45 * 60),
+            cancelled: false,
+        });
+        let failure = trouble(&Slug::parse("claude").unwrap(), &ran).unwrap();
+
+        assert!(failure.to_string().contains("45 minutes"), "{failure}");
     }
 }

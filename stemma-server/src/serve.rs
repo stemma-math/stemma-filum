@@ -103,7 +103,6 @@ async fn run(instance: Instance) -> Result<()> {
     }
 }
 
-/// Lets the reverse proxy reach the socket, and nobody else.
 /// Housekeeping nobody asks for, on a timer, for as long as the server
 /// runs. A round that fails is logged and the next one tries again.
 async fn maintain(instance: Instance) {
@@ -136,6 +135,7 @@ async fn maintain(instance: Instance) {
     }
 }
 
+/// Lets the reverse proxy reach the socket, and nobody else.
 fn open_to_the_group(path: &std::path::Path) -> Result<()> {
     #[cfg(unix)]
     {
@@ -179,6 +179,7 @@ fn router(instance: Instance) -> Router {
         .layer(axum::middleware::from_fn(announce_protocol))
         .with_state(instance)
 }
+
 /// Every answer says which protocol it speaks, so a client never has to ask
 /// separately before it can tell whether it is talking to something it
 /// understands.

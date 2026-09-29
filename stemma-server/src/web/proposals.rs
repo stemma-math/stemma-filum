@@ -412,28 +412,38 @@ async fn settle(
         let by_for_read = by.clone();
         let proposal = instance
             .read(move |connection| {
-                let proposal =
-                    proposals::by_id(connection, &id)?.context("the proposal does not exist")?;
+                let refused = |reason: &str| WebError::BadRequest(reason.to_owned());
+                let proposal = proposals::by_id(connection, &id)?
+                    .ok_or_else(|| refused("the proposal does not exist"))?;
                 if proposal.state != "awaiting_review" || proposal.reviewer() != &by_for_read {
-                    anyhow::bail!("the proposal is not awaiting this person's review");
+                    anyhow::bail!(refused("the proposal is not awaiting this person's review"));
                 }
                 if let Some(line_id) = proposal.job.line_id {
-                    let base = crate::store::revisions::at(connection, &line_id, proposal.job.revision)?
-                        .context("the proposal's base revision is unavailable")?;
+                    let base =
+                        crate::store::revisions::at(connection, &line_id, proposal.job.revision)?
+                            .context("the proposal's base revision is unavailable")?;
                     let started = crate::store::lines::by_id(connection, &line_id)?
                         .context("the proposal's line is unavailable")?;
                     let current = crate::store::revisions::current(connection, &started)?
                         .context("the current revision is unavailable")?;
-                    if !stemma_core::reconcile::between(&base.source, &current.source, &proposal.source)?.is_empty() {
-                        anyhow::bail!("This proposal touches blocks changed since it was made. Ask again on the current line.");
+                    let clashes = stemma_core::reconcile::between(
+                        &base.source,
+                        &current.source,
+                        &proposal.source,
+                    )
+                    .map_err(|error| refused(&error.to_string()))?;
+                    if !clashes.is_empty() {
+                        anyhow::bail!(refused(
+                            "This proposal touches blocks changed since it was made. Ask again \
+                             on the current line."
+                        ));
                     }
                 }
                 let user = crate::store::users::by_id(connection, proposal.reviewer())?
                     .context("the reviewer does not exist")?;
                 Ok((proposal, user))
             })
-            .await
-            .map_err(|error| WebError::BadRequest(error.to_string()))?;
+            .await?;
         match proposal.0.library_change.clone() {
             None => None,
             Some(change) => {
@@ -494,7 +504,11 @@ async fn settle(
                 proposals::library_applied(c, &id, commit)?;
                 crate::store::events::publish(
                     c,
-                    crate::store::events::Audience::Group(&proposal.job.group),
+                    crate::store::events::Audience::of(
+                        proposal.job.side,
+                        &proposal.job.group,
+                        &proposal.job.launched_by,
+                    ),
                     &stemma_core::event::Event::Library {
                         group: proposal.job.group.slug().as_str().to_owned(),
                         side: proposal.job.side,
@@ -515,17 +529,11 @@ async fn settle(
                     };
                     crate::store::events::publish(
                         c,
-                        match proposal.job.side {
-                            stemma_core::repository::Side::Shared => {
-                                crate::store::events::Audience::Group(&proposal.job.group)
-                            }
-                            stemma_core::repository::Side::Private => {
-                                crate::store::events::Audience::Person(
-                                    &proposal.job.group,
-                                    &proposal.job.launched_by,
-                                )
-                            }
-                        },
+                        crate::store::events::Audience::of(
+                            proposal.job.side,
+                            &proposal.job.group,
+                            &proposal.job.launched_by,
+                        ),
                         &stemma_core::event::Event::FormalAudit {
                             group: proposal.job.group.slug().as_str().to_owned(),
                             line: proposal.job.line.as_str().to_owned(),

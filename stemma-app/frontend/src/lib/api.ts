@@ -1,8 +1,9 @@
-// Typed wrappers over the desktop shell's commands.
+// Typed wrappers over the desktop shell's commands and the events it
+// sends. Nothing else in the window speaks to the shell directly.
 
 import type {
-  AuditAction, AuditTarget, Beginning, Claim, Conflict, Decision, Known, LineDocument, LineProposal, Machine,
-  Mirrored, Offer, OpenLine, Preview, Review, Reviews, Signed, Survey, Tried, Vault, Verdict,
+  AuditAction, AuditTarget, Beginning, BridgeKind, Claim, Conflict, Decision, Heard, Known, LineDocument, LineProposal,
+  Machine, Mirrored, Offer, OpenLine, Preview, Review, Reviews, Signed, SignInState, Survey, Tried, Vault, Verdict,
 } from "./types";
 
 type Bridge = { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } };
@@ -32,20 +33,49 @@ function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args);
 }
 
+/** Hears one of the shell's events; resolves to how to stop hearing it.
+ * Outside the application there is nothing to hear. */
+function listen<T>(name: string, handler: (payload: T) => void): Promise<() => void> {
+  return window.__TAURI__?.event?.listen<T>(name, (event) => handler(event.payload)) ?? Promise.resolve(() => {});
+}
+
 /** Hears a view chosen from the application's menu. */
 export function onViewChosen(handler: (view: string) => void): Promise<() => void> {
-  return window.__TAURI__?.event?.listen<string>("view", (event) => handler(event.payload)) ?? Promise.resolve(() => {});
+  return listen<string>("view", handler);
 }
 
 /** Hears Set Up This Machine or Remove Stemma chosen from the application's
  * menu, as `setup` or `remove`. */
 export function onMachineChosen(handler: (action: string) => void): Promise<() => void> {
-  return window.__TAURI__?.event?.listen<string>("machine", (event) => handler(event.payload)) ?? Promise.resolve(() => {});
+  return listen<string>("machine", handler);
 }
 
 /** Hears that repairing this machine at launch has finished. */
 export function onRepaired(handler: () => void): Promise<() => void> {
-  return window.__TAURI__?.event?.listen<null>("stemma:repaired", () => handler()) ?? Promise.resolve(() => {});
+  return listen<null>("stemma:repaired", () => handler());
+}
+
+/** Hears what the instance says changed, and whether it can be heard. */
+export function onHeard(handler: (heard: Heard) => void): Promise<() => void> {
+  return listen<Heard>("stemma:heard", handler);
+}
+
+/** Hears where synchronisation stands after each of the engine's rounds. */
+export function onMirrored(handler: (mirrored: Mirrored) => void): Promise<() => void> {
+  return listen<Mirrored>("stemma:mirror", handler);
+}
+
+/** Hears that a proposal link was opened; the link waits for
+ * `takeOpenReview`. */
+export function onOpenReview(handler: () => void): Promise<() => void> {
+  return listen<string>("stemma:open-review", () => handler());
+}
+
+/** Hears the window being closed; the handler may refuse it. */
+export function onCloseRequested(
+  handler: (event: { preventDefault(): void }) => Promise<void>,
+): Promise<() => void> {
+  return window.__TAURI__?.window?.getCurrentWindow().onCloseRequested(handler) ?? Promise.resolve(() => {});
 }
 
 /** An error the shell marked with a remedy (`remedy:<name>:<sentence>`),
@@ -64,7 +94,7 @@ export function said(error: unknown): string {
 export const api = {
   whoami: () => call<Signed | null>("whoami"),
   signInStart: (server: string) => call<Beginning>("sign_in_start", { server }),
-  signInPoll: () => call<string>("sign_in_poll"),
+  signInPoll: () => call<SignInState>("sign_in_poll"),
   signOut: () => call<string>("sign_out"),
   openLink: (url: string) => call<void>("open_link", { url }),
 
@@ -93,6 +123,8 @@ export const api = {
   settle: (path: string, decisions: Decision[]) => call<string[]>("settle", { path, decisions }),
 
   offers: (group: string) => call<Offer[]>("offers", { group }),
+  /** Asks `machine` to run `task` with `agent` on the line; a custom task
+   * carries its request and what it may change. */
   launch: (
     path: string,
     task: string,
@@ -100,11 +132,18 @@ export const api = {
     machine: string,
     model: string | null,
     effort: string | null,
-    request: string | null = null,
-    grantBlocks: string[] = [],
-    grantLibrary = false,
+    custom: { request: string; blocks: string[]; library: boolean } | null = null,
   ) => call<string>("launch", {
-    path, task, agent, here: false, machine, model, effort, request, grantBlocks, grantLibrary,
+    path,
+    task,
+    agent,
+    here: false,
+    machine,
+    model,
+    effort,
+    request: custom?.request ?? null,
+    grantBlocks: custom?.blocks ?? [],
+    grantLibrary: custom?.library ?? false,
   }),
   machine: () => call<Machine | null>("machine"),
   jobOutput: (job: string) => call<string>("job_output", { job }),
@@ -136,7 +175,7 @@ export const api = {
   vault: (group: string) => call<Vault>("vault", { group }),
   vaultAdmit: (group: string, siglum: string, name: string, prose: string, lean: string) =>
     call<string>("vault_admit", { group, siglum, name, prose, lean }),
-  vaultBridge: (group: string, left: string, right: string, kind: string, lean: string) =>
+  vaultBridge: (group: string, left: string, right: string, kind: BridgeKind, lean: string) =>
     call<string>("vault_bridge", { group, left, right, kind, lean }),
   vaultAudit: (group: string, targetKind: AuditTarget, target: string, action: AuditAction, note: string) =>
     call<string>("vault_audit", { group, targetKind, target, action, note }),

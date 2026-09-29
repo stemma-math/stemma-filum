@@ -1,4 +1,13 @@
+// Laying a proposal over the line it would change, and saying where its
+// review has got to.
+
 import type { Block, LineDocument } from "./types";
+
+/** Where a proposal's review has got to, in a word: the decision once
+ * there is one, unless the line moved on and left it outdated. */
+export function outcome(proposal: { state: string; decision: string | null }): string {
+  return proposal.state === "outdated" ? "outdated" : proposal.decision ?? proposal.state;
+}
 
 export type ReviewedBlock = {
   id: string;

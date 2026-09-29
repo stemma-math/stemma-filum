@@ -187,8 +187,14 @@ pub fn run(home: &Home, role: Role, heard: &Receiver<Nudge>, mut told: impl FnMu
 
         if role == Role::Background && super::Store::at(home.state_dir()).window_open() {
             // The application is doing this; what was asked for is still
-            // owed when it closes.
-            due.again_at = Some(Instant::now() + IDLE);
+            // owed when it closes. Until then the engine waits to be
+            // nudged, or looks again after a while, rather than asking
+            // the same question over and over.
+            match heard.recv_timeout(IDLE) {
+                Ok(nudge) => due.take(nudge),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return,
+            }
             continue;
         }
 
@@ -269,6 +275,7 @@ fn round(home: &Home, due: &mut Due) -> Said {
         due.full = full;
         due.proposals = proposals;
         due.libraries = libraries;
+        due.released = released;
         due.again_at = Some(Instant::now() + AGAIN);
     } else if unsent_with(false) {
         // Saved inside the pause: it leaves on the next round.

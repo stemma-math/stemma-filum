@@ -3,6 +3,8 @@
 //! Stored as Argon2id PHC strings, which carry their own parameters, so a
 //! hash made by an older release keeps verifying after the cost is raised.
 
+use std::sync::LazyLock;
+
 use anyhow::{Context, Result, anyhow};
 use argon2::Argon2;
 use argon2::password_hash::phc::PasswordHash;
@@ -56,15 +58,33 @@ pub fn hash(password: &str) -> Result<String> {
 /// Whether `password` is the one behind `stored`.
 ///
 /// A stored hash that cannot be parsed is a failure to verify, never a
-/// reason to let somebody in.
+/// reason to let somebody in. It takes as long as any other failure, so
+/// that how long the answer took does not tell anybody which accounts
+/// have no password yet, or, through [`waste`], which do not exist.
 pub fn verify(password: &str, stored: &str) -> bool {
     let Ok(parsed) = PasswordHash::new(stored) else {
+        waste(password);
         return false;
     };
 
     Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok()
+}
+
+/// Spends the time a verification takes, and admits nobody.
+///
+/// For the answer to somebody logging in as an account that does not
+/// exist, which must take as long as a wrong password does.
+pub fn waste(password: &str) {
+    static DECOY: LazyLock<Option<String>> = LazyLock::new(|| hash("a password nobody has").ok());
+
+    if let Some(parsed) = DECOY
+        .as_deref()
+        .and_then(|decoy| PasswordHash::new(decoy).ok())
+    {
+        let _ = Argon2::default().verify_password(password.as_bytes(), &parsed);
+    }
 }
 
 /// Hashes a password, refusing one that is too weak.

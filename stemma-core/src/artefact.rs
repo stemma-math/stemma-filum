@@ -28,26 +28,12 @@ pub enum Kind {
     Nodes,
 }
 
-impl Kind {
-    /// What it is called on the wire and on disk.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Nodes => "nodes",
-        }
-    }
+spelled!(Kind { Nodes => "nodes" });
 
+impl Kind {
     /// The kind a name names.
     pub fn named(name: &str) -> Option<Self> {
-        match name {
-            "nodes" => Some(Self::Nodes),
-            _ => None,
-        }
-    }
-}
-
-impl std::fmt::Display for Kind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        [Self::Nodes].into_iter().find(|kind| kind.as_str() == name)
     }
 }
 

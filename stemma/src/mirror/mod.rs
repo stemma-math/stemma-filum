@@ -211,7 +211,7 @@ impl Mirror {
             store: Store::at(home.state_dir()),
             config,
             workspace,
-            typeset: crate::render::page,
+            typeset: crate::typeset::render::page,
         })
     }
 
@@ -773,17 +773,24 @@ impl Mirror {
         };
 
         // A line nobody holds is taken for as long as it takes to send
-        // it: this is what lets writing done offline leave by itself.
+        // it: this is what lets writing done offline leave by itself. It
+        // is let go again however the sending went, so a network that
+        // drops halfway does not leave the line held by nobody writing.
         let mut taken = false;
         let answer = loop {
-            match remote.write(&record.id, &outgoing)? {
-                Written::NotHeld(None) if !taken && remote.take(&about)? => taken = true,
+            match remote.write(&record.id, &outgoing) {
+                Ok(Written::NotHeld(None)) if !taken => match remote.take(&about) {
+                    Ok(true) => taken = true,
+                    Ok(false) => break Ok(Written::NotHeld(None)),
+                    Err(error) => break Err(error),
+                },
                 answer => break answer,
             }
         };
         if taken {
             let _ = remote.release(&about);
         }
+        let answer = answer?;
 
         match answer {
             Written::Taken(revision) => {
@@ -849,10 +856,10 @@ impl Mirror {
     /// What a line is sent as: the line, and the page it typesets to.
     fn prepared(&self, record: &Record) -> Result<Outgoing> {
         let root = self.repository(&record.group, record.side);
-        let pins = crate::build::read_manifest(&root)
-            .map(|manifest| crate::build::group_pins(&root, &manifest))
+        let pins = crate::repository::read_manifest(&root)
+            .map(|manifest| crate::repository::group_pins(&root, &manifest))
             .unwrap_or_default();
-        crate::render::may_typeset(&pins)?;
+        crate::typeset::render::may_typeset(&pins)?;
 
         let document = Document::parse(&record.source).context("what is here is not a line")?;
         let page = (self.typeset)(&root, &document)?;
@@ -930,14 +937,18 @@ impl Mirror {
     }
 
     /// Keeps some files of a line aside, and says where.
+    ///
+    /// Every version gets a directory of its own, even when two are put
+    /// aside within the same moment, as a line that is taken off this
+    /// machine with a file changed by hand and changes not sent is.
     fn put_aside(&self, record: &Record, files: &[(&str, Option<&str>)]) -> Result<PathBuf> {
-        let directory = self.store.aside().join(format!(
-            "{}-{}-{}-{}",
-            now(),
-            record.group,
-            record.side,
-            record.name
-        ));
+        let named = format!("{}-{}-{}-{}", now(), record.group, record.side, record.name);
+        let mut directory = self.store.aside().join(&named);
+        let mut again = 1;
+        while directory.exists() {
+            directory = self.store.aside().join(format!("{named}-{again}"));
+            again += 1;
+        }
 
         for (name, content) in files {
             if let Some(content) = content {
@@ -1087,30 +1098,6 @@ fn remove_file(path: &Path) -> Result<()> {
 }
 
 // ---- The command line ----
-
-/// The repository a path is inside, found by its manifest.
-pub fn repository_of(path: &Path) -> Option<PathBuf> {
-    let path = path.canonicalize().ok()?;
-
-    path.ancestors()
-        .find(|directory| directory.join(repository::MANIFEST).is_file())
-        .map(Path::to_path_buf)
-}
-
-/// The group, repository and line a command is about: the line named,
-/// or the one the path is inside.
-pub fn line_at(at: &Path, named: Option<&str>) -> Result<(String, Side, Name)> {
-    let root = repository_of(at)
-        .context("this is not inside a group's repository: run it from one of its lines")?;
-    let manifest = crate::build::read_manifest(&root)?;
-    let name = crate::jobs::line_of(&root, at, named)?;
-
-    Ok((
-        manifest.group.slug().as_str().to_owned(),
-        manifest.side,
-        name,
-    ))
-}
 
 /// Takes in what changed and sends what is here, now, and says so.
 pub fn run(home: &Home, out: &mut impl Write) -> Result<Report> {

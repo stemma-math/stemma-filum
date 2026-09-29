@@ -11,12 +11,13 @@
     ["appearance", "Appearance"],
   ];
 
-  let open = $state(false);
-  $effect(() => { open = app.panel !== null; });
-  $effect(() => { if (!open) app.panel = null; });
+  /** Open while a page is chosen; closing it chooses none. */
+  function close() {
+    app.panel = null;
+  }
 </script>
 
-<Dialog bind:open title="Settings" wide>
+<Dialog bind:open={() => app.panel !== null, (open) => { if (!open) close(); }} title="Settings" wide>
   <div class="settings">
     <nav class="settings__nav" aria-label="Settings">
       {#each pages as [page, label] (page)}
@@ -36,6 +37,6 @@
     </div>
   </div>
   {#snippet actions()}
-    <button type="button" class="button" onclick={() => (open = false)}>Done</button>
+    <button type="button" class="button" onclick={close}>Done</button>
   {/snippet}
 </Dialog>

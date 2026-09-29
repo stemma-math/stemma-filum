@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use stemma_core::event::Event;
 use stemma_core::id::{GroupId, UserId};
+use stemma_core::repository::Side;
 
 /// How long a notice is kept for a reader who was away.
 pub const KEPT_DAYS: u32 = 7;
@@ -26,6 +27,17 @@ pub enum Audience<'a> {
     Person(&'a GroupId, &'a UserId),
     /// One person, about nothing in particular of any group.
     Alone(&'a UserId),
+}
+
+impl<'a> Audience<'a> {
+    /// Whoever can see one of a group's repositories: everybody in the
+    /// group for its shared one, and its owner alone for their own.
+    pub fn of(side: Side, group: &'a GroupId, owner: &'a UserId) -> Self {
+        match side {
+            Side::Shared => Self::Group(group),
+            Side::Private => Self::Person(group, owner),
+        }
+    }
 }
 
 /// One notice, as a reader receives it.

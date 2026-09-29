@@ -10,22 +10,21 @@
 //! words.
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use stemma_core::id::JobId;
 use stemma_core::job::Task;
 use stemma_core::line::Name;
-use stemma_core::repository::{self, Side};
+use stemma_core::repository::Side;
 
+use crate::account::credentials::Credentials;
+use crate::account::session;
 use crate::api::{Asking, Server};
-use crate::build;
-use crate::credentials::Credentials;
 use crate::home::Home;
-use crate::mirror::{self, Instance, Mirror, Which};
+use crate::job::work;
+use crate::mirror::{Instance, Mirror, Which};
 use crate::remedy::Remedy;
-use crate::session;
-use crate::work;
 
 /// What a person asked for at the terminal.
 #[derive(Debug, Clone)]
@@ -55,7 +54,7 @@ pub struct Wanted {
 /// job works on what the person sees.
 pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Result<String> {
     let (credentials, server) = session::connect(home)?;
-    let (group, side, line) = mirror::line_at(at, wanted.line.as_deref())?;
+    let (group, side, line) = crate::repository::line_at(at, wanted.line.as_deref())?;
     let task: Task = wanted.task.parse().context("that is not a task")?;
     let revision = sent_revision(home, &group, side, &line)?;
 
@@ -167,54 +166,6 @@ pub fn output(home: &Home, job: &str, out: &mut impl Write) -> Result<()> {
     Ok(())
 }
 
-/// The line a command is about.
-///
-/// Run from inside one, it is that one. Run from anywhere else in the
-/// clone, it has to be named: guessing which of a group's lines somebody
-/// meant is the kind of help that starts work on the wrong thing.
-pub(crate) fn line_of(clone: &Path, at: &Path, named: Option<&str>) -> Result<Name> {
-    if let Some(named) = named {
-        return Name::parse(named.trim()).context("that is not the name of a line");
-    }
-
-    if let Some(found) = here(clone, at) {
-        return Ok(found);
-    }
-
-    bail!(
-        "say which line this is about, with --line: {}",
-        available(clone)
-    )
-}
-
-/// The line the current directory is inside, if it is inside one.
-fn here(clone: &Path, at: &Path) -> Option<Name> {
-    let inside = at.canonicalize().ok()?;
-    let clone = clone.canonicalize().ok()?;
-    let mut parts = inside.strip_prefix(&clone).ok()?.components();
-
-    let lines: PathBuf = parts.next()?.as_os_str().into();
-    if lines != Path::new(repository::LINES) {
-        return None;
-    }
-
-    Name::parse(parts.next()?.as_os_str().to_str()?).ok()
-}
-
-/// The lines there are, for a message that helps rather than scolds.
-fn available(clone: &Path) -> String {
-    let names: Vec<String> = build::lines_in(clone)
-        .unwrap_or_default()
-        .iter()
-        .map(|name| name.as_str().to_owned())
-        .collect();
-
-    match names.is_empty() {
-        true => "this repository has no lines yet".to_owned(),
-        false => names.join(", "),
-    }
-}
-
 /// The revision a line is at on the instance, once what is here has
 /// been sent: a job works on what the instance has, and work against
 /// something only this machine has is work nothing else can reach.
@@ -257,6 +208,8 @@ pub(crate) fn this_machine(server: &Server, credentials: &Credentials) -> Result
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn somewhere(name: &str) -> PathBuf {
@@ -275,53 +228,6 @@ mod tests {
             crate::home::HOME_VARIABLE,
             root.to_string_lossy().as_ref(),
         )]))
-    }
-
-    #[test]
-    fn a_command_run_inside_a_line_is_about_that_line() {
-        let clone = somewhere("inside");
-        let inside = clone.join("lines/quotient-groups");
-        std::fs::create_dir_all(inside.join("figures")).unwrap();
-
-        assert_eq!(
-            here(&clone, &inside).map(|name| name.as_str().to_owned()),
-            Some("quotient-groups".to_owned())
-        );
-        assert_eq!(
-            here(&clone, &inside.join("figures")).map(|name| name.as_str().to_owned()),
-            Some("quotient-groups".to_owned()),
-            "somewhere under a line is still that line"
-        );
-        assert_eq!(here(&clone, &clone), None);
-
-        std::fs::remove_dir_all(&clone).unwrap();
-    }
-
-    #[test]
-    fn a_command_run_anywhere_else_asks_which_line_and_says_what_there_is() {
-        let clone = somewhere("outside");
-        std::fs::create_dir_all(clone.join("lines/quotient-groups")).unwrap();
-        std::fs::write(clone.join("lines/quotient-groups/line.json"), "").unwrap();
-
-        let error = line_of(&clone, &clone, None).unwrap_err();
-
-        assert!(error.to_string().contains("--line"));
-        assert!(error.to_string().contains("quotient-groups"));
-
-        std::fs::remove_dir_all(&clone).unwrap();
-    }
-
-    #[test]
-    fn a_line_named_by_hand_is_taken_as_named() {
-        let clone = somewhere("named");
-
-        assert_eq!(
-            line_of(&clone, &clone, Some(" quotient-groups "))
-                .unwrap()
-                .as_str(),
-            "quotient-groups"
-        );
-        assert!(line_of(&clone, &clone, Some("Not A Line")).is_err());
     }
 
     #[test]

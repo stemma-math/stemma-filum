@@ -19,7 +19,7 @@ use stemma_core::line::Name;
 use stemma_core::proposal::Grants;
 use stemma_core::repository::Side;
 
-use super::id_at;
+use super::{id_at, optional_id_at};
 
 /// One unit of work, as the instance holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,9 +102,7 @@ impl Job {
                 .parse()
                 .map_err(|_| unreadable("a repository", &side))?,
             line: Name::parse(&line).map_err(|_| unreadable("a line", &line))?,
-            line_id: row
-                .get::<_, Option<String>>("line_id")?
-                .and_then(|raw| raw.parse().ok()),
+            line_id: optional_id_at(row, "line_id")?,
             revision: revision_at(row, "revision")?.unwrap_or_default(),
             against: revision_at(row, "against")?,
             task: task.parse().map_err(|_| unreadable("a task", &task))?,
@@ -126,9 +124,7 @@ impl Job {
             launched_by: id_at(row, "launched_by")?,
             launched_at: row.get("launched_at")?,
             state: state.parse().map_err(|_| unreadable("a state", &state))?,
-            taken_by: row
-                .get::<_, Option<String>>("taken_by")?
-                .and_then(|raw| raw.parse().ok()),
+            taken_by: optional_id_at(row, "taken_by")?,
             taken_at: row.get("taken_at")?,
             finished_at: row.get("finished_at")?,
             outcome: match outcome {
@@ -255,14 +251,9 @@ fn tell(connection: &Connection, id: &JobId) -> Result<()> {
         return Ok(());
     };
 
-    let audience = match job.side {
-        Side::Shared => super::events::Audience::Group(&job.group),
-        Side::Private => super::events::Audience::Person(&job.group, &job.launched_by),
-    };
-
     super::events::publish(
         connection,
-        audience,
+        super::events::Audience::of(job.side, &job.group, &job.launched_by),
         &Event::Job {
             group: job.group.slug().as_str().to_owned(),
             job: job.id.to_string(),
@@ -524,18 +515,17 @@ fn list(
     condition: &str,
     parameters: impl rusqlite::Params,
 ) -> Result<Vec<Job>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {COLUMNS} FROM jobs WHERE {condition}
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {COLUMNS} FROM jobs WHERE {condition}
           ORDER BY launched_at DESC, rowid DESC LIMIT ?{}",
-        count_of(condition) + 1
-    ))?;
-
-    let found = statement
-        .query_map(parameters, Job::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the jobs")?;
-
-    Ok(found)
+            count_of(condition) + 1
+        ),
+        parameters,
+        Job::from_row,
+    )
+    .context("cannot list the jobs")
 }
 
 /// How many placeholders a condition uses.

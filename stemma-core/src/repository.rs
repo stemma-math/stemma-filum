@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::id::GroupId;
-use crate::line::{BadName, Name};
+use crate::line::Name;
 
 /// The file at the root of every repository.
 pub const MANIFEST: &str = "stemma.toml";
@@ -173,47 +173,72 @@ impl Manifest {
     /// The files that make this repository a Lake package.
     pub fn lake_files(&self) -> Vec<(String, String)> {
         let lean = self.pins.lean.as_deref().unwrap_or(DEFAULT_LEAN);
-        let package = match self.side {
-            Side::Shared => format!(
-                "stemma_{}_library",
-                self.group.slug().as_str().replace('-', "_")
+        let (suffix, library, root) = match self.side {
+            Side::Shared => (
+                "library",
+                "GroupLibrary",
+                "import Stemma\n\n-- Formal code is organized by subject modules imported here.\n",
             ),
-            Side::Private => format!(
-                "stemma_{}_private",
-                self.group.slug().as_str().replace('-', "_")
+            Side::Private => (
+                "private",
+                "PrivateLibrary",
+                "import GroupLibrary\n\n-- Private formal code extends the group's shared library.\n",
             ),
         };
-        let library = match self.side {
-            Side::Shared => "GroupLibrary",
-            Side::Private => "PrivateLibrary",
-        };
+        let package = format!(
+            "stemma_{}_{suffix}",
+            self.group.slug().as_str().replace('-', "_")
+        );
+
         let mut lake = format!(
-            "name = \"{package}\"\nversion = \"0.1.0\"\ndefaultTargets = [\"{library}\"]\n\n"
+            "name = {}\nversion = \"0.1.0\"\ndefaultTargets = [{}]\n\n",
+            toml_string(&package),
+            toml_string(library)
         );
         if let Some(mathlib) = &self.pins.mathlib {
-            lake.push_str(&format!(
-                "[[require]]\nname = \"mathlib\"\ngit = \"https://github.com/leanprover-community/mathlib4.git\"\nrev = \"{mathlib}\"\n\n"
-            ));
+            require(
+                &mut lake,
+                &[
+                    ("name", "mathlib"),
+                    (
+                        "git",
+                        "https://github.com/leanprover-community/mathlib4.git",
+                    ),
+                    ("rev", mathlib),
+                ],
+            );
         }
         if let Some(stemma) = &self.pins.stemma {
-            lake.push_str(&format!(
-                "[[require]]\nname = \"stemma\"\ngit = \"https://github.com/stemma-math/stemma.git\"\nrev = \"{stemma}\"\nsubDir = \"lean\"\n\n"
-            ));
+            require(
+                &mut lake,
+                &[
+                    ("name", "stemma"),
+                    ("git", "https://github.com/stemma-math/stemma.git"),
+                    ("rev", stemma),
+                    ("subDir", "lean"),
+                ],
+            );
         }
         for dependency in &self.pins.dependencies {
-            lake.push_str(&format!(
-                "[[require]]\nname = \"{}\"\ngit = \"{}\"\nrev = \"{}\"\n",
-                dependency.name, dependency.git, dependency.rev
-            ));
+            let mut fields = vec![
+                ("name", dependency.name.as_str()),
+                ("git", dependency.git.as_str()),
+                ("rev", dependency.rev.as_str()),
+            ];
             if let Some(sub_dir) = &dependency.sub_dir {
-                lake.push_str(&format!("subDir = \"{sub_dir}\"\n"));
+                fields.push(("subDir", sub_dir));
             }
-            lake.push('\n');
+            require(&mut lake, &fields);
         }
         if self.side == Side::Private {
-            lake.push_str("[[require]]\nname = \"group_library\"\npath = \"../shared\"\n\n");
+            require(
+                &mut lake,
+                &[("name", "group_library"), ("path", "../shared")],
+            );
         }
-        lake.push_str(&format!("[[lean_lib]]\nname = \"{library}\"\n"));
+        lake.push_str("[[lean_lib]]\nname = ");
+        lake.push_str(&toml_string(library));
+        lake.push('\n');
 
         vec![
             (LAKEFILE.to_owned(), lake),
@@ -221,15 +246,29 @@ impl Manifest {
                 LEAN_TOOLCHAIN.to_owned(),
                 format!("leanprover/lean4:v{lean}\n"),
             ),
-            (
-                format!("{library}.lean"),
-                match self.side {
-                    Side::Shared => "import Stemma\n\n-- Formal code is organized by subject modules imported here.\n".to_owned(),
-                    Side::Private => "import GroupLibrary\n\n-- Private formal code extends the group's shared library.\n".to_owned(),
-                },
-            ),
+            (format!("{library}.lean"), root.to_owned()),
         ]
     }
+}
+
+/// Adds one `[[require]]` table to a lakefile, followed by a blank line.
+fn require(lake: &mut String, fields: &[(&str, &str)]) {
+    lake.push_str("[[require]]\n");
+    for (key, value) in fields {
+        lake.push_str(key);
+        lake.push_str(" = ");
+        lake.push_str(&toml_string(value));
+        lake.push('\n');
+    }
+    lake.push('\n');
+}
+
+/// A TOML string holding exactly this text.
+///
+/// Pins are typed by people, so a quote or a newline in one must stay
+/// inside its value rather than end it.
+fn toml_string(text: &str) -> String {
+    toml::Value::String(text.to_owned()).to_string()
 }
 
 /// Why a manifest could not be used.
@@ -274,11 +313,6 @@ pub fn line_of(root: &Path, path: &Path) -> Option<Name> {
     Name::parse(first.as_os_str().to_str()?).ok()
 }
 
-/// Checks a name somebody typed for a new line.
-pub fn check_line_name(name: &str) -> Result<Name, BadName> {
-    Name::parse(name)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,6 +354,77 @@ mod tests {
             files[LEAN_TOOLCHAIN],
             format!("leanprover/lean4:v{DEFAULT_LEAN}\n")
         );
+    }
+
+    #[test]
+    fn a_lake_project_is_written_exactly_as_pinned() {
+        let mut manifest = Manifest::new(
+            "grp:algebra-two".parse().unwrap(),
+            Side::Shared,
+            "Algebra, shared",
+        );
+        manifest.pins.dependencies.push(LakeDependency {
+            name: "topology".to_owned(),
+            git: "https://example.org/topology.git".to_owned(),
+            rev: "v1.0.0".to_owned(),
+            sub_dir: Some("lean".to_owned()),
+        });
+        let files = manifest.lake_files();
+
+        assert_eq!(
+            files[0],
+            (
+                LAKEFILE.to_owned(),
+                format!(
+                    "name = \"stemma_algebra_two_library\"\n\
+                     version = \"0.1.0\"\n\
+                     defaultTargets = [\"GroupLibrary\"]\n\
+                     \n\
+                     [[require]]\n\
+                     name = \"mathlib\"\n\
+                     git = \"https://github.com/leanprover-community/mathlib4.git\"\n\
+                     rev = \"{DEFAULT_MATHLIB}\"\n\
+                     \n\
+                     [[require]]\n\
+                     name = \"stemma\"\n\
+                     git = \"https://github.com/stemma-math/stemma.git\"\n\
+                     rev = \"{DEFAULT_STEMMA}\"\n\
+                     subDir = \"lean\"\n\
+                     \n\
+                     [[require]]\n\
+                     name = \"topology\"\n\
+                     git = \"https://example.org/topology.git\"\n\
+                     rev = \"v1.0.0\"\n\
+                     subDir = \"lean\"\n\
+                     \n\
+                     [[lean_lib]]\n\
+                     name = \"GroupLibrary\"\n"
+                )
+            )
+        );
+        assert_eq!(files[2].0, "GroupLibrary.lean");
+    }
+
+    #[test]
+    fn a_pin_that_needs_escaping_still_makes_a_valid_lakefile() {
+        let mut manifest = Manifest::new(group(), Side::Private, "Ana only");
+        manifest.pins.dependencies.push(LakeDependency {
+            name: "odd".to_owned(),
+            git: "https://example.org/\"quoted\"\\path.git".to_owned(),
+            rev: "v1\nname = \"injected\"".to_owned(),
+            sub_dir: None,
+        });
+        let files: std::collections::BTreeMap<_, _> = manifest.lake_files().into_iter().collect();
+        let lakefile: toml::Table = files[LAKEFILE].parse().expect("a valid lakefile");
+        let required = lakefile["require"].as_array().unwrap();
+
+        assert_eq!(required.len(), 2);
+        assert_eq!(
+            required[0]["git"].as_str(),
+            Some("https://example.org/\"quoted\"\\path.git")
+        );
+        assert_eq!(required[0]["rev"].as_str(), Some("v1\nname = \"injected\""));
+        assert_eq!(lakefile["name"].as_str(), Some("stemma_algebra_private"));
     }
 
     #[test]

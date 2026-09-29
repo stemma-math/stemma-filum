@@ -3,6 +3,7 @@
   // waiting to leave it; opened, the lines that are not sent yet or need
   // a decision. Nothing here asks for synchronising: it happens by itself.
   import { app } from "../lib/app.svelte";
+  import { sameLine, type Named } from "../lib/lines";
   import Bubble from "./Bubble.svelte";
 
   let open = $state(false);
@@ -26,8 +27,7 @@
     return { tone: waiting.length ? "attention" : "good", headline: "Connected", detail: left };
   });
 
-  const where = (line: { group: string; side: string; name: string }) =>
-    app.lines.find((known) => known.group === line.group && known.side === line.side && known.name === line.name);
+  const where = (line: Named) => app.lines.find((known) => sameLine(known, line));
 </script>
 
 <div class="sync">

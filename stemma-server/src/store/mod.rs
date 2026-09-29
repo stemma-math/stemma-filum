@@ -28,8 +28,8 @@ pub mod vault;
 
 use std::str::FromStr;
 
-use rusqlite::Row;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ValueRef};
+use rusqlite::{Connection, Row};
 use stemma_core::id::IdKind;
 
 /// Reads a typed identifier out of a column.
@@ -50,6 +50,33 @@ where
             error.to_string().into(),
         )
     })
+}
+
+/// Reads a typed identifier out of a column that may be empty.
+///
+/// An identifier that does not parse is read as none: these columns name
+/// who or what was involved, and a row is still worth reading without it.
+fn optional_id_at<T: FromStr>(row: &Row<'_>, column: &str) -> rusqlite::Result<Option<T>> {
+    Ok(row
+        .get::<_, Option<String>>(column)?
+        .and_then(|raw| raw.parse().ok()))
+}
+
+/// Runs a query and reads every row it returns.
+fn rows<T, P, F>(
+    connection: &Connection,
+    sql: &str,
+    parameters: P,
+    read: F,
+) -> rusqlite::Result<Vec<T>>
+where
+    P: rusqlite::Params,
+    F: FnMut(&Row<'_>) -> rusqlite::Result<T>,
+{
+    connection
+        .prepare(sql)?
+        .query_map(parameters, read)?
+        .collect()
 }
 
 /// A newtype so that a group role can be read from and written to SQL.

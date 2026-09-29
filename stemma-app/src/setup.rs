@@ -11,8 +11,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use stemma::daemon::{Service, Started};
-use stemma::setup::{Link, Repaired, Shell};
+use stemma::machine::daemon::Started;
+use stemma::machine::service::Service;
+use stemma::machine::setup::{Link, Repaired, Shell};
 use stemma_core::machine::Availability;
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -141,8 +142,8 @@ pub fn repair_at_launch<R: Runtime>(app: &AppHandle<R>) {
     std::thread::Builder::new()
         .name("stemma-repair".to_owned())
         .spawn(move || {
-            let repaired = match stemma::program::carried() {
-                Some(carried) => stemma::setup::repair(&home(), &carried),
+            let repaired = match stemma::machine::program::carried() {
+                Some(carried) => stemma::machine::setup::repair(&home(), &carried),
                 None => Repaired::default(),
             };
             if let Ok(mut kept) = REPAIRED.lock() {
@@ -198,7 +199,7 @@ pub fn setup_survey() -> Result<Survey, String> {
         _ => BTreeMap::new(),
     };
     let tried = TRIED.lock().map(|tried| tried.clone()).unwrap_or_default();
-    let agents = stemma::agents::look(&home, &config)
+    let agents = stemma::job::agents::look(&home, &config)
         .into_iter()
         .map(|found| {
             let name = found.agent.as_str().to_owned();
@@ -249,7 +250,7 @@ pub fn setup_survey() -> Result<Survey, String> {
 
 /// The background service's item.
 fn service(home: &stemma::home::Home, repaired: &Repaired) -> Item {
-    let standing = match stemma::setup::service_standing(home) {
+    let standing = match stemma::machine::setup::service_standing(home) {
         Ok(standing) => standing,
         Err(error) => return Item::because(State::Attention, failed(error)),
     };
@@ -260,14 +261,14 @@ fn service(home: &stemma::home::Home, repaired: &Repaired) -> Item {
         return Item::because(State::Attention, problem.clone());
     }
 
-    let program = stemma::setup::stable_program().ok();
-    let written = stemma::daemon::service_file(home)
+    let program = stemma::machine::setup::stable_program().ok();
+    let written = stemma::machine::service::service_file(home)
         .ok()
         .flatten()
         .and_then(|path| std::fs::read_to_string(path).ok());
     let wanted = program
         .as_ref()
-        .and_then(|program| stemma::daemon::service_text(home, program));
+        .and_then(|program| stemma::machine::service::service_text(home, program));
     if written.is_none() || written != wanted {
         return Item::because(State::Attention, "It runs a different copy of Stemma.");
     }
@@ -294,13 +295,13 @@ fn service(home: &stemma::home::Home, repaired: &Repaired) -> Item {
 fn command_line(repaired: &Repaired) -> CommandLine {
     let plain = |item| CommandLine {
         item,
-        link: stemma::setup::link_path()
+        link: stemma::machine::setup::link_path()
             .ok()
             .map(|path| path.display().to_string()),
         path_line: None,
     };
 
-    let Some(carried) = stemma::program::carried() else {
+    let Some(carried) = stemma::machine::program::carried() else {
         return plain(Item::because(
             State::Attention,
             "This build of the application does not carry the command line.",
@@ -310,14 +311,14 @@ fn command_line(repaired: &Repaired) -> CommandLine {
         return plain(Item::because(State::Attention, problem.clone()));
     }
 
-    match stemma::setup::link() {
+    match stemma::machine::setup::link() {
         Err(error) => plain(Item::because(State::Attention, failed(error))),
         Ok(Link::Missing) => plain(Item::not_set_up()),
         Ok(Link::Other) => plain(Item::because(
             State::Attention,
             "Another program is where the command line goes.",
         )),
-        Ok(Link::To(target)) if !stemma::setup::links_to(&target, &carried) => plain(
+        Ok(Link::To(target)) if !stemma::machine::setup::links_to(&target, &carried) => plain(
             Item::because(State::Attention, "It leads to another copy of Stemma."),
         ),
         Ok(Link::To(_)) => match Shell::login() {
@@ -343,13 +344,13 @@ pub fn setup_service() -> Result<String, String> {
     let home = home();
 
     // The service runs the link rather than the bundle, which moves.
-    if let Some(carried) = stemma::program::carried()
-        && stemma::setup::link().map_err(failed)? == Link::Missing
+    if let Some(carried) = stemma::machine::program::carried()
+        && stemma::machine::setup::link().map_err(failed)? == Link::Missing
     {
-        stemma::setup::link_to(&carried).map_err(failed)?;
+        stemma::machine::setup::link_to(&carried).map_err(failed)?;
     }
-    let program = stemma::setup::stable_program().map_err(failed)?;
-    stemma::daemon::put_in_place(&home, &program).map_err(failed)?;
+    let program = stemma::machine::setup::stable_program().map_err(failed)?;
+    stemma::machine::service::put_in_place(&home, &program).map_err(failed)?;
     forget_repair(|repaired| repaired.service = None);
 
     Ok("The background service is running and starts with this machine.".to_owned())
@@ -358,10 +359,10 @@ pub fn setup_service() -> Result<String, String> {
 /// Links the command line the application carries into `~/.local/bin`.
 #[tauri::command(async)]
 pub fn setup_link() -> Result<String, String> {
-    let carried = stemma::program::carried().ok_or_else(|| {
+    let carried = stemma::machine::program::carried().ok_or_else(|| {
         "This build of the application does not carry the command line.".to_owned()
     })?;
-    let placed = stemma::setup::link_to(&carried).map_err(failed)?;
+    let placed = stemma::machine::setup::link_to(&carried).map_err(failed)?;
     forget_repair(|repaired| repaired.link = None);
 
     Ok(format!("The stemma command is at {}.", placed.display()))
@@ -388,9 +389,9 @@ pub fn try_agent(agent: String) -> Result<Tried, String> {
     let home = home();
     let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
     let slug = stemma_core::id::Slug::parse(&agent).map_err(said)?;
-    let ran = stemma::agents::try_out(&home, &config, &agent).map_err(failed)?;
+    let ran = stemma::job::agents::try_out(&home, &config, &agent).map_err(failed)?;
 
-    let tried = match stemma::agents::trouble(&slug, &ran) {
+    let tried = match stemma::job::agents::trouble(&slug, &ran) {
         None => Tried {
             availability: Availability::Ready,
             said: "It answered.".to_owned(),
@@ -420,7 +421,7 @@ fn forget_repair(fixed: impl FnOnce(&mut Repaired)) {
 /// server, as `group/side/name`.
 #[tauri::command(async)]
 pub fn removal_send() -> Vec<String> {
-    stemma::uninstall::send(&home())
+    stemma::machine::uninstall::send(&home())
         .into_iter()
         .map(|line| format!("{}/{}/{}", line.group, line.side.as_str(), line.name))
         .collect()
@@ -431,8 +432,8 @@ pub fn removal_send() -> Vec<String> {
 #[tauri::command(async)]
 pub fn removal_leave() -> Result<Vec<String>, String> {
     let home = home();
-    let mut done = stemma::uninstall::take_down(&home).map_err(failed)?;
-    done.extend(stemma::uninstall::leave(&home).map_err(failed)?);
+    let mut done = stemma::machine::uninstall::take_down(&home).map_err(failed)?;
+    done.extend(stemma::machine::uninstall::leave(&home).map_err(failed)?);
 
     Ok(done)
 }
@@ -440,7 +441,7 @@ pub fn removal_leave() -> Result<Vec<String>, String> {
 /// What Stemma keeps on this machine.
 #[tauri::command(async)]
 pub fn removal_data() -> Vec<String> {
-    stemma::uninstall::local_data(&home())
+    stemma::machine::uninstall::local_data(&home())
         .into_iter()
         .map(|path| path.display().to_string())
         .collect()
@@ -449,12 +450,12 @@ pub fn removal_data() -> Vec<String> {
 /// Deletes what Stemma keeps on this machine.
 #[tauri::command(async)]
 pub fn removal_delete_data() -> Result<(), String> {
-    stemma::uninstall::delete_data(&home()).map_err(failed)
+    stemma::machine::uninstall::delete_data(&home()).map_err(failed)
 }
 
 /// The application bundle, when the application runs from one.
 fn bundle() -> Option<PathBuf> {
-    stemma::uninstall::bundle_of(&std::env::current_exe().ok()?)
+    stemma::machine::uninstall::bundle_of(&std::env::current_exe().ok()?)
 }
 
 /// Whether the application can be moved to the Trash.

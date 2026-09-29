@@ -8,8 +8,10 @@ use stemma_core::id::BlockId;
 use stemma_core::proposal::Verdict;
 use stemma_core::reconcile::{self, Keep};
 
+use crate::workspace::LineAt;
 use crate::{Session, carried_out, failed, said};
 
+/// One proposal in a reviewer's list.
 #[derive(Serialize)]
 pub struct Waiting {
     proposal: String,
@@ -25,6 +27,7 @@ pub struct Waiting {
     note: Option<String>,
 }
 
+/// The proposals waiting for this person, and the ones they decided last.
 #[derive(Serialize)]
 pub struct Reviews {
     waiting: Vec<Waiting>,
@@ -42,6 +45,7 @@ pub struct Moved {
     frozen: bool,
 }
 
+/// One proposal, laid out for review.
 #[derive(Serialize)]
 pub struct Review {
     proposal: String,
@@ -75,41 +79,59 @@ pub struct Review {
     findings: Vec<String>,
 }
 
+/// One file of the group's Lean library that a proposal changes.
 #[derive(Serialize)]
 struct LibraryFileReview {
     path: String,
     rows: Vec<Moved>,
 }
 
+impl From<stemma::api::Waiting> for Waiting {
+    fn from(one: stemma::api::Waiting) -> Self {
+        Self {
+            proposal: one.proposal,
+            group: one.group,
+            side: one.side,
+            line: one.line,
+            task: one.task,
+            agent: one.agent,
+            vendor: one.vendor,
+            model: one.model,
+            state: one.state,
+            decision: one.decision,
+            note: one.note,
+        }
+    }
+}
+
+impl Moved {
+    fn of(row: diff::Row, frozen: bool) -> Self {
+        Self {
+            change: row.change,
+            text: row.text,
+            before: row.before,
+            after: row.after,
+            frozen,
+        }
+    }
+}
+
+/// The proposals waiting for this person's decision, and the last ones
+/// they decided.
 #[tauri::command(async)]
 pub fn proposals() -> Result<Reviews, String> {
     let session = Session::open()?;
     let reviews = session.server.reviews(&session.token).map_err(failed)?;
-    let rows = |entries: Vec<stemma::api::Waiting>| {
-        entries
-            .into_iter()
-            .map(|one| Waiting {
-                proposal: one.proposal,
-                group: one.group,
-                side: one.side,
-                line: one.line,
-                task: one.task,
-                agent: one.agent,
-                vendor: one.vendor,
-                model: one.model,
-                state: one.state,
-                decision: one.decision,
-                note: one.note,
-            })
-            .collect()
-    };
     Ok(Reviews {
-        waiting: rows(reviews.proposals),
-        recent: rows(reviews.recent),
+        waiting: reviews.proposals.into_iter().map(Waiting::from).collect(),
+        recent: reviews.recent.into_iter().map(Waiting::from).collect(),
     })
 }
 
 /// One proposal, compared row by row against the source that stands.
+///
+/// `current` is the line as the editor has it, when the proposal is
+/// reviewed in its line; otherwise the instance's latest revision is used.
 #[tauri::command(async)]
 pub fn proposal(proposal: String, current: Option<String>) -> Result<Review, String> {
     let session = Session::open()?;
@@ -119,24 +141,8 @@ pub fn proposal(proposal: String, current: Option<String>) -> Result<Review, Str
         .map_err(failed)?;
 
     let stands = offered.stands.clone().unwrap_or_default();
-    let mut outdated = Vec::new();
     let current = current.or(offered.current.clone());
-    let merged = match current.as_deref() {
-        Some(current) if !stands.is_empty() => {
-            let conflicts = reconcile::between(&stands, current, &offered.source).map_err(said)?;
-            let decisions: BTreeMap<BlockId, Keep> = conflicts
-                .iter()
-                .map(|one| {
-                    outdated.push(one.block.to_string());
-                    (one.block, Keep::Here)
-                })
-                .collect();
-            let source =
-                reconcile::merge(&stands, current, &offered.source, &decisions).map_err(said)?;
-            Some(Document::parse(&source).map_err(said)?)
-        }
-        _ => Document::parse(&offered.source).ok(),
-    };
+    let (merged, outdated) = merged(&stands, current.as_deref(), &offered.source)?;
     let rows = diff::between(&stands, &offered.source);
     let frozen = diff::frozen(&stands);
     let extent = diff::extent(&rows).said();
@@ -154,13 +160,7 @@ pub fn proposal(proposal: String, current: Option<String>) -> Result<Review, Str
                         file.after.as_deref().unwrap_or(""),
                     )
                     .into_iter()
-                    .map(|row| Moved {
-                        change: row.change,
-                        text: row.text,
-                        before: row.before,
-                        after: row.after,
-                        frozen: false,
-                    })
+                    .map(|row| Moved::of(row, false))
                     .collect(),
                 })
                 .collect()
@@ -184,12 +184,9 @@ pub fn proposal(proposal: String, current: Option<String>) -> Result<Review, Str
         extent,
         rows: rows
             .into_iter()
-            .map(|row| Moved {
-                change: row.change,
-                frozen: row.before.is_some_and(|at| frozen.contains(&at)),
-                text: row.text,
-                before: row.before,
-                after: row.after,
+            .map(|row| {
+                let frozen = row.before.is_some_and(|at| frozen.contains(&at));
+                Moved::of(row, frozen)
             })
             .collect(),
         source: offered.source,
@@ -207,6 +204,34 @@ pub fn proposal(proposal: String, current: Option<String>) -> Result<Review, Str
         library_files,
         findings: offered.findings,
     })
+}
+
+/// The line as it would be with the proposal, and the blocks on which the
+/// proposal is outdated.
+///
+/// The proposal was written against `stands`; when the line is at
+/// `current` now, the two are brought together and every block both
+/// changed keeps the current version. Without a standing source to
+/// compare against, the proposal is taken as it is.
+fn merged(
+    stands: &str,
+    current: Option<&str>,
+    offered: &str,
+) -> Result<(Option<Document>, Vec<String>), String> {
+    let Some(current) = current.filter(|_| !stands.is_empty()) else {
+        return Ok((Document::parse(offered).ok(), Vec::new()));
+    };
+
+    let conflicts = reconcile::between(stands, current, offered).map_err(failed)?;
+    let outdated = conflicts.iter().map(|one| one.block.to_string()).collect();
+    let decisions: BTreeMap<BlockId, Keep> = conflicts
+        .iter()
+        .map(|one| (one.block, Keep::Here))
+        .collect();
+    let source = reconcile::merge(stands, current, offered, &decisions).map_err(failed)?;
+    let document = Document::parse(&source).map_err(said)?;
+
+    Ok((Some(document), outdated))
 }
 
 /// Records the reviewer's decision about a proposal.
@@ -227,6 +252,7 @@ pub fn apply_proposal(proposal: String) -> Result<String, String> {
     carried_out(|home, out| stemma::proposals::apply(home, &proposal, out))
 }
 
+/// Hands the review of a proposal to another member of the group.
 #[tauri::command(async)]
 pub fn handoff_proposal(proposal: String, reviewer: String) -> Result<(), String> {
     let session = Session::open()?;
@@ -236,12 +262,93 @@ pub fn handoff_proposal(proposal: String, reviewer: String) -> Result<(), String
         .map_err(failed)
 }
 
+/// Every proposal made for a line, decided or not.
 #[tauri::command(async)]
 pub fn line_history(path: String) -> Result<Vec<stemma::api::LineProposal>, String> {
-    let line = crate::workspace::LineAt::admit(&path)?;
+    let line = LineAt::admit(&path)?;
     let session = Session::open()?;
     session
         .server
         .line_proposals(&session.token, &line.group, &line.side, &line.name)
         .map_err(failed)
+}
+
+#[cfg(test)]
+mod tests {
+    use stemma_core::document::{Block, Document};
+
+    use super::merged;
+
+    fn line(blocks: &[&str]) -> Document {
+        blocks
+            .iter()
+            .fold(Document::new("A line", None), |document, text| {
+                document.with(Block::prose(*text))
+            })
+    }
+
+    fn rewrite(block: &mut Block, text: &str) {
+        let Block::Prose(prose) = block else {
+            panic!("only prose is rewritten here");
+        };
+        prose.content = text.to_owned();
+    }
+
+    fn contents(document: &Document) -> Vec<&str> {
+        document
+            .blocks
+            .iter()
+            .map(|block| block.content())
+            .collect()
+    }
+
+    #[test]
+    fn a_proposal_on_a_line_that_did_not_move_is_taken_whole() {
+        let stands = line(&["One.", "Two."]);
+        let mut offered = stands.clone();
+        rewrite(&mut offered.blocks[1], "Two, rewritten.");
+
+        let (document, outdated) = merged(
+            &stands.to_text(),
+            Some(&stands.to_text()),
+            &offered.to_text(),
+        )
+        .unwrap();
+
+        assert_eq!(contents(&document.unwrap()), ["One.", "Two, rewritten."]);
+        assert!(outdated.is_empty());
+    }
+
+    #[test]
+    fn a_block_changed_since_keeps_the_current_version_and_is_outdated() {
+        let stands = line(&["One.", "Two."]);
+        let mut current = stands.clone();
+        rewrite(&mut current.blocks[1], "Two, written here.");
+        let mut offered = stands.clone();
+        rewrite(&mut offered.blocks[0], "One, rewritten.");
+        rewrite(&mut offered.blocks[1], "Two, by the agent.");
+
+        let (document, outdated) = merged(
+            &stands.to_text(),
+            Some(&current.to_text()),
+            &offered.to_text(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            contents(&document.unwrap()),
+            ["One, rewritten.", "Two, written here."]
+        );
+        assert_eq!(outdated, [current.blocks[1].id().to_string()]);
+    }
+
+    #[test]
+    fn without_a_standing_source_the_proposal_is_read_as_it_is() {
+        let offered = line(&["New."]);
+
+        let (document, outdated) = merged("", Some("anything"), &offered.to_text()).unwrap();
+
+        assert_eq!(contents(&document.unwrap()), ["New."]);
+        assert!(outdated.is_empty());
+    }
 }

@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use crate::account::session;
 use crate::git;
-use crate::program;
-use crate::session;
+use crate::machine::program;
 
 /// Clones one of a group's repositories into a directory, read-only, and
 /// says where it went.

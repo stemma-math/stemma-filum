@@ -161,14 +161,9 @@ fn tell(
     owner: &UserId,
     change: ClaimChange,
 ) -> Result<()> {
-    let audience = match side {
-        Side::Shared => Audience::Group(group),
-        Side::Private => Audience::Person(group, owner),
-    };
-
     events::publish(
         connection,
-        audience,
+        Audience::of(side, group, owner),
         &Event::Claim {
             group: group.slug().as_str().to_owned(),
             side,
@@ -303,20 +298,19 @@ fn list(
     condition: &str,
     parameters: impl rusqlite::Params,
 ) -> Result<Vec<Claim>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {} FROM claims JOIN machines ON machines.id = claims.machine_id
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {} FROM claims JOIN machines ON machines.id = claims.machine_id
           WHERE {condition} AND {}
           ORDER BY claims.taken_at, claims.id",
-        columns(),
-        standing()
-    ))?;
-
-    let found = statement
-        .query_map(parameters, Claim::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the claims")?;
-
-    Ok(found)
+            columns(),
+            standing()
+        ),
+        parameters,
+        Claim::from_row,
+    )
+    .context("cannot list the claims")
 }
 
 #[cfg(test)]

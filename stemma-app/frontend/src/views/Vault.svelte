@@ -3,14 +3,14 @@
   import { app } from "../lib/app.svelte";
   import { latestRequest } from "../lib/lifecycle";
   import { fail, tell } from "../lib/status.svelte";
-  import type { AuditAction, AuditTarget, Vault } from "../lib/types";
+  import type { AuditAction, AuditTarget, BridgeKind, Vault } from "../lib/types";
 
   const loadRequest = latestRequest();
   let vault = $state<Vault | null>(null);
   let problem = $state<string | null>(null);
 
   let admit = $state({ siglum: "", name: "", prose: "", lean: "" });
-  let bridge = $state({ left: "", right: "", kind: "predicate", lean: "" });
+  let bridge = $state<{ left: string; right: string; kind: BridgeKind; lean: string }>({ left: "", right: "", kind: "predicate", lean: "" });
   let auditing = $state<{ target: AuditTarget; id: string; action: AuditAction; note: string } | null>(null);
 
   const names = $derived(new Map(vault?.entries.map((entry) => [entry.id, entry.name]) ?? []));

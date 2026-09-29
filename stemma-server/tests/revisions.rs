@@ -321,6 +321,75 @@ async fn nobody_pushes_a_line_through_git_or_writes_one_they_cannot_see() {
     assert_eq!(elsewhere.status, StatusCode::NOT_FOUND);
 }
 
+#[tokio::test]
+async fn what_a_line_said_before_it_was_shared_stays_its_authors() {
+    let mut writing = writing().await;
+    let started = writing
+        .harness
+        .post_json_with_token(
+            "/api/lines",
+            &writing.token,
+            r#"{"group": "algebra", "title": "Draft", "seen_by": "me"}"#,
+        )
+        .await;
+    assert_eq!(started.status, StatusCode::OK, "{}", started.body);
+    let line = parsed(&started)["id"].as_str().unwrap().to_owned();
+
+    let shared = writing
+        .harness
+        .post_json_with_token(
+            "/api/lines/algebra/draft/share",
+            &writing.token,
+            r#"{"travels": "today", "writing": "author"}"#,
+        )
+        .await;
+    assert_eq!(shared.status, StatusCode::OK, "{}", shared.body);
+
+    writing
+        .harness
+        .instance
+        .write(|connection| {
+            let bo = users::create(
+                connection,
+                &Slug::parse("bo").unwrap(),
+                "bo@example.org",
+                "Bo",
+                "hash",
+            )?
+            .expect("a new account");
+            groups::add_member(
+                connection,
+                &"grp:algebra".parse().unwrap(),
+                &bo.id,
+                stemma_core::access::GroupRole::Member,
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let other = writing.harness.credential("bo").await;
+
+    let now = writing
+        .harness
+        .get_with_token(&format!("/api/lines/{line}"), &other)
+        .await;
+    assert_eq!(now.status, StatusCode::OK, "{}", now.body);
+    assert_eq!(parsed(&now)["side"], "shared");
+
+    let before = writing
+        .harness
+        .get_with_token(&format!("/api/lines/{line}?revision=1"), &other)
+        .await;
+    assert_eq!(before.status, StatusCode::NOT_FOUND, "{}", before.body);
+
+    let own = writing
+        .harness
+        .get_with_token(&format!("/api/lines/{line}?revision=1"), &writing.token)
+        .await;
+    assert_eq!(own.status, StatusCode::OK, "{}", own.body);
+    assert_eq!(parsed(&own)["side"], "private");
+}
+
 /// How many commits a bare repository's branch has.
 fn commits(repository: &std::path::Path) -> usize {
     let output = std::process::Command::new("git")

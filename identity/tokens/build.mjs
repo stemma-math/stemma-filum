@@ -1,10 +1,14 @@
-// Builds the token outputs from `tokens.json`.
+// Builds the token outputs from `tokens.json`, beside it.
 //
-//     node build.mjs          write tokens.css and tokens.typ
-//     node build.mjs --check  fail if either differs from what would be written
+//     node tokens/build.mjs          write tokens.css and tokens.typ
+//     node tokens/build.mjs --check  fail if either differs from what would be written
 
 import { readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import StyleDictionary from "style-dictionary";
+
+// Paths below are relative to this directory, wherever the script is run from.
+process.chdir(fileURLToPath(new URL(".", import.meta.url)));
 
 const HEADER = "Generated from tokens.json by build.mjs. Do not edit.";
 
@@ -120,7 +124,7 @@ if (process.argv.includes("--check")) {
         if (current !== output) stale.push(destination);
     }
     if (stale.length) {
-        console.error(`Out of date: ${stale.join(", ")}. Run \`npm run build\` in identity/.`);
+        console.error(`Out of date: ${stale.join(", ")}. Run \`npm run build\`.`);
         process.exit(1);
     }
 } else {

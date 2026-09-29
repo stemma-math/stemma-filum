@@ -62,8 +62,8 @@ anyone who can read it.
 
 ## Agent jobs
 
-Each requested agent job runs in its own directory below the operating
-system's temporary directory. The directory contains the group's repository,
+Each requested agent job runs in its own directory below `jobs/` in the
+client's state directory, which only the machine's owner can enter. The directory contains the group's repository,
 the target `line.json` at the requested revision, versioned `AGENTS.md` and
 `TASK.md` instructions, and `scratch/`. It is deliberately left in place for
 the machine owner to inspect and is reported with the job.
@@ -160,87 +160,60 @@ STEMMA_HOME="$PWD/.test-state/client" just app-dev
 
 ## Visual identity
 
-`identity/` is the single source of Stemma's look. It is both a Rust crate
-(`stemma-identity`), which the server embeds, and an npm package
-(`@stemma-math/identity`), which the desktop frontend imports:
-
-- `tokens.json` holds every colour, face, text role, type step, spacing,
-  radius, layout width, shadow, duration and control density in the Design
-  Tokens Community Group format. Style
-  Dictionary generates `tokens.css` (custom properties) and `tokens.typ`
-  (colours and faces for Typst) from it: run `npm run build` in `identity/`
-  after editing it; `just check` fails while they are out of date. Neither
-  stylesheet defines tokens of its own. Its `dark` group redefines the
-  semantic colours for the dark appearance, which follows the system unless
-  the root says `data-theme="light"` or `data-theme="dark"`: the web sets it
-  from a cookie its appearance switch writes, and the desktop window from
-  the Appearance settings.
-- `components.css` holds the shared components as classes over native HTML,
-  in cascade layers so each surface's own rules win: `.button` (with
-  `--primary`, `--quiet`, `--danger`, `--link` and `--icon`), `.field`,
-  `.input`, `.choice`, `.fieldset`, `.chip`, `.count`, `.avatar`, `.badge`,
-  `.card`, `.table`, `.menu`, `.dialog`, `.problem`, `.notice`, `.toast`,
-  `.tooltip`, `.segmented`, `.skeleton`, `.spinner`, `.label` and the
-  wordmark. Controls are
-  comfortable by default and compact inside `[data-density="compact"]`, as the
-  desktop window is.
-- `fonts.css` and `fonts/` carry Instrument Sans (the interface), Inter (the
-  wordmark), JetBrains Mono (identifiers) and Libertinus Serif (mathematics),
-  subset to Latin, each beside its SIL Open Font License. The server
-  serves them from its own origin, so no page sends a reader to a font host.
-- `mark-on-dark.svg` and `mark-on-light.svg` are the mark for navy and for
-  light surfaces, `mark-animated.js` draws it live on the front page (with
-  `symbol.webp` as its still), and `glyphs.svg` holds the line glyphs as a
-  sprite; `web/` holds the favicons and the home-screen icons,
-  `icons/` the application icons, and `noise.svg` the surface texture.
-- `descent.js` draws a line's descent graph from the placement
-  `stemma_core::descent` computes. Neither surface shows the graph at present.
+`identity/` is the single source of Stemma's look: design tokens, shared
+components, faces, the mark, icons and the descent drawing. It is both a Rust
+crate (`stemma-identity`), which the server and the application embed, and an
+npm package (`@stemma-math/identity`), which the desktop frontend imports. Its
+own [README](identity/README.md) describes the layout and how to regenerate
+the tokens after editing `identity/tokens/tokens.json`; `just check` fails
+while the generated files are out of date.
 
 ## Verification
 
-The normal pre-commit suite is:
+`just` with no arguments lists every recipe by group. The suite a pull
+request must pass is:
 
 ```sh
 just check
 ```
 
-It checks formatting, tests, type-checks and builds the frontend, builds the
-Rust documentation, runs Clippy with warnings denied, and runs the complete Rust
-workspace test suite. The
-client HTTP tests and repository transport integration tests bind loopback TCP
-ports. Run the suite with local network permission if a sandbox blocks binding.
-The repository transport tests can also be run separately:
-
-```sh
-just test-repositories
-```
+It checks the Rust formatting and the identity's generated tokens, tests,
+type-checks and builds the frontend, builds the Rust documentation and the
+Lean package, runs Clippy with warnings denied, and runs the complete Rust
+workspace test suite. The client HTTP tests and the repository transport
+integration tests bind loopback TCP ports; run the suite with local network
+permission if a sandbox blocks binding.
 
 Useful narrower commands are:
 
 ```sh
-just test          # all Rust tests
-just test-app      # desktop Rust shell and frontend
-just test-server   # server library and HTTP integration tests
+just test                 # all Rust tests
+just test stemma-server   # the tests of one crate
+just test-app             # the desktop frontend and Rust shell
+just test-repositories    # the Git repository transport
+just format               # format the Rust code in place
 ```
 
 ## Local server
 
-Use an isolated directory so testing never touches an installed instance:
+The `server` and `client` recipes work on an isolated instance under
+`.test-state/`, so testing never touches an installed one. Configure it
+once:
 
 ```sh
-export STEMMA_TEST_ROOT="$PWD/.test-state/server"
-mkdir -p "$STEMMA_TEST_ROOT"
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" setup \
-  --data-dir "$STEMMA_TEST_ROOT/data"
+just server-setup
 ```
 
-After completing the generated configuration:
+After completing the generated configuration
+(`.test-state/server/server.toml`):
 
 ```sh
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" migrate
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" check
-cargo run -p stemma-server -- --config "$STEMMA_TEST_ROOT/server.toml" serve
+just server migrate
+just server check
+just server              # serves it in the foreground
 ```
 
-Run the CLI and app with a separate `STEMMA_HOME`, sign in to that address, and
-keep the server in the foreground so failures remain visible.
+`just client …` runs `stemma` with the test account's `STEMMA_HOME`
+(`.test-state/client`); run the application with the same home, as above,
+sign in to the test server's address, and keep the server in the foreground
+so failures remain visible.

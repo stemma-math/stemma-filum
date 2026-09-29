@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
+use crate::account::credentials::Credentials;
 use crate::api::Server;
-use crate::credentials::Credentials;
 use crate::home::Home;
 use crate::mirror::{Mirror, Standing};
 
@@ -36,16 +36,16 @@ pub fn send(home: &Home) -> Vec<Standing> {
 pub fn take_down(home: &Home) -> Result<Vec<String>> {
     let mut done = Vec::new();
 
-    if crate::daemon::remove(home)? {
+    if crate::machine::service::remove(home)? {
         done.push("The background service is stopped and removed.".to_owned());
     }
-    if crate::setup::unlink()? {
+    if crate::machine::setup::unlink()? {
         done.push(format!(
             "{} is removed.",
-            crate::setup::link_path()?.display()
+            crate::machine::setup::link_path()?.display()
         ));
     }
-    for profile in crate::setup::remove_lines()? {
+    for profile in crate::machine::setup::remove_lines()? {
         done.push(format!(
             "The Stemma line is removed from {}.",
             profile.display()
@@ -99,19 +99,20 @@ pub fn leave(home: &Home) -> Result<Vec<String>> {
 }
 
 /// Everything Stemma keeps on this machine that is there now: the lines'
-/// repositories, state, caches, configuration and job workspaces.
+/// repositories, state (job workspaces included), caches and
+/// configuration.
 pub fn local_data(home: &Home) -> Vec<PathBuf> {
     let mut found = Vec::new();
 
     // The repositories are where the configuration says, so they are
-    // found before the configuration goes.
+    // found before the configuration goes. Only the repositories
+    // themselves: a group may live in a folder somebody chose, with other
+    // things beside them.
     if let Ok(mirror) = Mirror::at(home)
         && let Ok(repositories) = mirror.repositories()
     {
         for (group, side) in repositories {
-            if let Some(directory) = mirror.repository(&group, side).parent() {
-                found.push(directory.to_owned());
-            }
+            found.push(mirror.repository(&group, side));
         }
     }
 
@@ -119,7 +120,6 @@ pub fn local_data(home: &Home) -> Vec<PathBuf> {
         home.state_dir().to_owned(),
         home.cache_dir().to_owned(),
         home.config_dir().to_owned(),
-        std::env::temp_dir().join("stemma-jobs"),
     ]);
 
     found.sort();
@@ -128,20 +128,24 @@ pub fn local_data(home: &Home) -> Vec<PathBuf> {
     found
 }
 
-/// Deletes everything [`local_data`] names, and the workspace when that
-/// leaves it empty.
+/// Deletes everything [`local_data`] names, then each group's folder and
+/// the workspace when that leaves them empty.
 pub fn delete_data(home: &Home) -> Result<()> {
     let workspace = crate::config::Config::read(&home.config_file())
         .map(|config| config.workspace_or(home.workspace()))
         .unwrap_or_else(|_| home.workspace().to_owned());
 
-    for path in local_data(home) {
-        std::fs::remove_dir_all(&path)
+    let data = local_data(home);
+    for path in &data {
+        std::fs::remove_dir_all(path)
             .with_context(|| format!("cannot delete {}", path.display()))?;
     }
 
-    // Only when empty: the workspace may be a folder somebody chose, with
-    // other things in it.
+    // Only when empty: either may be a folder somebody chose, with other
+    // things in it.
+    for group in data.iter().filter_map(|path| path.parent()) {
+        let _ = std::fs::remove_dir(group);
+    }
     let _ = std::fs::remove_dir(&workspace);
 
     Ok(())
@@ -212,7 +216,10 @@ fn settle_data(
 
     if deletes(&data, told, asking, out)? {
         delete_data(home)?;
-        writeln!(out, "Everything Stemma kept here is deleted.")?;
+        writeln!(out, "Deleted:")?;
+        for path in &data {
+            writeln!(out, "  {}", path.display())?;
+        }
     } else {
         writeln!(out, "What Stemma kept here stays:")?;
         for path in &data {
@@ -325,6 +332,44 @@ mod tests {
         let listed = local_data(&home);
         assert!(listed.contains(&home.state_dir().to_owned()));
         assert!(!listed.contains(&home.cache_dir().to_owned()));
+    }
+
+    #[test]
+    fn deleting_leaves_what_else_is_in_a_folder_a_group_was_given() {
+        let home = home("chosen");
+        let chosen = home.state_dir().parent().unwrap().join("papers");
+        let mut config = crate::config::Config::default();
+        config.put_group("algebra", &chosen, home.workspace());
+        std::fs::create_dir_all(home.config_dir()).unwrap();
+        config.write(&home.config_file()).unwrap();
+
+        crate::mirror::Store::at(home.state_dir())
+            .put(&crate::mirror::Record {
+                id: "lin:01K5YQ4TQ2VZ8H3M9N0P1R2S3T".to_owned(),
+                group: "algebra".to_owned(),
+                side: stemma_core::repository::Side::Shared,
+                name: "rings".to_owned(),
+                author: "usr:ana".to_owned(),
+                writing: "author".to_owned(),
+                base: 1,
+                base_source: String::new(),
+                base_lean: None,
+                source: String::new(),
+                lean_source: None,
+                saved_at: None,
+                there: None,
+                trouble: None,
+                unbuilt: None,
+            })
+            .unwrap();
+        std::fs::create_dir_all(chosen.join("shared/lines")).unwrap();
+        std::fs::write(chosen.join("notes.txt"), "mine").unwrap();
+
+        delete_data(&home).unwrap();
+
+        assert!(!chosen.join("shared").exists());
+        assert!(!home.state_dir().exists());
+        assert!(chosen.join("notes.txt").exists());
     }
 
     #[test]

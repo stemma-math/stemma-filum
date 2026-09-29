@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import JobList from "../components/JobList.svelte";
-  import { jobs } from "./jobs.svelte";
+  import { jobs } from "../lib/jobs.svelte";
 
   onMount(() => void jobs.refresh());
 </script>

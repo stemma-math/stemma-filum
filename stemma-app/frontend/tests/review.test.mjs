@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reviewedBlocks, touchedBlocks } from "../src/lib/review.ts";
+import { outcome, reviewedBlocks, touchedBlocks } from "../src/lib/review.ts";
 
 const block = (id, content) => ({ kind: "prose", id, content });
 const document = (...blocks) => ({ format: 1, title: "Line", blocks });
@@ -25,4 +25,10 @@ test("new blocks mark the standing block after which they arrive", () => {
 test("an addition at the beginning marks the next standing block", () => {
   const base = document(block("a", "same"));
   assert.deepEqual(touchedBlocks(base, document(block("x", "new"), block("a", "same")), base), ["a"]);
+});
+
+test("a review's outcome is its decision, unless the line left it outdated", () => {
+  assert.equal(outcome({ state: "awaiting_review", decision: null }), "awaiting_review");
+  assert.equal(outcome({ state: "decided", decision: "accept" }), "accept");
+  assert.equal(outcome({ state: "outdated", decision: "accept" }), "outdated");
 });

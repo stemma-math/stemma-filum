@@ -188,6 +188,15 @@ pub async fn approve(
                 return Ok(None);
             }
 
+            // Two people can ask for the same name before either is
+            // answered, and only one of them can have it.
+            if !groups::is_free(connection, &request.slug)? {
+                anyhow::bail!(WebError::BadRequest(format!(
+                    "`{}` is already a group here.",
+                    request.slug
+                )));
+            }
+
             let group = groups::approve(connection, &request, &maintainer, note.as_deref())?;
             let owner = users::by_id(connection, &request.requested_by)?;
 
@@ -199,7 +208,7 @@ pub async fn approve(
     // two arrive together.
     if let Some((group, owner)) = made {
         instance
-            .with_repositories(move |repositories| {
+            .writing_git(move |repositories| {
                 crate::repositories::for_both(repositories, &group, &owner)
             })
             .await?;

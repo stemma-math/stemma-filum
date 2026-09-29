@@ -342,10 +342,7 @@ pub fn write(
     for block in withdrawn {
         super::events::publish(
             &transaction,
-            match found.side {
-                Side::Shared => super::events::Audience::Group(&found.group),
-                Side::Private => super::events::Audience::Person(&found.group, writer),
-            },
+            found.audience(),
             &stemma_core::event::Event::FormalAudit {
                 group: found.group.slug().as_str().to_owned(),
                 line: found.name.as_str().to_owned(),
@@ -503,6 +500,11 @@ pub fn uncommitted(connection: &Connection) -> Result<Vec<Uncommitted>> {
 
 /// Notes that git was told of a stretch of writing, with the commit it
 /// made, or with nothing when there was nothing new to commit.
+///
+/// The first note stands. Two rounds of committing can both find the
+/// same stretch waiting, and the second finds git already holding what it
+/// came to and has nothing to add; it must not erase the commit the first
+/// one recorded.
 pub fn committed(
     connection: &Connection,
     session: &str,
@@ -512,7 +514,7 @@ pub fn committed(
 ) -> Result<()> {
     connection
         .execute(
-            "UPDATE writing_sessions SET commit_id = ?2 WHERE id = ?1",
+            "UPDATE writing_sessions SET commit_id = ?2 WHERE id = ?1 AND commit_id IS NULL",
             params![session, commit.unwrap_or("")],
         )
         .context("cannot record the commit")?;
@@ -880,6 +882,38 @@ mod tests {
                 .number,
             4
         );
+    }
+
+    #[test]
+    fn a_second_round_of_committing_keeps_the_commit_the_first_recorded() {
+        let mut world = world();
+        let laptop = world.laptop;
+        take(&world, &laptop);
+        written(&mut world, &laptop, 1, "Two").unwrap();
+        end_writing(world.database.connection(), &world.line).unwrap();
+        let ready = uncommitted(world.database.connection()).unwrap();
+
+        for commit in [Some("abc"), None] {
+            committed(
+                world.database.connection(),
+                &ready[0].session,
+                &world.line,
+                2,
+                commit,
+            )
+            .unwrap();
+        }
+
+        let kept: String = world
+            .database
+            .connection()
+            .query_one(
+                "SELECT commit_id FROM writing_sessions WHERE id = ?1",
+                [&ready[0].session],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(kept, "abc");
     }
 
     #[test]

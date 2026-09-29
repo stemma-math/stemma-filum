@@ -15,7 +15,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::line::{BlackBox, Line, NodeKind, Siglum};
+use crate::id::BlockId;
+use crate::line::{BlackBox, Line, Node, NodeKind, Siglum};
 
 /// One thing the descent shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,56 +133,19 @@ impl Descent {
 /// Both are facts from outside the source, and neither changes where
 /// anything sits: they change what is drawn there.
 pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Descent {
-    let mut descent = Descent::default();
-    let mut level_of: BTreeMap<Siglum, usize> = BTreeMap::new();
-    let mut level_of_block = BTreeMap::new();
-    let mut place_of: BTreeMap<Siglum, usize> = BTreeMap::new();
-    let mut after_box: Option<(usize, usize)> = None;
-    let mut counted: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut placing = Placing::default();
     let boxes = line.boxes();
     let mut remaining = boxes.iter();
     let mut pending = remaining.next();
-
-    let put =
-        |descent: &mut Descent, counted: &mut BTreeMap<usize, usize>, what: Shown, level: usize| {
-            let across = counted.entry(level).or_default();
-            descent.placed.push(Placed {
-                what,
-                level,
-                across: *across,
-            });
-            *across += 1;
-            descent.levels = descent.levels.max(level + 1);
-
-            descent.placed.len() - 1
-        };
+    // Where the last central statement was put: the next box hangs below it.
+    let mut last_central: Option<usize> = None;
 
     for node in &line.nodes {
-        let below = |level_of: &BTreeMap<Siglum, usize>| {
-            node.uses
-                .iter()
-                .filter_map(|used| level_of.get(used))
-                .map(|level| level + 1)
-                .max()
-                .unwrap_or(0)
-        };
-
         if node.siglum.kind == NodeKind::Definition {
-            let level = below(&level_of);
-            let at = put(
-                &mut descent,
-                &mut counted,
-                Shown::Definition {
-                    siglum: node.siglum.clone(),
-                },
-                level,
-            );
-
-            level_of.insert(node.siglum.clone(), level);
-            level_of_block.insert(node.block, level);
-            place_of.insert(node.siglum.clone(), at);
-            draw(&mut descent, node, &place_of);
-
+            let shown = Shown::Definition {
+                siglum: node.siglum.clone(),
+            };
+            placing.put_node(node, shown, placing.below(node));
             continue;
         }
 
@@ -192,60 +156,24 @@ pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Des
         }
 
         // The box before this statement, which the descent runs through.
-        let mut through = None;
+        let through = pending
+            .take()
+            .map(|black_box| placing.put_box(black_box, last_central));
 
-        if let Some(black_box) = pending.take() {
-            let level = black_box
-                .after
-                .as_ref()
-                .and_then(|after| level_of_block.get(after))
-                .map(|level| level + 1)
-                .unwrap_or(0);
-            let at = put(
-                &mut descent,
-                &mut counted,
-                Shown::Box {
-                    black_box: black_box.clone(),
-                },
-                level,
-            );
-
-            if let Some(from) = after_box {
-                descent.edges.push(Edge {
-                    from: from.0,
-                    to: at,
-                    means: Descends::Through,
-                });
-            }
-
-            through = Some((at, level));
-        }
-
-        let level = below(&level_of).max(through.map(|(_, level)| level + 1).unwrap_or(0));
-        let at = put(
-            &mut descent,
-            &mut counted,
-            Shown::Central {
-                siglum: node.siglum.clone(),
-                verified: verified.contains(&node.siglum),
-            },
-            level,
-        );
-
-        level_of.insert(node.siglum.clone(), level);
-        level_of_block.insert(node.block, level);
-        place_of.insert(node.siglum.clone(), at);
-        draw(&mut descent, node, &place_of);
+        let level = placing
+            .below(node)
+            .max(through.map_or(0, |(_, level)| level + 1));
+        let shown = Shown::Central {
+            siglum: node.siglum.clone(),
+            verified: verified.contains(&node.siglum),
+        };
+        let at = placing.put_node(node, shown, level);
 
         if let Some((box_at, _)) = through {
-            descent.edges.push(Edge {
-                from: box_at,
-                to: at,
-                means: Descends::Through,
-            });
+            placing.join(box_at, at, Descends::Through);
         }
 
-        after_box = Some((at, level));
+        last_central = Some(at);
         pending = remaining.next();
     }
 
@@ -253,29 +181,14 @@ pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Des
     // statement is a box with one boundary, which is the ordinary state
     // of work in progress.
     for black_box in pending.into_iter().chain(remaining) {
-        let level = black_box
-            .after
-            .as_ref()
-            .and_then(|after| level_of_block.get(after))
-            .map(|level| level + 1)
-            .unwrap_or(0);
-        let at = put(
-            &mut descent,
-            &mut counted,
-            Shown::Box {
-                black_box: black_box.clone(),
-            },
-            level,
-        );
-
-        if let Some(from) = after_box {
-            descent.edges.push(Edge {
-                from: from.0,
-                to: at,
-                means: Descends::Through,
-            });
-        }
+        placing.put_box(black_box, last_central);
     }
+
+    let Placing {
+        mut descent,
+        counted,
+        ..
+    } = placing;
 
     for (left, right) in bridges {
         if let (Some(left), Some(right)) = (descent.at(left), descent.at(right)) {
@@ -288,18 +201,89 @@ pub fn of(line: &Line, verified: &[Siglum], bridges: &[(Siglum, Siglum)]) -> Des
     descent
 }
 
-/// Draws the lines from what a node leans on down to the node itself.
-fn draw(descent: &mut Descent, node: &crate::line::Node, place_of: &BTreeMap<Siglum, usize>) {
-    let to = descent.placed.len() - 1;
+/// A descent while it is being placed, with what placing it needs to
+/// remember.
+#[derive(Default)]
+struct Placing {
+    /// What has been placed so far.
+    descent: Descent,
+    /// How many things each level holds so far.
+    counted: BTreeMap<usize, usize>,
+    /// The level of every node placed, by siglum.
+    level_of: BTreeMap<Siglum, usize>,
+    /// The level of every node placed, by the block that declares it.
+    level_of_block: BTreeMap<BlockId, usize>,
+    /// Where every node was placed.
+    place_of: BTreeMap<Siglum, usize>,
+}
 
-    for used in &node.uses {
-        if let Some(from) = place_of.get(used) {
-            descent.edges.push(Edge {
-                from: *from,
-                to,
-                means: Descends::Uses,
-            });
+impl Placing {
+    /// Puts one thing at the next free place on a level, answering where.
+    fn put(&mut self, what: Shown, level: usize) -> usize {
+        let across = self.counted.entry(level).or_default();
+        self.descent.placed.push(Placed {
+            what,
+            level,
+            across: *across,
+        });
+        *across += 1;
+        self.descent.levels = self.descent.levels.max(level + 1);
+
+        self.descent.placed.len() - 1
+    }
+
+    /// Draws one line between two things already placed.
+    fn join(&mut self, from: usize, to: usize, means: Descends) {
+        self.descent.edges.push(Edge { from, to, means });
+    }
+
+    /// The first level below everything a node leans on.
+    fn below(&self, node: &Node) -> usize {
+        node.uses
+            .iter()
+            .filter_map(|used| self.level_of.get(used))
+            .map(|level| level + 1)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Puts a node on a level and draws the lines down to it from what
+    /// it leans on, answering where it was put.
+    fn put_node(&mut self, node: &Node, shown: Shown, level: usize) -> usize {
+        let at = self.put(shown, level);
+
+        self.level_of.insert(node.siglum.clone(), level);
+        self.level_of_block.insert(node.block, level);
+        self.place_of.insert(node.siglum.clone(), at);
+
+        for used in &node.uses {
+            if let Some(&from) = self.place_of.get(used) {
+                self.join(from, at, Descends::Uses);
+            }
         }
+
+        at
+    }
+
+    /// Puts a box just below the central statement it comes after, and
+    /// runs the descent into it from `from`, answering where it was put
+    /// and on which level.
+    fn put_box(&mut self, black_box: &BlackBox, from: Option<usize>) -> (usize, usize) {
+        let level = black_box
+            .after
+            .as_ref()
+            .and_then(|after| self.level_of_block.get(after))
+            .map_or(0, |level| level + 1);
+        let shown = Shown::Box {
+            black_box: black_box.clone(),
+        };
+        let at = self.put(shown, level);
+
+        if let Some(from) = from {
+            self.join(from, at, Descends::Through);
+        }
+
+        (at, level)
     }
 }
 
@@ -337,6 +321,66 @@ mod tests {
 
     fn descent() -> Descent {
         of(&Line::of(&source()).unwrap(), &[], &[])
+    }
+
+    #[test]
+    fn each_box_hangs_below_one_statement_and_leads_into_the_next() {
+        let descent = descent();
+        let first = descent.at(&siglum("thm:first")).unwrap();
+        let second = descent.at(&siglum("thm:second")).unwrap();
+        let boxes: Vec<usize> = (0..descent.placed.len())
+            .filter(|at| matches!(descent.placed[*at].what, Shown::Box { .. }))
+            .collect();
+        let through: Vec<(usize, usize)> = descent
+            .edges
+            .iter()
+            .filter(|edge| edge.means == Descends::Through)
+            .map(|edge| (edge.from, edge.to))
+            .collect();
+
+        assert_eq!(
+            through,
+            [
+                (boxes[0], first),
+                (first, boxes[1]),
+                (boxes[1], second),
+                (second, boxes[2]),
+            ]
+        );
+        assert_eq!(
+            descent.placed[boxes[1]].level,
+            descent.placed[first].level + 1
+        );
+        assert_eq!(
+            descent.placed[boxes[2]].level,
+            descent.placed[second].level + 1
+        );
+    }
+
+    #[test]
+    fn what_a_statement_uses_is_drawn_down_to_it() {
+        let descent = descent();
+        let group = descent.at(&siglum("def:group")).unwrap();
+        let first = descent.at(&siglum("thm:first")).unwrap();
+        let second = descent.at(&siglum("thm:second")).unwrap();
+
+        assert!(descent.edges.contains(&Edge {
+            from: group,
+            to: first,
+            means: Descends::Uses,
+        }));
+        assert!(
+            descent.edges.contains(&Edge {
+                from: first,
+                to: second,
+                means: Descends::Uses,
+            }),
+            "a citation in the text is a use too"
+        );
+        assert_eq!(
+            descent.width, 2,
+            "the definition shares its level with a box"
+        );
     }
 
     #[test]

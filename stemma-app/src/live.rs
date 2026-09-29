@@ -6,7 +6,7 @@
 //! else to look at again.
 
 use serde::Serialize;
-use stemma::events::Heard;
+use stemma::api::events::Heard;
 use stemma_core::event::Event;
 use tauri::{AppHandle, Emitter, Runtime};
 
@@ -53,7 +53,7 @@ pub fn start<R: Runtime>(app: &AppHandle<R>) {
         .spawn(move || {
             let stop = std::sync::atomic::AtomicBool::new(false);
 
-            stemma::events::follow(&home(), &stop, |heard| {
+            stemma::api::events::follow(&home(), &stop, |heard| {
                 match &heard {
                     Heard::Connected => engine::nudge(Nudge::Connected),
                     Heard::Changed(event) => engine::nudge(Nudge::Heard(event.clone())),

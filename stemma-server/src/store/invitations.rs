@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use stemma_core::access::GroupRole;
 use stemma_core::id::{GroupId, InvitationId, UserId};
 
-use super::{Role, id_at};
+use super::{Role, id_at, optional_id_at};
 use crate::tokens::Key;
 
 /// An invitation, as the server keeps it.
@@ -53,9 +53,7 @@ impl Invitation {
             created_at: row.get("created_at")?,
             expires_at: row.get("expires_at")?,
             accepted_at: row.get("accepted_at")?,
-            accepted_by: row
-                .get::<_, Option<String>>("accepted_by")?
-                .and_then(|raw| raw.parse().ok()),
+            accepted_by: optional_id_at(row, "accepted_by")?,
             revoked_at: row.get("revoked_at")?,
         })
     }
@@ -154,20 +152,19 @@ pub fn by_secret(connection: &Connection, key: &Key, secret: &str) -> Result<Opt
 
 /// Every invitation into a group that could still be used, newest first.
 pub fn live_for_group(connection: &Connection, group: &GroupId) -> Result<Vec<Invitation>> {
-    let mut statement = connection.prepare(&format!(
-        "SELECT {COLUMNS} FROM invitations
+    super::rows(
+        connection,
+        &format!(
+            "SELECT {COLUMNS} FROM invitations
           WHERE group_id = ?1
             AND accepted_at IS NULL AND revoked_at IS NULL
             AND expires_at > datetime('now')
           ORDER BY created_at DESC"
-    ))?;
-
-    let invitations = statement
-        .query_map([group.to_string()], Invitation::from_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("cannot list the invitations")?;
-
-    Ok(invitations)
+        ),
+        [group.to_string()],
+        Invitation::from_row,
+    )
+    .context("cannot list the invitations")
 }
 
 /// Uses an invitation up.

@@ -320,7 +320,9 @@ fn seed(path: &Path, manifest: &Manifest) -> Result<()> {
         ],
     )?;
 
-    run(path, &["update-ref", "refs/heads/main", &commit])?;
+    // The empty old value says the branch must not exist yet, so a
+    // repository somebody else seeded meanwhile is never overwritten.
+    run(path, &["update-ref", "refs/heads/main", &commit, ""])?;
 
     Ok(())
 }
@@ -812,6 +814,12 @@ pub fn write_library(
     message: &str,
 ) -> Result<LibraryWritten> {
     let head = head_commit(path).context("the repository has no branch yet")?;
+    // The base arrives from a machine. Only an object name is ever handed
+    // to git, never something it could read as an option.
+    anyhow::ensure!(
+        is_object_name(base),
+        "the library change names no commit in this repository"
+    );
     run(
         path,
         &["rev-parse", "--verify", &format!("{base}^{{commit}}")],
@@ -1043,6 +1051,12 @@ pub fn write_pins(
     Ok(commit)
 }
 
+/// Whether `name` is spelled like a full object name, in SHA-1 or SHA-256.
+fn is_object_name(name: &str) -> bool {
+    matches!(name.len(), 40 | 64) && name.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// A file as it stood at a commit, or nothing when it was not there.
 fn content_at(path: &Path, commit: &str, file: &str) -> Result<Option<String>> {
     match whole(path, &["show", &format!("{commit}:{file}")]) {
         Ok(content) => Ok(Some(content)),
@@ -1192,14 +1206,22 @@ fn index_git(path: &Path, index: &Path, arguments: &[&str]) -> Result<String> {
 }
 
 /// Something short and unrepeated, for a file only this call uses.
+///
+/// The counter keeps two calls in the same process apart even when the
+/// clock has not moved between them.
 fn uuid() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static CALLS: AtomicU64 = AtomicU64::new(0);
+
     format!(
-        "{}-{:?}",
+        "{}-{:?}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|since| since.as_nanos())
-            .unwrap_or_default()
+            .unwrap_or_default(),
+        CALLS.fetch_add(1, Ordering::Relaxed)
     )
 }
 
@@ -1341,6 +1363,28 @@ mod tests {
             repositories.releases(&group()),
             Path::new("/var/lib/stemma/git/algebra/releases.git")
         );
+    }
+
+    #[test]
+    fn only_an_object_name_is_taken_as_a_base() {
+        assert!(is_object_name(&"a".repeat(40)));
+        assert!(is_object_name(&"0".repeat(64)));
+
+        for refused in [
+            "--output=/tmp/x",
+            "HEAD",
+            "main",
+            &"a".repeat(39),
+            &"g".repeat(40),
+            "",
+        ] {
+            assert!(!is_object_name(refused), "took `{refused}`");
+        }
+    }
+
+    #[test]
+    fn two_scratch_names_made_at_once_differ() {
+        assert_ne!(uuid(), uuid());
     }
 
     #[test]

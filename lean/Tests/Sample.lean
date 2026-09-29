@@ -12,6 +12,8 @@ theorem helper : predicate 0 := base
 @[stemma "sample/thm:main"]
 theorem main : predicate 0 := helper
 
+-- Deliberately unfinished: the extractor must report the `sorry`.
+set_option warn.sorry false in
 @[stemma "sample/thm:unfinished"]
 theorem unfinished : True := by sorry
 

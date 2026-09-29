@@ -12,10 +12,10 @@ use stemma_core::proposal::Verdict;
 use anyhow::{Context, Result};
 use stemma_core::id::ProposalId;
 
+use crate::account::session;
 use crate::api::AcceptedProposal;
 use crate::home::Home;
 use crate::mirror::{Applied, Instance, Mirror};
-use crate::session;
 
 /// Says what is waiting for this person.
 pub fn list(home: &Home, out: &mut impl Write) -> Result<()> {

@@ -9,10 +9,10 @@ use std::path::Path;
 
 use anyhow::Result;
 
+use crate::account::session;
 use crate::api::{Sharing, Starting};
 use crate::home::Home;
 use crate::mirror::{Instance, Mirror, Which};
-use crate::session;
 
 /// Starts a line, and says where it landed.
 pub fn start(
@@ -53,7 +53,7 @@ pub fn start(
 /// Takes a line of one's own out of the repository.
 pub fn delete(home: &Home, at: &Path, line: Option<&str>, out: &mut impl Write) -> Result<()> {
     let (credentials, server) = session::connect(home)?;
-    let (group, _, name) = crate::mirror::line_at(at, line)?;
+    let (group, _, name) = crate::repository::line_at(at, line)?;
 
     server.delete_line(&credentials.token, &group, name.as_str())?;
 
@@ -73,7 +73,7 @@ pub fn share(
     out: &mut impl Write,
 ) -> Result<()> {
     let (credentials, server) = session::connect(home)?;
-    let (group, _, name) = crate::mirror::line_at(at, line)?;
+    let (group, _, name) = crate::repository::line_at(at, line)?;
 
     let placed = server.share_line(
         &credentials.token,

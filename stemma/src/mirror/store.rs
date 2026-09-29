@@ -118,9 +118,8 @@ impl Store {
     }
 
     fn file(&self, id: &str) -> PathBuf {
-        // An identifier is `lin:` and letters; the colon is no business
-        // of a file system's.
-        self.lines().join(format!("{}.json", id.replace(':', "-")))
+        self.lines()
+            .join(format!("{}.json", crate::storage::file_name(id)))
     }
 
     /// Waits for, and takes, the lock on the records.
@@ -205,9 +204,10 @@ impl Store {
     pub fn get(&self, id: &str) -> Result<Option<Record>> {
         let path = self.file(id);
 
-        match path.exists() {
-            true => read(&path).map(Some),
-            false => Ok(None),
+        match std::fs::read_to_string(&path) {
+            Ok(text) => parse(&path, &text).map(Some),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error).with_context(|| format!("cannot read {}", path.display())),
         }
     }
 
@@ -239,7 +239,11 @@ fn read(path: &Path) -> Result<Record> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("cannot read {}", path.display()))?;
 
-    serde_json::from_str(&text).with_context(|| format!("{} is not a record", path.display()))
+    parse(path, &text)
+}
+
+fn parse(path: &Path, text: &str) -> Result<Record> {
+    serde_json::from_str(text).with_context(|| format!("{} is not a record", path.display()))
 }
 
 /// Now, in milliseconds since the epoch.

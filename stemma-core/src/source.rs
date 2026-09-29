@@ -5,6 +5,8 @@
 //! imports without compiling anything, because it has to run on a
 //! server that compiles nothing.
 
+use crate::markup::Scanner;
+
 /// Every file this source pulls in, as it was written.
 ///
 /// Nothing is resolved here: a path is what the author typed. What it
@@ -13,145 +15,46 @@
 pub fn imports(source: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut scanner = Scanner::new(source);
-    while scanner.at < scanner.bytes.len() {
-        if scanner.skip_literal() {
+
+    while !scanner.is_done() {
+        if scanner.peek(0) == Some(b'"') {
+            scanner.skip_string();
             continue;
         }
-        if scanner.bytes[scanner.at] == b'#' {
-            let keyword = ["#import", "#include"].into_iter().find(|keyword| {
-                source[scanner.at..].starts_with(keyword)
-                    && scanner
-                        .bytes
-                        .get(scanner.at + keyword.len())
-                        .is_some_and(|byte| {
-                            byte.is_ascii_whitespace() || *byte == b'"' || *byte == b'/'
-                        })
-            });
-            if let Some(keyword) = keyword {
-                scanner.at += keyword.len();
-                scanner.skip_trivia();
-                if scanner.peek(0) == Some(b'"') {
-                    let start = scanner.at;
-                    scanner.skip_string();
-                    if let Some(path) = unquote(&source[start..scanner.at.min(source.len())])
-                        .filter(|path| !path.trim().is_empty())
-                    {
-                        found.push(path);
-                    }
-                }
-                continue;
+        if scanner.skip_inert() {
+            continue;
+        }
+
+        let Some(keyword) = ["#import", "#include"]
+            .into_iter()
+            .find(|keyword| introduces(&scanner, keyword))
+        else {
+            scanner.at += 1;
+            continue;
+        };
+
+        scanner.at += keyword.len();
+        scanner.skip_trivia();
+        if scanner.peek(0) == Some(b'"') {
+            let start = scanner.at;
+            scanner.skip_string();
+            if let Some(path) = unquote(scanner.since(start)).filter(|path| !path.trim().is_empty())
+            {
+                found.push(path);
             }
         }
-        scanner.at += 1;
     }
 
     found
 }
 
-/// Walks a source once, skipping what cannot introduce an import.
-struct Scanner<'a> {
-    source: &'a str,
-    bytes: &'a [u8],
-    at: usize,
-}
-
-impl<'a> Scanner<'a> {
-    /// Starts at the beginning.
-    fn new(source: &'a str) -> Self {
-        Self {
-            source,
-            bytes: source.as_bytes(),
-            at: 0,
-        }
-    }
-
-    /// The byte `ahead` positions on, if there is one.
-    fn peek(&self, ahead: usize) -> Option<u8> {
-        self.bytes.get(self.at + ahead).copied()
-    }
-
-    /// Skips text whose punctuation cannot introduce a declaration or delimiter.
-    fn skip_literal(&mut self) -> bool {
-        match self.peek(0) {
-            Some(b'"') => self.skip_string(),
-            Some(b'/') if self.peek(1) == Some(b'/') => self.skip_to_end_of_line(),
-            Some(b'/') if self.peek(1) == Some(b'*') => self.skip_block_comment(),
-            Some(b'`') => self.skip_raw(),
-            Some(b'\\') => self.at = (self.at + 2).min(self.bytes.len()),
-            _ => return false,
-        }
-        true
-    }
-
-    /// Skips whitespace and comments between a keyword and its argument.
-    fn skip_trivia(&mut self) {
-        loop {
-            match self.peek(0) {
-                Some(byte) if byte.is_ascii_whitespace() => self.at += 1,
-                Some(b'/') if self.peek(1) == Some(b'/') => self.skip_to_end_of_line(),
-                Some(b'/') if self.peek(1) == Some(b'*') => self.skip_block_comment(),
-                _ => return,
-            }
-        }
-    }
-
-    /// Skips a raw example, including fenced blocks containing single backticks.
-    fn skip_raw(&mut self) {
-        let start = self.at;
-        while self.peek(0) == Some(b'`') {
-            self.at += 1;
-        }
-        let fence = &self.source[start..self.at];
-        self.at = self.source[self.at..]
-            .find(fence)
-            .map_or(self.bytes.len(), |offset| self.at + offset + fence.len());
-    }
-
-    /// Steps over a quoted string, escapes and all.
-    fn skip_string(&mut self) {
-        self.at += 1;
-
-        while self.at < self.bytes.len() {
-            match self.bytes[self.at] {
-                b'\\' => self.at += 2,
-                b'"' => {
-                    self.at += 1;
-                    return;
-                }
-                _ => self.at += 1,
-            }
-        }
-    }
-
-    /// Steps over the rest of a line.
-    fn skip_to_end_of_line(&mut self) {
-        while self.at < self.bytes.len() && self.bytes[self.at] != b'\n' {
-            self.at += 1;
-        }
-    }
-
-    /// Steps over a block comment.
-    fn skip_block_comment(&mut self) {
-        self.at += 2;
-        let mut depth = 1;
-
-        while self.at < self.bytes.len() {
-            if self.peek(0) == Some(b'/') && self.peek(1) == Some(b'*') {
-                depth += 1;
-                self.at += 2;
-            } else if self.peek(0) == Some(b'*') && self.peek(1) == Some(b'/') {
-                self.at += 2;
-                depth -= 1;
-                if depth == 0 {
-                    return;
-                }
-            } else {
-                self.at += 1;
-            }
-        }
-
-        self.at = self.bytes.len();
-    }
+/// Whether `keyword` starts here as a keyword, and not as the beginning
+/// of a longer word such as `#important`.
+fn introduces(scanner: &Scanner<'_>, keyword: &str) -> bool {
+    scanner.looks_at(keyword)
+        && scanner
+            .peek(keyword.len())
+            .is_some_and(|byte| byte.is_ascii_whitespace() || byte == b'"' || byte == b'/')
 }
 
 /// The contents of a quoted string, if that is what this is.
@@ -205,5 +108,24 @@ mod tests {
             ]
         );
         assert!(imports("nothing here").is_empty());
+    }
+
+    #[test]
+    fn an_import_inside_a_nested_comment_is_not_one() {
+        let source = "/* outer /* inner */ #import \"hidden.typ\" */\n#import \"seen.typ\"";
+
+        assert_eq!(imports(source), ["seen.typ"]);
+    }
+
+    #[test]
+    fn a_source_that_stops_part_way_through_is_read_without_panicking() {
+        for source in [
+            "#import \"unterminated",
+            "#import",
+            "#include \"a\\",
+            "é\\é#import",
+        ] {
+            assert!(imports(source).is_empty(), "for {source:?}");
+        }
     }
 }

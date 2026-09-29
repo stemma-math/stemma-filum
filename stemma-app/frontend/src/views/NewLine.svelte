@@ -5,12 +5,20 @@
   let title = $state("");
   let description = $state("");
   let seen = $state<"me" | "group">("me");
+  /** Whether the line is being created, so it is not asked for twice. */
+  let creating = $state(false);
 
-  function create(event: SubmitEvent) {
+  async function create(event: SubmitEvent) {
     event.preventDefault();
+    if (creating) return;
     const group = app.group!;
     const about = description.trim() || null;
-    void app.changeLines(() => api.newLine(group, title, about, seen === "group"));
+    creating = true;
+    try {
+      await app.changeLines(() => api.newLine(group, title, about, seen === "group"));
+    } finally {
+      creating = false;
+    }
   }
 </script>
 
@@ -38,7 +46,7 @@
       </fieldset>
       <div class="row__actions">
         <button type="button" class="button" onclick={() => app.goTo("welcome")}>Cancel</button>
-        <button type="submit" class="button button--primary">Create line</button>
+        <button type="submit" class="button button--primary" disabled={creating}>Create line</button>
       </div>
     </form>
   </div>

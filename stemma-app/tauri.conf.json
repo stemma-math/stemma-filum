@@ -38,12 +38,12 @@
       "app"
     ],
     "icon": [
-      "../identity/icons/32x32.png",
-      "../identity/icons/128x128.png",
-      "../identity/icons/128x128@2x.png",
-      "../identity/icons/icon.png",
-      "../identity/icons/icon.icns",
-      "../identity/icons/icon.ico"
+      "../identity/icons/app/32x32.png",
+      "../identity/icons/app/128x128.png",
+      "../identity/icons/app/128x128@2x.png",
+      "../identity/icons/app/icon.png",
+      "../identity/icons/app/icon.icns",
+      "../identity/icons/app/icon.ico"
     ],
     "category": "DeveloperTool",
     "shortDescription": "A daily working platform for mathematics research groups",
