@@ -3,8 +3,8 @@
 use maud::{DOCTYPE, Markup, html};
 
 use super::assets::{
-    GLYPHS_PATH, LANDING_PATH, MANIFEST_PATH, MARK_ANIMATED_PATH, MARK_ON_DARK_PATH,
-    MARK_ON_LIGHT_PATH, SHELL_PATH, STYLESHEET_PATH,
+    APPEARANCE_PATH, GLYPHS_PATH, LANDING_PATH, MANIFEST_PATH, MARK_ANIMATED_PATH,
+    MARK_ON_DARK_PATH, MARK_ON_LIGHT_PATH, SHELL_PATH, STYLESHEET_PATH,
 };
 use super::visitor::SignedIn;
 use super::{Instance, WebError};
@@ -186,6 +186,7 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
                 link rel="manifest" href=(MANIFEST_PATH);
                 meta name="theme-color" content=(stemma_identity::THEME_COLOUR);
                 link rel="stylesheet" href=(STYLESHEET_PATH);
+                script src=(APPEARANCE_PATH) type="module" {}
                 @if chrome.visitor.is_some() {
                     script src=(SHELL_PATH) type="module" {}
                 } @else if chrome.landing {
@@ -248,15 +249,21 @@ fn sidebar(chrome: &Chrome) -> Markup {
 
     html! {
         aside class="sidebar" id="sidebar" {
+            // The front page's light, rising behind the foot; drawn by the
+            // shell's script, and a gradient without it.
+            canvas class="sidebar__light" aria-hidden="true" {}
+
             div class="sidebar__head" {
                 a class="brand" href="/" {
                     (mark_on_dark())
                     span class="brand__words" {
                         span class="wordmark" { "Stemma" }
-                        span class="brand__instance" { (chrome.instance) }
+                        span class="brand__meta" {
+                            span class="brand__instance" { (chrome.instance) }
+                            span class="brand__version" { "v" (stemma_core::VERSION) }
+                        }
                     }
                 }
-                span class="sidebar__version" { "v" (stemma_core::VERSION) }
             }
 
             nav class="sidebar__nav" aria-label="Workspace" {
@@ -265,7 +272,7 @@ fn sidebar(chrome: &Chrome) -> Markup {
                 div class="sidebar__section" {
                     span { "Groups" }
                     @if workspace.may_ask {
-                        a class="sidebar__add" href="/groups/new" aria-label="Request a research group"
+                        a class="sidebar__add" href="/groups/new" aria-label="Request a research group" data-dialog-link
                           title="Request a research group"
                           aria-current=[("/groups/new" == chrome.current).then_some("page")] {
                             (glyph("add"))
@@ -401,6 +408,57 @@ pub fn glyph(name: &str) -> Markup {
     }
 }
 
+/// A short action, drawn as a dialog that has its own address.
+///
+/// The page it is drawn on is the dialog as a page: what somebody gets by
+/// opening its address directly, or without JavaScript. With JavaScript, a
+/// link to that address marked `data-dialog-link` fetches the page and
+/// shows this panel over the page the link is on, and its form posts from
+/// there (see the shell's script). `back` is where closing it goes when it
+/// is a page.
+pub fn dialog(title: &str, back: &str, content: Markup) -> Markup {
+    panel(title, back, false, content)
+}
+
+/// A dialog that says what was just done, after which the page behind it
+/// is out of date and is drawn again once the dialog is closed.
+pub fn dialog_done(title: &str, back: &str, content: Markup) -> Markup {
+    panel(title, back, true, content)
+}
+
+/// The panel both kinds of dialog are drawn in.
+fn panel(title: &str, back: &str, changed: bool, content: Markup) -> Markup {
+    html! {
+        div class="dialog-page" {
+            section class="dialog dialog--page" data-dialog-panel
+                    data-dialog-changed[changed] aria-labelledby="dialog-title" {
+                div class="dialog__body" {
+                    div class="dialog__head" {
+                        h1 class="dialog__title" id="dialog-title" { (title) }
+                        a class="button button--icon dialog__close" href=(back)
+                          aria-label="Close" title="Close" data-dialog-close {
+                            (glyph("close"))
+                        }
+                    }
+                    (content)
+                }
+            }
+        }
+    }
+}
+
+/// The buttons at the foot of a dialog's form: a way out, then the one
+/// that does it, named by its exact verb.
+pub fn dialog_actions(back: &str, verb: &str, danger: bool) -> Markup {
+    html! {
+        div class="dialog__actions" {
+            a class="button" href=(back) data-dialog-close { "Cancel" }
+            button class=@if danger { "button button--primary button--danger" } @else { "button button--primary" }
+                   type="submit" { (verb) }
+        }
+    }
+}
+
 /// What a message says, as the identity draws it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -502,11 +560,6 @@ pub fn signature(signed: &crate::web::visitor::SignedIn) -> Markup {
 /// two copies on one page would share them.
 pub fn mark_on_dark() -> Markup {
     html! { img class="mark" src=(MARK_ON_DARK_PATH) alt=""; }
-}
-
-/// The mark, for light surfaces.
-pub fn mark_on_light() -> Markup {
-    html! { img class="mark" src=(MARK_ON_LIGHT_PATH) alt=""; }
 }
 
 /// The mark, for the page, which is light or dark as the reader chose:

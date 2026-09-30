@@ -295,7 +295,7 @@ async fn confirmed(
 }
 
 /// A sentence starting with a capital.
-fn capitalised(sentence: &str) -> String {
+pub(super) fn capitalised(sentence: &str) -> String {
     let mut letters = sentence.chars();
 
     match letters.next() {
@@ -380,6 +380,8 @@ fn body(
                     "/profile/picture",
                     "/profile/picture/remove",
                     signed,
+                    super::pictures::face(&user.id, &user.display_name, changed, "avatar--large"),
+                    "avatar avatar--large",
                     changed.is_some(),
                     "It is shown beside your name to the people in your groups.",
                 ))
@@ -457,24 +459,39 @@ pub(super) fn picture_form(
     upload_to: &str,
     remove_at: &str,
     signed: &SignedIn,
+    current: Markup,
+    shape: &str,
     has_one: bool,
     hint: &str,
 ) -> Markup {
     html! {
+        // The picture as it is, and, once a file is chosen, the picture as
+        // it will be: the same shape and crop, before anything is saved.
+        // Without JavaScript the form is a file field and a button.
         form class="picture-form" method="post" action=(upload_to) enctype="multipart/form-data" {
             (signature(signed))
-            div class="field" {
-                label class="field__label" for="picture" {
-                    @if has_one { "Replace the picture" } @else { "Upload a picture" }
+            div class="picture-form__body" {
+                div class="picture-form__preview" {
+                    span class="picture-form__current" { (current) }
+                    span class={ (shape) " picture-form__chosen" } hidden { img alt=""; }
                 }
-                input class="input picture-form__file" type="file" id="picture" name="picture"
-                      accept="image/png,image/jpeg,image/webp" required;
-                span class="field__hint" {
-                    (hint) " A square PNG, JPEG or WebP image of up to 1 MB."
+                div class="field picture-form__field" {
+                    label class="field__label" for="picture" {
+                        @if has_one { "Replace the picture" } @else { "Upload a picture" }
+                    }
+                    input class="input picture-form__file" type="file" id="picture" name="picture"
+                          accept="image/png,image/jpeg,image/webp" required;
+                    span class="field__hint" data-picture-hint {
+                        (hint) " A square PNG, JPEG or WebP image of up to 1 MB."
+                    }
                 }
             }
             div class="actions" {
-                button class="button button--primary" type="submit" { "Upload" }
+                button class="button" type="button" data-picture-choose hidden {
+                    @if has_one { "Choose a new picture" } @else { "Choose a picture" }
+                }
+                button class="button button--primary" type="submit" data-picture-save { "Upload" }
+                button class="button button--quiet" type="button" data-picture-cancel hidden { "Cancel" }
                 // A form cannot hold another, so the removal is a form of
                 // its own that this button belongs to from here.
                 @if has_one {

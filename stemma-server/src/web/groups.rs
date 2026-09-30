@@ -226,6 +226,23 @@ pub async fn request(
     Ok(Redirect::to("/").into_response())
 }
 
+/// Puts away a declined request whoever asked for it has read.
+pub async fn dismiss(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(id): Path<String>,
+    axum::Form(form): axum::Form<Withdrawal>,
+) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
+
+    let by = signed.user.id.clone();
+    instance
+        .read(move |connection| groups::dismiss(connection, &id, &by))
+        .await?;
+
+    Ok(Redirect::to("/#groups").into_response())
+}
+
 /// The shell these pages are drawn in.
 async fn chrome(instance: &Instance, signed: &SignedIn) -> Result<Chrome, WebError> {
     Ok(
@@ -239,11 +256,12 @@ async fn chrome(instance: &Instance, signed: &SignedIn) -> Result<Chrome, WebErr
 fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Markup {
     let value = |pick: fn(&Asked) -> &str| given.map(pick).unwrap_or_default();
 
-    html! {
-        div class="sheet--narrow stack" {
-            h1 { "Request a research group" }
-            p class="quiet" {
-                "Submit a group creation request. A platform maintainer will review it."
+    super::layout::dialog(
+        "Request a research group",
+        "/",
+        html! {
+            p class="dialog__text" {
+                "A platform maintainer reviews the request. Once it is approved, you own the group."
             }
 
             @if let Some(problem) = problem {
@@ -256,7 +274,7 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
                 div class="field" {
                     label class="field__label" for="name" { "Name" }
                     input class="input" type="text" id="name" name="name" value=(value(|asked| &asked.name))
-                          required;
+                          autofocus required;
                 }
 
                 div class="field" {
@@ -270,26 +288,29 @@ fn form(signed: &SignedIn, problem: Option<&str>, given: Option<&Asked>) -> Mark
 
                 div class="field" {
                     label class="field__label" for="reason" { "Purpose" }
-                    textarea class="input" id="reason" name="reason" required { (value(|asked| &asked.reason)) }
+                    textarea class="input" id="reason" name="reason" rows="3" required { (value(|asked| &asked.reason)) }
                 }
 
-                button class="button button--primary" type="submit" { "Send the request" }
+                (super::layout::dialog_actions("/", "Send the request", false))
             }
-        }
-    }
+        },
+    )
 }
 
 /// What an instance that does not take requests says.
 fn closed() -> Markup {
-    html! {
-        div class="sheet--narrow stack" {
-            h1 { "Group requests are closed" }
-            p {
+    super::layout::dialog(
+        "Group requests are closed",
+        "/",
+        html! {
+            p class="dialog__text" {
                 "Contact a platform maintainer to create a research group."
             }
-            p { a href="/" { "Back to your home" } }
-        }
-    }
+            div class="dialog__actions" {
+                a class="button button--primary" href="/" data-dialog-close { "OK" }
+            }
+        },
+    )
 }
 
 /// What the invitation form sends.
@@ -349,8 +370,6 @@ pub async fn space(
             &work,
             &offers,
             &queue,
-            None,
-            None,
         ),
     )
     .into_response())
@@ -430,32 +449,55 @@ pub async fn invite(
         None => None,
     };
 
-    let (_, members, live) = read_space(&instance, &group, &signed).await?;
-    let work = read_work(&instance, &group, &signed).await?;
-    let (offers, queue) = read_machines(&instance, &group, &signed).await?;
-    let faces = read_faces(&instance, &group, &members).await?;
-
-    let chrome = super::layout::around(&instance, &signed, group.name.clone())
+    let chrome = super::layout::around(&instance, &signed, "Invitation created")
         .await?
         .at(format!("/g/{}", group.slug()));
+    let back = format!("/g/{}", group.slug());
 
     Ok(page(
         &chrome,
-        space_body(
-            &signed,
-            &group,
-            role,
-            &members,
-            &faces,
-            &live,
-            &work,
-            &offers,
-            &queue,
-            Some(&link),
-            delivered.as_deref(),
+        super::layout::dialog_done(
+            "Invitation created",
+            &back,
+            html! {
+                p class="dialog__text" {
+                    @match &delivered {
+                        Some(said) => { (said) " The link is also here, in case it does not arrive." }
+                        None => "Copy and share this invitation link now. It will not be shown again.",
+                    }
+                }
+                p class="secret" { (link) }
+                div class="dialog__actions" {
+                    a class="button" href={ "/g/" (group.slug()) "/invitations/new" } data-dialog-link {
+                        "Invite someone else"
+                    }
+                    a class="button button--primary" href=(back) data-dialog-close { "Done" }
+                }
+            },
         ),
     )
     .into_response())
+}
+
+/// The form that makes an invitation.
+pub async fn invite_form(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(slug): Path<String>,
+) -> Result<Response, WebError> {
+    let (group, role) = membership(&instance, &slug, &signed.user.id).await?;
+
+    if !role.can_invite() {
+        return Err(WebError::Forbidden(
+            "Only an admin or the owner of this group can invite people.".to_owned(),
+        ));
+    }
+
+    let chrome = super::layout::around(&instance, &signed, "Add members")
+        .await?
+        .at(format!("/g/{}", group.slug()));
+
+    Ok(page(&chrome, invitation_form(&signed, &group, role)).into_response())
 }
 
 /// Calls an invitation back.
@@ -720,6 +762,8 @@ fn edit_body(
                     &format!("/g/{}/picture", group.slug()),
                     &format!("/g/{}/picture/remove", group.slug()),
                     signed,
+                    super::pictures::badge(&group.id, &group.name, changed, "badge badge--large"),
+                    "badge badge--large",
                     changed.is_some(),
                     "It is shown beside the group's name to its members.",
                 ))
@@ -907,8 +951,6 @@ fn space_body(
     work: &[(Side, Nodes)],
     offers: &[super::jobs::Offer],
     queue: &[crate::store::jobs::Job],
-    fresh_link: Option<&str>,
-    delivered: Option<&str>,
 ) -> Markup {
     let new_line = format!("/g/{}/lines/new", group.slug());
 
@@ -944,7 +986,7 @@ fn space_body(
                         p class="page-subtitle" { (description) }
                     }
                 }
-                a class="button button--primary button--large" href=(new_line) {
+                a class="button button--primary button--large" href=(new_line) data-dialog-link {
                     (glyph("add")) "New line of work"
                 }
             }
@@ -955,9 +997,6 @@ fn space_body(
                 (lines_block(group, work))
                 (super::jobs::machine_list(offers))
                 (super::jobs::queue(queue))
-                @if role.can_invite() {
-                    (invitations_block(signed, group, role, invitations, fresh_link, delivered))
-                }
             }
 
             aside class="group-layout__rail" aria-label="About the group" {
@@ -989,7 +1028,8 @@ fn space_body(
                             "Members" span class="count" { (members.len()) }
                         }
                         @if role.can_invite() {
-                            a class="button button--small add-member" href="#invitations" {
+                            a class="button button--small add-member"
+                              href={ "/g/" (group.slug()) "/invitations/new" } data-dialog-link {
                                 (glyph("add-person")) "Add"
                             }
                         }
@@ -1014,6 +1054,10 @@ fn space_body(
                         }
                     }
                 }
+
+                @if role.can_invite() {
+                    (invitations_block(signed, group, invitations))
+                }
             }
         }
     }
@@ -1036,7 +1080,7 @@ fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
                     p class="empty" {
                         "No lines of work yet. Start one here, or create one from a connected machine."
                     }
-                    a class="button" href={ "/g/" (group.slug()) "/lines/new" } {
+                    a class="button" href={ "/g/" (group.slug()) "/lines/new" } data-dialog-link {
                         (glyph("add")) "New line of work"
                     }
                 }
@@ -1074,52 +1118,45 @@ fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
     }
 }
 
-/// The invitations out of this group, and the form that makes one.
-fn invitations_block(
-    signed: &SignedIn,
-    group: &Group,
-    role: GroupRole,
-    invitations: &[Invitation],
-    fresh_link: Option<&str>,
-    delivered: Option<&str>,
-) -> Markup {
+/// The invitations out of this group, and the way to make one.
+fn invitations_block(signed: &SignedIn, group: &Group, invitations: &[Invitation]) -> Markup {
     html! {
-        section class="block" id="invitations" {
-            h2 class="block__title" { "Invitations" }
-
-            @if let Some(link) = fresh_link {
-                div class="stack stack--tight" {
-                    @match delivered {
-                        Some(said) => p { (said) }
-                        None => p {
-                            "Copy and share this invitation link now. It will not be shown again."
-                        }
-                    }
-                    p class="secret" { (link) }
+        section class="card members-card" id="invitations" aria-labelledby="invitations-title" {
+            div class="card__head" {
+                h2 class="card__title" id="invitations-title" {
+                    "Invitations" span class="count" { (invitations.len()) }
+                }
+                a class="button button--small add-member" href={ "/g/" (group.slug()) "/invitations/new" }
+                  data-dialog-link {
+                    (glyph("add-person")) "Invite"
                 }
             }
 
             @if invitations.is_empty() {
-                p class="empty" { "There are no active invitations." }
+                div class="card__empty" {
+                    p class="empty" { "There are no active invitations." }
+                }
             } @else {
-                ul class="register" {
+                ul class="people" {
                     @for invitation in invitations {
-                        li {
-                            span class="register__name" {
-                                @match &invitation.email {
-                                    Some(email) => (email),
-                                    None => "anybody with the link",
+                        li class="person" {
+                            span class="person__who" {
+                                span class="person__name" {
+                                    @match &invitation.email {
+                                        Some(email) => (email),
+                                        None => "Anybody with the link",
+                                    }
                                 }
-                            }
-                            span class="quiet" { (invitation.role) }
-                            span class="register__aside numeric" {
-                                "until " (invitation.expires_at)
+                                span class="person__role numeric" {
+                                    (super::profile::capitalised(&invitation.role.to_string()))
+                                    " · until " (invitation.expires_at.get(..10).unwrap_or(&invitation.expires_at))
+                                }
                             }
                             form method="post"
                                  action={ "/g/" (group.slug()) "/invitations/"
                                           (invitation.id) "/withdraw" } {
                                 (signature(signed))
-                                button class="button" type="submit" {
+                                button class="button button--small" type="submit" {
                                     "Withdraw"
                                 }
                             }
@@ -1127,13 +1164,29 @@ fn invitations_block(
                     }
                 }
             }
+        }
+    }
+}
+
+/// The dialog that invites somebody into a group.
+fn invitation_form(signed: &SignedIn, group: &Group, role: GroupRole) -> Markup {
+    let back = format!("/g/{}", group.slug());
+
+    super::layout::dialog(
+        "Add members",
+        &back,
+        html! {
+            p class="dialog__text" {
+                "An invitation is a link that works once. Whoever opens it joins "
+                (group.name) " with the role you choose."
+            }
 
             form method="post" action={ "/g/" (group.slug()) "/invitations" } {
                 (signature(signed))
 
                 div class="field" {
                     label class="field__label" for="email" { "Email address (optional)" }
-                    input class="input" type="email" id="email" name="email";
+                    input class="input" type="email" id="email" name="email" autofocus;
                     span class="field__hint" {
                         "Used to identify the invitation and send the link when email is configured."
                     }
@@ -1152,8 +1205,8 @@ fn invitations_block(
                     }
                 }
 
-                button class="button button--primary" type="submit" { "Create invitation" }
+                (super::layout::dialog_actions(&back, "Create invitation", false))
             }
-        }
-    }
+        },
+    )
 }

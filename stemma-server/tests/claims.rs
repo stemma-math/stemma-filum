@@ -159,7 +159,7 @@ async fn the_machine_that_takes_a_line_is_the_one_writing_it() {
     let line = harness.get(&format!("/g/algebra/shared/{LINE}")).await;
 
     assert!(line.says("ana's laptop is writing it"));
-    assert!(line.says("it lapses in"));
+    assert!(line.says("It lapses in"));
 }
 
 #[tokio::test]
@@ -190,7 +190,7 @@ async fn a_line_one_machine_is_writing_is_not_taken_by_the_other() {
     assert_eq!(parsed(&asked)["asked"].as_bool(), Some(true));
 
     let line = harness.get(&format!("/g/algebra/shared/{LINE}")).await;
-    assert!(line.says("Another contributor has requested access."));
+    assert!(line.says("Another contributor has asked to write it."));
 }
 
 #[tokio::test]
@@ -240,7 +240,7 @@ async fn the_owner_can_hand_back_a_line_their_own_machine_is_holding() {
     assert_eq!(handed.status, StatusCode::SEE_OTHER);
 
     let after = harness.get(&format!("/g/algebra/shared/{LINE}")).await;
-    assert!(after.says("This line is available to edit."));
+    assert!(after.says("It is available to edit."));
 }
 
 #[tokio::test]

@@ -398,13 +398,15 @@ pub fn open_requests(connection: &Connection) -> Result<Vec<Request>> {
     .context("cannot list the requests")
 }
 
-/// Somebody's own requests, newest first.
+/// Somebody's own requests, newest first, except the declined ones they
+/// have dismissed.
 pub fn requests_by(connection: &Connection, user: &UserId) -> Result<Vec<Request>> {
     super::rows(
         connection,
         &format!(
             "SELECT {REQUEST_COLUMNS} FROM group_requests
-          WHERE requested_by = ?1 ORDER BY requested_at DESC"
+          WHERE requested_by = ?1 AND dismissed_at IS NULL
+          ORDER BY requested_at DESC"
         ),
         [user.to_string()],
         Request::from_row,
@@ -459,6 +461,21 @@ pub fn decline(
     note: Option<&str>,
 ) -> Result<bool> {
     decide(connection, &request.id, Outcome::Declined, maintainer, note)
+}
+
+/// Puts a declined request away for whoever asked for it, once they have
+/// read why. Says whether there was one of theirs to put away.
+pub fn dismiss(connection: &Connection, id: &str, by: &UserId) -> Result<bool> {
+    let dismissed = connection
+        .execute(
+            "UPDATE group_requests SET dismissed_at = datetime('now')
+              WHERE id = ?1 AND requested_by = ?2 AND outcome = 'declined'
+                AND dismissed_at IS NULL",
+            params![id, by.to_string()],
+        )
+        .context("cannot dismiss the request")?;
+
+    Ok(dismissed > 0)
 }
 
 /// Writes the decision down, unless one already was.
@@ -629,6 +646,48 @@ mod tests {
                 .is_none()
         );
         let _ = &mut database;
+    }
+
+    #[test]
+    fn a_declined_request_can_be_dismissed_only_by_whoever_asked() {
+        let database = test_database();
+        let ana = account(database.connection(), "ana");
+        let root = account(database.connection(), "root-user");
+
+        let declined = request(
+            database.connection(),
+            &slug("algebra"),
+            "Algebra",
+            "Because.",
+            &ana.id,
+        )
+        .unwrap();
+        decline(database.connection(), &declined, &root.id, None).unwrap();
+        let open = request(
+            database.connection(),
+            &slug("topology"),
+            "Topology",
+            "Because.",
+            &ana.id,
+        )
+        .unwrap();
+
+        assert!(!dismiss(database.connection(), &declined.id, &root.id).unwrap());
+        assert!(!dismiss(database.connection(), &open.id, &ana.id).unwrap());
+        assert!(dismiss(database.connection(), &declined.id, &ana.id).unwrap());
+        assert!(!dismiss(database.connection(), &declined.id, &ana.id).unwrap());
+
+        let left: Vec<String> = requests_by(database.connection(), &ana.id)
+            .unwrap()
+            .into_iter()
+            .map(|request| request.id)
+            .collect();
+        assert_eq!(left, [open.id]);
+        assert!(
+            request_by_id(database.connection(), &declined.id)
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]

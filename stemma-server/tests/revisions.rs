@@ -200,7 +200,7 @@ async fn the_machine_holding_the_line_writes_it_a_revision_at_a_time() {
         .get("/g/algebra/shared/quotient-groups")
         .await;
     assert!(view.says("Being written"));
-    assert!(view.says("revision 2"));
+    assert!(view.says("Revision 2"));
     assert!(view.says("Download line.json"));
     assert!(view.says("Print or save as PDF"));
     assert!(!view.says("Typst source"));

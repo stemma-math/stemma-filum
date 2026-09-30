@@ -543,11 +543,20 @@ async fn taking_a_machine_back_stops_its_credential_and_nothing_else() {
     let token = harness.credential("ana").await;
     let machine = offer_a_machine(&mut harness, &token, "ana's laptop").await;
 
+    // The panel asks first, in a dialog whose address is a page of its own.
     let panel = harness.get(&format!("/machines/{machine}")).await;
+    assert!(panel.says(&format!(
+        r#"href="/machines/{machine}/retire" data-dialog-link"#
+    )));
+
+    let asking = harness.get(&format!("/machines/{machine}/retire")).await;
+    assert_eq!(asking.status, StatusCode::OK);
+    assert!(asking.says("Revoke this machine?"));
+
     harness
         .post(
             &format!("/machines/{machine}/retire"),
-            &[("form_token", &form_token(&panel))],
+            &[("form_token", &form_token(&asking))],
         )
         .await;
 

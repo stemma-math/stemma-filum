@@ -97,7 +97,7 @@ fn inside(name: &str, policy: &Policy) -> Markup {
         div class="doorway__inside" inert {
             header class="masthead" {
                 a class="brand" href="/" data-view="home" aria-label="Stemma, back to the front page" {
-                    (super::layout::mark_on_light())
+                    (super::layout::mark_on_page())
                     span class="wordmark" { "Stemma" }
                 }
                 nav class="nav" aria-label="Account" {
@@ -121,6 +121,7 @@ fn inside(name: &str, policy: &Policy) -> Markup {
             footer class="foot" {
                 span { (name) }
                 span { "stemma " (stemma_core::VERSION) }
+                (super::appearance::switch("appearance--foot"))
             }
         }
     }
