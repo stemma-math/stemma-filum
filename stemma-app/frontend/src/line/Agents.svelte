@@ -3,10 +3,11 @@
   // selected.
   import Bubble from "../components/Bubble.svelte";
   import Glyph from "../components/Glyph.svelte";
-  import { isStatement, nameOf } from "../lib/blocks";
+  import { isStatement } from "../lib/blocks";
   import type { LineSession } from "../lib/line.svelte";
   import { common, tasksFor } from "../lib/tasks";
   import type { Block, CustomTask } from "../lib/types";
+  import StatementName from "./StatementName.svelte";
 
   let { line, onask }: {
     line: LineSession;
@@ -28,13 +29,12 @@
   );
 
   function named(block: Block): string {
-    if (isStatement(block)) return nameOf(block);
     if (block.kind === "proof") {
       const of = line.document?.blocks.find((one) => one.id === block.of);
       return of && isStatement(of) ? `Proof of ${of.environment}` : "Proof";
     }
     const text = block.content.trim().split("\n")[0];
-    return text ? `Prose · ${text.slice(0, 40)}` : "Prose";
+    return text ? `Prose: ${text.slice(0, 40)}` : "Prose";
   }
 </script>
 
@@ -76,7 +76,9 @@
         <button type="button" class="button button--link" onclick={() => line.selected.clear()}>Clear</button>
       </div>
       <ul class="selection__list">
-        {#each chosen.slice(0, 4) as block (block.id)}<li>{named(block)}</li>{/each}
+        {#each chosen.slice(0, 4) as block (block.id)}
+          <li>{#if isStatement(block)}<StatementName statement={block} />{:else}{named(block)}{/if}</li>
+        {/each}
         {#if chosen.length > 4}<li class="quiet">and {chosen.length - 4} more</li>{/if}
       </ul>
       {#if offered.length}

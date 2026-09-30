@@ -6,7 +6,6 @@ import { appearance } from "./appearance.svelte";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
 import { lineLabel, sameLine, statesChanged, touchedLines, withLineSummary, type Named } from "./lines";
-import { touchedBlocks } from "./review";
 import { fail, succeed, warn } from "./status.svelte";
 import type { Known, LineDocument, LineState, Mirrored, Review, Signed, Waiting } from "./types";
 
@@ -37,7 +36,6 @@ class App {
   waiting = $state<Waiting[]>([]);
   recent = $state<Waiting[]>([]);
   review = $state<Review | null>(null);
-  proposalBlocks = $state<string[]>([]);
   line = $state<LineSession | null>(null);
   view = $state<View>("blocks");
   /** Where synchronisation stands; null until the engine has said. */
@@ -47,7 +45,6 @@ class App {
   #groupsRequest = latestRequest();
   #linesRequest = latestRequest();
   #waitingRequest = latestRequest();
-  #touchedRequest = latestRequest();
   #renewal = 0;
 
   /** Lines of the current group, split by who can see them. */
@@ -156,7 +153,6 @@ class App {
     this.#openRequest();
     if (next !== "editor") {
       this.review = null;
-      this.proposalBlocks = [];
     }
     this.stage = next;
     return true;
@@ -186,7 +182,6 @@ class App {
       const line = new LineSession(opened, []);
       this.line = line;
       this.stage = "editor";
-      void this.refreshTouched();
       void api.offers(opened.entry.group).then((offers) => {
         if (this.line === line) line.offersChanged(offers);
       }).catch(() => {});
@@ -297,32 +292,8 @@ class App {
     if (active()) {
       this.waiting = reviews.waiting;
       this.recent = reviews.recent;
-      await this.refreshTouched();
     }
     return reviews.waiting;
-  }
-
-  /** Marks the standing blocks affected by any waiting offer for this line. */
-  async refreshTouched() {
-    const active = this.#touchedRequest();
-    const line = this.#openLine;
-    if (!line?.document) {
-      this.proposalBlocks = [];
-      return;
-    }
-    const relevant = this.waiting.filter((one) => sameLine(line.opened.entry, { ...one, name: one.line }));
-    const marks = new Set<string>();
-    await Promise.all(relevant.map(async (one) => {
-      try {
-        const review = await api.proposal(one.proposal);
-        if (!review.stands) return;
-        const base = JSON.parse(review.stands) as LineDocument;
-        const offered = JSON.parse(review.source) as LineDocument;
-        if (!line.document) return;
-        for (const id of touchedBlocks(base, offered, line.document)) marks.add(id);
-      } catch { /* A pending review may have been decided meanwhile. */ }
-    }));
-    if (active() && this.line === line) this.proposalBlocks = [...marks];
   }
 
   /** Saves the open line and sends what can be sent before the window

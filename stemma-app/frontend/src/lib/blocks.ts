@@ -208,11 +208,10 @@ export function cited(document: LineDocument, id: string): string[] {
   return found;
 }
 
-/** What a statement is called in a list: its environment, title and siglum. */
+/** The readable name of a statement; its siglum is shown separately. */
 export function nameOf(statement: Statement): string {
   const title = statement.title ? ` (${statement.title})` : "";
-  const siglum = statement.siglum ? ` · ${statement.siglum}` : "";
-  return `${statement.environment}${title}${siglum}`;
+  return `${statement.environment}${title}`;
 }
 
 /** The siglum prefix a statement's kind and environment call for. */
