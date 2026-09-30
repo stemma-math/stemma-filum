@@ -128,3 +128,15 @@ jobs:
             --prerelease \
             --title "Latest build of main ($build)" \
             --notes-file notes.md
+
+          # A successful create can still leave the release as a draft.
+          for attempt in 1 2 3 4 5; do
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease || true
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" 2>/dev/null |
+              jq -e --arg commit "$GITHUB_SHA" '.draft == false and .target_commitish == $commit' >/dev/null; then
+              exit 0
+            fi
+            sleep "$attempt"
+          done
+          echo "::error::The $RELEASE_TAG release was not published for $GITHUB_SHA" >&2
+          exit 1
