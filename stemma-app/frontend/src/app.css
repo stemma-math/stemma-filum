@@ -1617,17 +1617,32 @@ button.block__label:disabled {
     transform: translateX(-50%);
 }
 
+.preview__fit {
+    margin-left: 4px;
+}
+
+.preview__fit[aria-pressed="true"] {
+    color: var(--accent-soft-fg);
+    background: var(--accent-soft-bg);
+}
+
 .preview__scroll {
     flex: 1;
+    min-height: 0;
     overflow: auto;
     padding: 76px 24px 48px;
 }
 
+/* At least as wide as the view, so narrower pages sit in its middle, and
+ * as wide as the widest page, so a wider one scrolls to both its edges
+ * rather than spilling out of reach on the left. */
 .preview__sheet {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 24px;
+    width: max-content;
+    min-width: 100%;
     transition: opacity var(--dur-ui) var(--ease-out);
 }
 
