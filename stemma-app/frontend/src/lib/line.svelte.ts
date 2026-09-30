@@ -4,7 +4,6 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api, said } from "./api";
-import { takenWhenFree } from "./claim";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
 import { fail, succeed, warn } from "./status.svelte";
@@ -349,21 +348,18 @@ export class LineSession {
     return this.#claimWith(() => api.requestClaim(this.path));
   }
 
-  /** Looks at who is writing the line again, taking nothing: the instance
-   * said the claim changed. A line this machine was waiting for and is
-   * now free is taken, as opening it would have. */
+  /** Looks at who is writing the line again, taking nothing. */
   async lookAtClaim() {
     try {
       const claim = await api.claimStatus(this.path);
-      if (takenWhenFree(this.claim, claim)) {
-        await this.takeClaim();
-        return;
-      }
       this.claim = claim;
       this.claimFailed = false;
       this.writing = claim.standing === "writing";
-    } catch {
-      // What was shown stays until the next look works.
+    } catch (error) {
+      if (this.claim === null) {
+        this.claimFailed = true;
+        fail(error);
+      }
     }
   }
 

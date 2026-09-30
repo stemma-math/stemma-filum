@@ -12,7 +12,7 @@
   {#if line.claimFailed}
     <Glyph name="alert" small />
     <span class="claim__words claim__words--failed">Sync failed</span>
-    <button type="button" class="button button--small" onclick={() => line.takeClaim()}>Retry</button>
+    <button type="button" class="button button--small" onclick={() => line.lookAtClaim()}>Retry</button>
   {:else if line.claim}
     {@const claim = line.claim}
     {#if claim.standing === "open"}

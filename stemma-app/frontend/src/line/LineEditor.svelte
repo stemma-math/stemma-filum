@@ -22,10 +22,8 @@
   let { line }: { line: LineSession } = $props();
 
   onMount(() => {
-    void (async () => {
-      await line.takeClaim();
-      await line.render();
-    })();
+    void line.lookAtClaim();
+    void line.render();
     return () => line.detach();
   });
 
