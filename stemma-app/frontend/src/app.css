@@ -154,6 +154,10 @@
     padding-top: 44px;
 }
 
+.sidebar > :not(.sidebar__lines) {
+    flex-shrink: 0;
+}
+
 .sidebar__head {
     display: flex;
     align-items: center;
@@ -265,12 +269,14 @@
     transform: scale(0.96);
 }
 
+/* The lines give way first when the window is short, but always keep room
+ * for a couple of them; they scroll. */
 .sidebar__lines {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: 2px;
-    min-height: 0;
+    min-height: 88px;
     margin: 0 -4px;
     padding: 0 4px;
     overflow-y: auto;
@@ -340,6 +346,12 @@
 }
 
 .sidebar__foot {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sidebar__places {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -585,6 +597,88 @@
     color: var(--navy-800);
     background: var(--sky-200);
     border-radius: var(--radius-pill);
+}
+
+/* In a short window the sidebar tightens: less space around everything,
+ * the places side by side, and the connection and the account on one line
+ * each. Nothing in it scrolls but the lines, so its menus are never cut. */
+@media (max-height: 760px) {
+    .sidebar {
+        gap: 10px;
+        padding-bottom: 10px;
+    }
+
+    .mac .sidebar {
+        padding-top: 38px;
+    }
+
+    .brand .mark {
+        width: 26px;
+    }
+
+    .sidebar .wordmark {
+        font-size: 18px;
+    }
+
+    .group-switch {
+        padding: 6px 8px;
+    }
+
+    .group-switch__badge {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+
+    .sidebar__new {
+        height: 32px;
+    }
+
+    .sidebar__section {
+        padding-top: 8px;
+    }
+
+    .sidebar__line {
+        padding: 6px 12px;
+    }
+
+    .sidebar__foot {
+        gap: 8px;
+    }
+
+    .sidebar__places {
+        flex-direction: row;
+        gap: 4px;
+    }
+
+    .sidebar__places .sidebar__item {
+        flex: 1;
+        justify-content: center;
+        gap: 8px;
+        min-width: 0;
+        height: 32px;
+        padding: 0 8px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .sync__button {
+        padding: 6px 12px;
+    }
+
+    .sync__words {
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
+    }
+
+    .user-card {
+        padding: 6px 8px;
+    }
+
+    .user-card__server {
+        display: none;
+    }
 }
 
 /* ── Popovers and menus ────────────────────────────────────────────────
@@ -938,10 +1032,12 @@
     user-select: none !important;
 }
 
+/* In a narrow window what does not fit goes to a second row. */
 .block__head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 6px 10px;
     padding: 10px 12px 6px 10px;
 }
 

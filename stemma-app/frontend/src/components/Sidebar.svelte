@@ -96,25 +96,27 @@
   {/if}
 
   <div class="sidebar__foot">
-    <button
-      type="button"
-      class="sidebar__item"
-      aria-current={app.stage === "reviews" ? "page" : undefined}
-      onclick={() => app.goTo("reviews")}
-    >
-      <Glyph name="check" />Reviews
-      {#if app.waiting.length}<span class="count">{app.waiting.length}</span>{/if}
-    </button>
-    {#if app.group}
+    <div class="sidebar__places">
       <button
         type="button"
         class="sidebar__item"
-        aria-current={app.stage === "vault" ? "page" : undefined}
-        onclick={() => app.goTo("vault")}
+        aria-current={app.stage === "reviews" ? "page" : undefined}
+        onclick={() => app.goTo("reviews")}
       >
-        <Glyph name="book" />Group vault
+        <Glyph name="check" />Reviews
+        {#if app.waiting.length}<span class="count">{app.waiting.length}</span>{/if}
       </button>
-    {/if}
+      {#if app.group}
+        <button
+          type="button"
+          class="sidebar__item"
+          aria-current={app.stage === "vault" ? "page" : undefined}
+          onclick={() => app.goTo("vault")}
+        >
+          <Glyph name="book" />Group vault
+        </button>
+      {/if}
+    </div>
 
     <Connection />
 
