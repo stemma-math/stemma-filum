@@ -972,6 +972,12 @@
     border-radius: 9px;
 }
 
+.claim .button--small:has(.spinner) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 .editor-body {
     display: flex;
     flex: 1;

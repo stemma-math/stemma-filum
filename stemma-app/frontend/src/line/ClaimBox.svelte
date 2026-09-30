@@ -24,7 +24,9 @@
       <span class="claim__words">
         You're writing{#if minutes(claim.left)}<span class="claim__left"> · {minutes(claim.left)} min left</span>{/if}
       </span>
-      <button type="button" class="button button--small" onclick={() => line.release()}>Release</button>
+      <button type="button" class="button button--small" disabled={line.releasing} onclick={() => line.release()}>
+        {#if line.releasing}<span class="spinner" aria-hidden="true"></span>Releasing…{:else}Release{/if}
+      </button>
     {:else}
       <Glyph name="lock" small />
       <span class="claim__words">{claim.label ? `${claim.label} is writing` : claim.said}</span>

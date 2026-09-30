@@ -92,7 +92,7 @@ class App {
       await this.#loadLines();
       this.stage = "welcome";
       this.#renewal = window.setInterval(() => {
-        if (this.#openLine?.writing) void this.#openLine.takeClaim();
+        if (this.#openLine?.writing) void this.#openLine.renewClaim();
       }, RENEW);
     }
     this.ready = true;

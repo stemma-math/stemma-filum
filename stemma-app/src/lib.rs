@@ -63,6 +63,7 @@ pub fn run() {
             compose::preview,
             compose::review_page,
             claims::claim,
+            claims::renew_claim,
             claims::claim_status,
             claims::release,
             claims::request_claim,

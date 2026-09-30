@@ -117,6 +117,7 @@ export const api = {
   reviewPage: (path: string, document: LineDocument) => call<string>("review_page", { path, document }),
 
   claim: (path: string) => call<Claim>("claim", { path }),
+  renewClaim: (path: string) => call<Claim>("renew_claim", { path }),
   claimStatus: (path: string) => call<Claim>("claim_status", { path }),
   release: (path: string) => call<Claim>("release", { path }),
   requestClaim: (path: string) => call<Claim>("request_claim", { path }),

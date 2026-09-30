@@ -39,6 +39,7 @@ export class LineSession {
   /** Whether the last attempt to reach the claim failed; what went wrong
    * was raised as a message. */
   claimFailed = $state(false);
+  releasing = $state(false);
   preview = $state<Preview | null>(null);
   previewError = $state<string | null>(null);
   leanProblem = $state<string | null>(null);
@@ -69,6 +70,7 @@ export class LineSession {
   #enqueueSave = serially();
   #previewRequest = latestRequest();
   #leanRequest = latestRequest();
+  #claimRequest = latestRequest();
 
   constructor(opened: OpenLine, offers: Offer[]) {
     this.opened = opened;
@@ -333,19 +335,32 @@ export class LineSession {
   }
 
   takeClaim() {
+    if (this.releasing) return;
     return this.#claimWith(() => api.claim(this.path));
+  }
+
+  /** Extends a claim already held by this machine without taking it again. */
+  renewClaim() {
+    if (this.releasing || !this.writing) return;
+    return this.#claimWith(() => api.renewClaim(this.path));
   }
 
   /** Lets the line go, once everything is saved; edits that cannot be
    * saved keep the claim, so they are not left behind. */
   async release() {
+    if (this.releasing) return;
+    this.releasing = true;
+    const active = this.#claimRequest();
     try {
       await this.flush();
+      const claim = await api.release(this.path);
+      if (active()) this.#showClaim(claim);
     } catch (error) {
       fail(error);
-      return;
+      if (active()) await this.lookAtClaim();
+    } finally {
+      this.releasing = false;
     }
-    return this.#claimWith(() => api.release(this.path));
   }
 
   requestClaim() {
@@ -354,13 +369,12 @@ export class LineSession {
 
   /** Looks at who is writing the line again, taking nothing. */
   async lookAtClaim() {
+    const active = this.#claimRequest();
     try {
       const claim = await api.claimStatus(this.path);
-      this.claim = claim;
-      this.claimFailed = false;
-      this.writing = claim.standing === "writing";
+      if (active()) this.#showClaim(claim);
     } catch (error) {
-      if (this.claim === null) {
+      if (active() && this.claim === null) {
         this.claimFailed = true;
         fail(error);
       }
@@ -374,17 +388,23 @@ export class LineSession {
   }
 
   async #claimWith(ask: () => Promise<Claim>) {
+    const active = this.#claimRequest();
     try {
       const claim = await ask();
-      this.claim = claim;
-      this.claimFailed = false;
-      this.writing = claim.standing === "writing";
+      if (active()) this.#showClaim(claim);
     } catch (error) {
+      if (!active()) return;
       this.claim = null;
       this.claimFailed = true;
       this.writing = false;
       fail(error);
     }
+  }
+
+  #showClaim(claim: Claim) {
+    this.claim = claim;
+    this.claimFailed = false;
+    this.writing = claim.standing === "writing";
   }
 
   #scheduleLean() {
