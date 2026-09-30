@@ -41,6 +41,7 @@ export class LineSession {
   claimFailed = $state(false);
   preview = $state<Preview | null>(null);
   previewError = $state<string | null>(null);
+  leanProblem = $state<string | null>(null);
   /** The blocks an agent will be asked about. */
   readonly selected = new SvelteSet<string>();
   /** The agent that is asked, as `machine|agent`. */
@@ -63,9 +64,11 @@ export class LineSession {
   #attached = true;
   #saveTimer = 0;
   #previewTimer = 0;
+  #leanTimer = 0;
   #savesInFlight = 0;
   #enqueueSave = serially();
   #previewRequest = latestRequest();
+  #leanRequest = latestRequest();
 
   constructor(opened: OpenLine, offers: Offer[]) {
     this.opened = opened;
@@ -179,11 +182,9 @@ export class LineSession {
 
   /** What is wrong with the line and is not about any one block. */
   get general(): string[] {
-    const lean = this.opened.lean;
     return [
       ...this.opened.faults.filter((fault) => fault.at === null).map((fault) => fault.message),
       ...(this.preview?.diagnostics.filter((diagnostic) => diagnostic.block === null).map((diagnostic) => diagnostic.message) ?? []),
-      ...(lean && !lean.compiled ? [lean.diagnostic] : []),
     ];
   }
 
@@ -192,6 +193,7 @@ export class LineSession {
     this.#attached = false;
     window.clearTimeout(this.#saveTimer);
     window.clearTimeout(this.#previewTimer);
+    window.clearTimeout(this.#leanTimer);
     window.clearTimeout(this.#stepTimer);
   }
 
@@ -278,6 +280,7 @@ export class LineSession {
       if (!this.#attached) return;
       this.opened = saved;
       this.#remember(saved);
+      this.#scheduleLean();
       if (this.#text() === text) this.saveState = "saved";
     } catch (error) {
       if (this.#attached) this.saveState = "not saved";
@@ -309,6 +312,7 @@ export class LineSession {
       this.canUndo = false;
       this.canRedo = false;
       void this.render();
+      this.#scheduleLean();
     } catch {
       // What is shown stays until the next look works.
     }
@@ -380,6 +384,26 @@ export class LineSession {
       this.claimFailed = true;
       this.writing = false;
       fail(error);
+    }
+  }
+
+  #scheduleLean() {
+    this.#leanRequest();
+    window.clearTimeout(this.#leanTimer);
+    this.#leanTimer = window.setTimeout(() => void this.refreshLean(), 1000);
+  }
+
+  /** Checks formal work in the background, independently of opening or saving. */
+  async refreshLean() {
+    const active = this.#leanRequest();
+    try {
+      const lean = await api.checkLineLean(this.path);
+      if (!active() || !this.#attached) return;
+      this.opened.lean = lean;
+      this.leanProblem = null;
+    } catch (error) {
+      if (!active() || !this.#attached) return;
+      this.leanProblem = said(error);
     }
   }
 

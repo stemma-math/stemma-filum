@@ -176,15 +176,18 @@ class App {
     try {
       await leaving?.save();
       const opened = await api.openLine(path);
-      const offers = await api.offers(opened.entry.group).catch(() => []);
       if (!active()) return;
       if (leaving) {
         await leaving.flush();
         if (!active()) return;
       }
-      this.line = new LineSession(opened, offers);
+      const line = new LineSession(opened, []);
+      this.line = line;
       this.stage = "editor";
       void this.refreshTouched();
+      void api.offers(opened.entry.group).then((offers) => {
+        if (this.line === line) line.offersChanged(offers);
+      }).catch(() => {});
     } catch (error) {
       fail(error);
     }

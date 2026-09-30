@@ -59,6 +59,7 @@ pub fn run() {
             workspace::share_line,
             editing::open_line,
             editing::save_line,
+            editing::check_line_lean,
             compose::preview,
             compose::review_page,
             claims::claim,

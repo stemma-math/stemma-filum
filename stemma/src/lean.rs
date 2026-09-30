@@ -849,8 +849,8 @@ fn concise(output: &str) -> String {
     output
         .lines()
         .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("Lean rejected the module")
+        .find(|line| !line.is_empty() && !line.starts_with("info:"))
+        .unwrap_or("Lean could not complete the check")
         .chars()
         .take(240)
         .collect()
@@ -859,6 +859,20 @@ fn concise(output: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_informational_lake_line_does_not_hide_the_failure() {
+        assert_eq!(
+            concise(
+                "info: no previous manifest, creating one from scratch\nerror: package unavailable"
+            ),
+            "error: package unavailable"
+        );
+        assert_eq!(
+            concise("info: no previous manifest, creating one from scratch"),
+            "Lean could not complete the check"
+        );
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("stemma-lean-{name}-{}", std::process::id()));

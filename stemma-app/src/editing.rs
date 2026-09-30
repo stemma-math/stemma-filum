@@ -33,25 +33,16 @@ pub struct Problem {
 }
 
 impl OpenLine {
-    /// The line as `source` reads, with its last Lean check. A check that
-    /// cannot be made is one more thing wrong with the line rather than a
-    /// failure: the line was still read, or saved.
+    /// Read the source without waiting for the optional Lean check.
     fn of(line: &LineAt, source: String) -> Self {
-        let (document, read, mut faults) = analyse(&source);
-        let lean = lean_status(line).unwrap_or_else(|error| {
-            faults.push(Problem {
-                at: None,
-                message: failed(error),
-            });
-            None
-        });
+        let (document, read, faults) = analyse(&source);
         Self {
             entry: line.entry(),
             document,
             source,
             line: read,
             faults,
-            lean,
+            lean: None,
         }
     }
 }
@@ -62,6 +53,13 @@ pub fn open_line(path: String) -> Result<OpenLine, String> {
     let line = LineAt::admit(&path)?;
     let source = std::fs::read_to_string(&line.path).map_err(said)?;
     Ok(OpenLine::of(&line, source))
+}
+
+/// Checks formal work separately so opening and saving never wait for Lake.
+#[tauri::command(async)]
+pub fn check_line_lean(path: String) -> Result<Option<LeanDigest>, String> {
+    let line = LineAt::admit(&path)?;
+    lean_status(&line).map_err(failed)
 }
 
 /// Saves the line through the engine, which sends it after a pause.

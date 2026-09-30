@@ -24,6 +24,7 @@
   onMount(() => {
     void line.lookAtClaim();
     void line.render();
+    void line.refreshLean();
     return () => line.detach();
   });
 
