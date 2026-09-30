@@ -45,7 +45,7 @@
     <span class="brand" data-tauri-drag-region><Mark /><span class="wordmark">Stemma</span></span>
   </div>
 
-  <div class="sidebar__group">
+  <div class="sidebar__group" class:sidebar__group--open={choosing}>
     <button
       type="button"
       class="group-switch"
