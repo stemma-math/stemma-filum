@@ -23,7 +23,7 @@
     onselect,
     onfocus,
     ondelete,
-    onmove,
+    ongrab,
   }: {
     line: LineSession;
     block: Block;
@@ -43,43 +43,9 @@
     /** Deletes this block, or another one it stands for, asking first when
      * something is written in it. */
     ondelete: (which?: Block) => void;
-    /** Moves a dragged block to a position, counted before the move. */
-    onmove: (id: string, to: number) => void;
+    /** The grip was pressed: the block may be about to be dragged. */
+    ongrab: (event: PointerEvent) => void;
   } = $props();
-
-  /** Where a block dragged over this one would land. */
-  let dropping = $state<"above" | "below" | null>(null);
-  let dragging = $state(false);
-
-  const DRAGGED = "application/x-stemma-block";
-
-  function dragStart(event: DragEvent) {
-    event.dataTransfer?.setData(DRAGGED, block.id);
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move";
-      const card = (event.currentTarget as HTMLElement).closest("article");
-      if (card) event.dataTransfer.setDragImage(card, 24, 24);
-    }
-    dragging = true;
-  }
-
-  function dragOver(event: DragEvent) {
-    if (!line.editable || !event.dataTransfer?.types.includes(DRAGGED)) return;
-    event.preventDefault();
-    // WebKit refuses the drop unless the effect matches what the drag allows.
-    event.dataTransfer.dropEffect = "move";
-    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    dropping = event.clientY < box.top + box.height / 2 ? "above" : "below";
-  }
-
-  function drop(event: DragEvent) {
-    const dragged = event.dataTransfer?.getData(DRAGGED);
-    const where = dropping;
-    dropping = null;
-    if (!dragged || !where || !line.editable) return;
-    event.preventDefault();
-    onmove(dragged, where === "above" ? at : at + 1);
-  }
 
   const statement = $derived(isStatement(block) ? block : null);
   const node = $derived(line.nodeOf(block.kind === "proof" ? block.of : block.id));
@@ -234,18 +200,12 @@
   class:block--partnered={partnered && !selected}
   class:block--selecting={anySelected}
   class:block--faulty={faults.length > 0 || diagnostics.some((one) => one.error)}
-  class:block--dragging={dragging}
   class:block--readonly={!line.editable}
-  class:block--drop-above={dropping === "above"}
-  class:block--drop-below={dropping === "below"}
   data-block={block.id}
   aria-label={heading()}
   onpointerdown={pointer}
   onfocusin={() => onfocus(true)}
   onfocusout={(event) => { if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node)) onfocus(false); }}
-  ondragover={dragOver}
-  ondragleave={() => (dropping = null)}
-  ondrop={drop}
 >
   <input
     type="checkbox"
@@ -260,13 +220,11 @@
       {#if line.editable}
         <span
           class="block__grip"
-          draggable="true"
           role="button"
           tabindex="-1"
           aria-label="Drag to move"
           data-tip="Drag to move"
-          ondragstart={dragStart}
-          ondragend={() => (dragging = false)}
+          onpointerdown={ongrab}
         ><Glyph name="grip" /></span>
       {/if}
     </span>

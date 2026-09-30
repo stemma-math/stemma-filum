@@ -917,27 +917,25 @@
     border-style: dashed;
 }
 
-.block--dragging {
-    opacity: 0.5;
+/* While a block is dragged, the list makes room for it where it would
+ * land and shows it there faded; a copy of it follows the pointer. */
+.blocks__slot--landing {
+    opacity: 0.35;
+    pointer-events: none;
 }
 
-.block--drop-above::before,
-.block--drop-below::after {
-    position: absolute;
-    right: 8px;
-    left: 8px;
-    height: 3px;
-    content: "";
-    background: var(--accent);
-    border-radius: 2px;
+.block--ghost {
+    position: fixed;
+    z-index: 40;
+    margin: 0;
+    pointer-events: none;
+    box-shadow: var(--shadow-float);
 }
 
-.block--drop-above::before {
-    top: -9px;
-}
-
-.block--drop-below::after {
-    bottom: -9px;
+.dragging-block,
+.dragging-block * {
+    cursor: grabbing !important;
+    user-select: none !important;
 }
 
 .block__head {
@@ -962,6 +960,7 @@
 
 .block__grip {
     display: flex;
+    touch-action: none;
     align-items: center;
     justify-content: center;
     width: 22px;
