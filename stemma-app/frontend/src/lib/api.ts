@@ -130,8 +130,6 @@ export const api = {
     task: string,
     agent: string,
     machine: string,
-    model: string | null,
-    effort: string | null,
     custom: { request: string; blocks: string[]; library: boolean } | null = null,
   ) => call<string>("launch", {
     path,
@@ -139,8 +137,6 @@ export const api = {
     agent,
     here: false,
     machine,
-    model,
-    effort,
     request: custom?.request ?? null,
     grantBlocks: custom?.blocks ?? [],
     grantLibrary: custom?.library ?? false,

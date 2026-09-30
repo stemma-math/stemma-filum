@@ -26,8 +26,6 @@ export type AgentChoice = {
   machine: string;
   /** Why it cannot be used now, when it cannot. */
   reason: string | null;
-  models: string[];
-  efforts: string[];
 };
 
 export class LineSession {
@@ -47,9 +45,8 @@ export class LineSession {
   readonly selected = new SvelteSet<string>();
   /** The agent that is asked, as `machine|agent`. */
   agent = $state("");
-  /** Optional model and effort overrides for the chosen agent. */
-  model = $state("");
-  effort = $state("");
+  /** Whether jobs are being asked for: saving, sending and queueing them. */
+  launching = $state(false);
 
   offers = $state<Offer[]>([]);
 
@@ -87,8 +84,6 @@ export class LineSession {
         agent: agent.called,
         machine: machine.label,
         reason: agent.reason,
-        models: agent.models,
-        efforts: agent.efforts,
       })),
     );
   }
@@ -103,12 +98,9 @@ export class LineSession {
     return (this.agents.find((one) => !one.reason) ?? this.agents[0])?.value ?? "";
   }
 
-  /** Asks `agent` from now on, with the first model and effort it declares. */
+  /** Asks `agent` from now on. */
   choose(agent: string) {
     this.agent = agent;
-    const chosen = this.chosenAgent;
-    this.model = chosen?.models[0] ?? "";
-    this.effort = chosen?.efforts[0] ?? "";
   }
 
   /** Asks the chosen agent to do each task, one job per task. Everything
@@ -120,19 +112,25 @@ export class LineSession {
       warn("Choose an agent first.");
       return 0;
     }
-    await this.flush();
-    let started = 0;
-    for (const task of tasks) {
-      try {
-        await api.launch(this.path, task, agent, machine, this.model || null, this.effort || null, custom ?? null);
-        started += 1;
-      } catch (error) {
-        fail(error);
-        return started;
+    if (this.launching) return 0;
+    this.launching = true;
+    try {
+      await this.flush();
+      let started = 0;
+      for (const task of tasks) {
+        try {
+          await api.launch(this.path, task, agent, machine, custom ?? null);
+          started += 1;
+        } catch (error) {
+          fail(error);
+          return started;
+        }
       }
+      succeed(started === 1 ? "Job started." : `${started} jobs started.`);
+      return started;
+    } finally {
+      this.launching = false;
     }
-    succeed(started === 1 ? "Job started." : `${started} jobs started.`);
-    return started;
   }
 
   get path() {

@@ -182,8 +182,6 @@ fn run(cli: Cli) -> Result<bool> {
                     agent: asked.agent,
                     machine: asked.machine,
                     here: asked.here,
-                    model: asked.model,
-                    effort: asked.effort,
                     request: asked.request,
                     grants,
                 };

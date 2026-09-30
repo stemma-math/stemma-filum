@@ -118,8 +118,6 @@ async fn awaiting(harness: &mut Harness) -> String {
                     against: None,
                     task: Task::Fill { after: None },
                     agent: Slug::parse("claude").unwrap(),
-                    model: None,
-                    effort: None,
                     request: None,
                     grants: None,
                     choice: Choice::Anyone,

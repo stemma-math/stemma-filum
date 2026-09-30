@@ -55,7 +55,7 @@
       </Bubble>
     </span>
     <span class="floating-bar__divider" aria-hidden="true"></span>
-    <button type="button" class="floating-bar__button floating-bar__button--accent" disabled={!line.offers.length}
+    <button type="button" class="floating-bar__button floating-bar__button--accent" disabled={!line.offers.length || line.launching}
       data-tip={line.offers.length ? "Ask the chosen agent about the whole line" : "No machine works for this group yet"}
       onclick={() => onask(["explore"])}>
       <Glyph name="sparkle" small />Explore next steps

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { failed, ofLine, sorted, standing } from "../src/lib/joblist.ts";
+import { failed, ofLine, sorted, space, standing } from "../src/lib/joblist.ts";
 
 const job = (id, state, extra = {}) => ({
   id, state, group: "algebra", side: "shared", line: "groups", outcome: null, owed: false, task: "fill", agent: "claude",
@@ -34,4 +34,13 @@ test("how a job ended decides its words and whether it failed", () => {
   assert.equal(standing(job("a", "running")).words, "Running");
   assert.ok(failed(job("a", "done", { outcome: "broke" })));
   assert.ok(!failed(job("a", "done", { outcome: "nothing_found" })));
+});
+
+test("space reads in the unit that fits it", () => {
+  assert.equal(space(0), "0 bytes");
+  assert.equal(space(1), "1 byte");
+  assert.equal(space(2_300), "2.3 KB");
+  assert.equal(space(450_000_000), "450 MB");
+  assert.equal(space(10_000_000_000), "10 GB");
+  assert.equal(space(2_345_000_000_000), "2.3 TB");
 });

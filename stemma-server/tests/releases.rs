@@ -123,8 +123,6 @@ async fn group_ready_to_release(harness: &mut Harness, audited: bool) {
                             block: central_block(),
                         },
                         agent: Slug::parse("codex").unwrap(),
-                        model: None,
-                        effort: None,
                         request: None,
                         grants: None,
                         choice: Choice::Anyone,

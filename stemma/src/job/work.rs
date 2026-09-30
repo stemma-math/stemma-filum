@@ -101,19 +101,6 @@ pub fn carry_out_controlled(
     if let Some(other) = &other {
         let _ = std::fs::write(workspace.root.join("other-line.json"), other);
     }
-    let agent_config = config
-        .agents
-        .get(&handed.agent)
-        .cloned()
-        .unwrap_or_default();
-    let (model, effort) = match agent_config.selection(
-        task_kind(&task),
-        handed.model.as_deref(),
-        handed.effort.as_deref(),
-    ) {
-        Ok(selection) => selection,
-        Err(error) => return Completed::only(Outcome::out_of_reach(error.to_string())),
-    };
     let limit = std::time::Duration::from_secs(config.jobs.timeout_minutes.max(1) * 60);
     let ran = match agents::run_in_workspace(
         config,
@@ -122,8 +109,6 @@ pub fn carry_out_controlled(
         &workspace.root,
         &workspace.api_bin,
         &agents::output_path(home, &handed.job),
-        &model,
-        effort.as_deref(),
         limit,
         cancelled,
     ) {
@@ -214,11 +199,11 @@ pub fn carry_out_controlled(
                     .map(|agent| agent.vendor)
                     .unwrap_or("unknown")
                     .to_owned(),
-                model: model.clone(),
+                model: agents::DEFAULT_MODEL.to_owned(),
                 prompt_revision: PROMPT_REVISION.to_owned(),
                 operations: state.operations,
                 explanation: state.explanation,
-                effort: effort.clone(),
+                effort: None,
             })
         }
         _ => None,
@@ -246,8 +231,7 @@ pub fn carry_out_controlled(
     let outcome = match (&outcome, &proposal) {
         (Outcome::Produced { .. }, None) => Outcome::Broke {
             code: "malformed_proposal".to_owned(),
-            said: "the agent reported an answer without reviewable source and a concrete model"
-                .to_owned(),
+            said: "the agent reported an answer without reviewable source".to_owned(),
         },
         (Outcome::Produced { .. }, Some(offer)) => match Line::read(&offer.source) {
             Ok(_) => outcome,
@@ -364,24 +348,6 @@ fn first_fault(faults: &[stemma_core::line::Fault], otherwise: &str) -> String {
         .first()
         .map(ToString::to_string)
         .unwrap_or_else(|| otherwise.to_owned())
-}
-
-fn task_kind(task: &Task) -> &'static str {
-    match task {
-        Task::Fill { .. } => "fill",
-        Task::Refute { .. } => "refute",
-        Task::Formalize { .. } => "formalize",
-        Task::FollowRoute { .. } => "realign",
-        Task::Verify { .. } => "back",
-        Task::Promote { .. } => "promote",
-        Task::Prove { .. } => "prove",
-        Task::Rewrite { .. } => "rewrite",
-        Task::Develop { .. } => "develop",
-        Task::Explore => "explore",
-        Task::Reconcile => "reconcile",
-        Task::Custom => "custom",
-        Task::Build => "build",
-    }
 }
 
 fn library_change(

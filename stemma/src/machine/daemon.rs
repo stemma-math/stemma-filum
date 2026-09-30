@@ -97,6 +97,7 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
 
     let mut agents = crate::job::agents::look(home, &config);
     let mut looked = Instant::now();
+    tidy(home, &config, &server, &credentials);
 
     writeln!(
         out,
@@ -109,6 +110,7 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
         if looked.elapsed() >= LOOK_EVERY {
             agents = crate::job::agents::look(home, &config);
             looked = Instant::now();
+            tidy(home, &config, &server, &credentials);
         }
 
         let taken = server
@@ -150,6 +152,7 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
             handed: &handed,
         };
         let done = job.carry_out(&mut agents, !once, out);
+        tidy(home, &config, &server, &credentials);
 
         match done {
             Ok(()) => {}
@@ -162,6 +165,14 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
         if once {
             return Ok(());
         }
+    }
+}
+
+/// Removes the job workspaces nothing needs any more. Not reaching the
+/// instance leaves them all where they are, until the next time.
+fn tidy(home: &Home, config: &Config, server: &Server, credentials: &Credentials) {
+    if let Ok(listed) = server.jobs(&credentials.token) {
+        crate::job::workspace::tidy(home, &listed, config.jobs.workspace_limit());
     }
 }
 

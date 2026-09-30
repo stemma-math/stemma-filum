@@ -299,7 +299,7 @@
       <span class="block__menu">
         <button type="button" class="button button--icon button--small" aria-label="Ask an agent about this block"
           data-tip="Ask an agent" aria-haspopup="menu" aria-expanded={asking}
-          disabled={!offered.length} onclick={() => (asking = !asking)}><Glyph name="sparkles" /></button>
+          disabled={!offered.length || line.launching} onclick={() => (asking = !asking)}><Glyph name="sparkles" /></button>
         <Bubble bind:open={asking} label="Ask an agent" align="end" menu>
           <p class="menu__heading">Ask an agent to</p>
           {#each offered as task (task.task)}

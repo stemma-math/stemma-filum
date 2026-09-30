@@ -166,8 +166,6 @@ export type Agent = {
   called: string;
   availability: Availability;
   reason: string | null;
-  models: string[];
-  efforts: string[];
 };
 
 export type Job = {
@@ -193,7 +191,10 @@ export type Job = {
 /** Whether a machine is connected to the instance. */
 export type Presence = "awake" | "asleep";
 
-export type Machine = { label: string; presence: Presence; agents: Agent[]; jobs: Job[] };
+/** How much room the workspaces of this machine's jobs take, and may take. */
+export type Workspaces = { count: number; bytes: number; limit: number };
+
+export type Machine = { label: string; presence: Presence; agents: Agent[]; jobs: Job[]; workspaces: Workspaces };
 
 /** Where one item of the machine checklist stands (`stemma-app/src/setup.rs`). */
 export type SetupState = "done" | "attention" | "not_set_up" | "unknown";

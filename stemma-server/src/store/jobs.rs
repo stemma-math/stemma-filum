@@ -42,10 +42,6 @@ pub struct Job {
     pub task: Task,
     /// Which agent was chosen.
     pub agent: Slug,
-    /// Concrete model selected for the run.
-    pub model: Option<String>,
-    /// Reasoning effort selected for the run.
-    pub effort: Option<String>,
     /// A person's request for a custom task.
     pub request: Option<String>,
     /// Explicit grants for a custom task.
@@ -107,8 +103,6 @@ impl Job {
             against: revision_at(row, "against")?,
             task: task.parse().map_err(|_| unreadable("a task", &task))?,
             agent: Slug::parse(&agent).map_err(|_| unreadable("an agent", &agent))?,
-            model: row.get("model")?,
-            effort: row.get("effort")?,
             request: row.get("request")?,
             grants: row
                 .get::<_, Option<String>>("grants")?
@@ -170,7 +164,7 @@ fn revision_at(row: &Row<'_>, column: &str) -> rusqlite::Result<Option<u64>> {
 /// The columns every read asks for.
 const COLUMNS: &str = "id, group_id, side, line, line_id, revision, against, task, agent,
                        chosen_machine, launched_by, launched_at, state, taken_by, taken_at,
-                       finished_at, outcome, code, reason, cleared_at, model, effort, request,
+                       finished_at, outcome, code, reason, cleared_at, request,
                        grants, workspace, progress, cancel_requested_at";
 
 /// What somebody asked for.
@@ -192,10 +186,6 @@ pub struct Launch {
     pub task: Task,
     /// Which agent.
     pub agent: Slug,
-    /// Concrete model override.
-    pub model: Option<String>,
-    /// Reasoning effort override.
-    pub effort: Option<String>,
     /// A person's request for a custom task.
     pub request: Option<String>,
     /// Capabilities chosen for a custom task.
@@ -213,9 +203,8 @@ pub fn launch(connection: &Connection, asked: &Launch) -> Result<Job> {
     connection
         .execute(
             "INSERT INTO jobs (id, group_id, side, line, revision, against, task, agent,
-                               chosen_machine, launched_by, state, line_id, model, effort,
-                               request, grants)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'queued', ?11, ?12, ?13, ?14, ?15)",
+                               chosen_machine, launched_by, state, line_id, request, grants)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'queued', ?11, ?12, ?13)",
             params![
                 id.to_string(),
                 asked.group.to_string(),
@@ -228,8 +217,6 @@ pub fn launch(connection: &Connection, asked: &Launch) -> Result<Job> {
                 asked.choice.machine().map(MachineId::to_string),
                 asked.by.to_string(),
                 asked.line_id.map(|line| line.to_string()),
-                asked.model,
-                asked.effort,
                 asked.request,
                 asked
                     .grants
@@ -592,8 +579,6 @@ mod tests {
             against: None,
             task: Task::Fill { after: None },
             agent: claude(),
-            model: None,
-            effort: None,
             request: None,
             grants: None,
             choice,

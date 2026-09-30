@@ -586,8 +586,6 @@ async fn settle(
                             task => task,
                         },
                         agent: proposal.job.agent,
-                        model: proposal.job.model,
-                        effort: proposal.job.effort,
                         request,
                         grants: proposal.job.grants,
                         choice: proposal.job.choice,

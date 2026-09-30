@@ -15,8 +15,6 @@ pub struct Agent {
     called: String,
     availability: String,
     reason: Option<String>,
-    models: Vec<String>,
-    efforts: Vec<String>,
 }
 
 impl Agent {
@@ -29,8 +27,6 @@ impl Agent {
             name: name.to_owned(),
             availability: agent.availability.to_string(),
             reason: agent.availability.reason().map(str::to_owned),
-            models: agent.models.clone(),
-            efforts: agent.efforts.clone(),
         }
     }
 }
@@ -61,6 +57,16 @@ pub struct MachinePanel {
     presence: String,
     agents: Vec<Agent>,
     jobs: Vec<Job>,
+    workspaces: Workspaces,
+}
+
+/// How much room the workspaces of this machine's jobs take.
+#[derive(Serialize)]
+pub struct Workspaces {
+    count: usize,
+    bytes: u64,
+    /// How many bytes they may take before the oldest are removed.
+    limit: u64,
 }
 
 /// A machine a group can send work to.
@@ -104,11 +110,22 @@ pub fn machine() -> Result<Option<MachinePanel>, String> {
         })
         .collect();
 
+    let used = stemma::job::workspace::used(&home);
+    let limit = stemma::config::Config::read(&home.config_file())
+        .unwrap_or_default()
+        .jobs
+        .workspace_limit();
+
     Ok(Some(MachinePanel {
         label: node.label,
         presence: node.presence.to_string(),
         agents: node.agents.iter().map(Agent::of).collect(),
         jobs,
+        workspaces: Workspaces {
+            count: used.count,
+            bytes: used.bytes,
+            limit,
+        },
     }))
 }
 
@@ -165,8 +182,6 @@ pub fn launch(
     agent: String,
     here: bool,
     machine: Option<String>,
-    model: Option<String>,
-    effort: Option<String>,
     request: Option<String>,
     grant_blocks: Vec<String>,
     grant_library: bool,
@@ -178,8 +193,6 @@ pub fn launch(
         agent,
         machine,
         here,
-        model,
-        effort,
         grants: request
             .is_some()
             .then(|| grants(grant_blocks, grant_library))

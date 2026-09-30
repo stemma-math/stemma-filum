@@ -484,6 +484,54 @@ async fn the_desktop_application_sees_how_a_job_ended_and_can_resolve_it() {
 }
 
 #[tokio::test]
+async fn a_job_that_leaves_nothing_to_review_does_not_end_as_done() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    publish(&mut harness, "ana").await;
+
+    let token = harness.credential("ana").await;
+    let machine = offer_a_machine(&mut harness, &token, "ana's laptop").await;
+
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    harness
+        .post(
+            "/g/algebra/shared/quotient-groups/jobs",
+            &[
+                ("on", &format!("{machine}|claude")),
+                ("task", "fill"),
+                ("revision", "1"),
+                ("form_token", &form_token(&line)),
+            ],
+        )
+        .await;
+
+    let job = parsed(&harness.post_with_token("/api/jobs/take", &token).await)["job"]
+        .as_str()
+        .expect("a job")
+        .to_owned();
+
+    let finished = harness
+        .post_json_with_token(
+            &format!("/api/jobs/{job}/finish"),
+            &token,
+            r#"{"outcome":"produced","said":"a proof of the first isomorphism theorem"}"#,
+        )
+        .await;
+    assert_eq!(finished.status, StatusCode::OK);
+
+    let listed = parsed(&harness.get_with_token("/api/jobs", &token).await);
+    let ended = &listed["jobs"][0];
+    assert_eq!(ended["outcome"].as_str(), Some("broke"));
+    assert!(ended["review"].is_null());
+    assert!(
+        ended["said"]
+            .as_str()
+            .is_some_and(|said| said.contains("left nothing to review"))
+    );
+}
+
+#[tokio::test]
 async fn somebody_elses_machine_is_never_handed_a_job_that_named_mine() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;

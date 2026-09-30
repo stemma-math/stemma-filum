@@ -65,15 +65,8 @@
     </Bubble>
   </div>
 
-  {#if chosenAgent}
-    <div class="selection__tasks">
-      {#if chosenAgent.models.length}
-        <label>Model <select class="input" bind:value={line.model}>{#each chosenAgent.models as model}<option value={model}>{model}</option>{/each}</select></label>
-      {/if}
-      {#if chosenAgent.efforts.length}
-        <label>Effort <select class="input" bind:value={line.effort}>{#each chosenAgent.efforts as effort}<option value={effort}>{effort}</option>{/each}</select></label>
-      {/if}
-    </div>
+  {#if line.launching}
+    <p class="panel__text"><span class="spinner" aria-hidden="true"></span>Starting the job…</p>
   {/if}
 
   {#if chosen.length}
@@ -89,7 +82,7 @@
       {#if offered.length}
         <div class="selection__tasks">
           {#each offered as task, index (task.verb)}
-            <button type="button" class="button button--small" class:button--primary={index === 0} onclick={() => onask(task.tasks)}>
+            <button type="button" class="button button--small" class:button--primary={index === 0} disabled={line.launching} onclick={() => onask(task.tasks)}>
               <Glyph name="sparkle" small />{task.label}
             </button>
           {/each}
@@ -104,7 +97,7 @@
         <button
           type="button"
           class="button button--small"
-          disabled={!custom.trim()}
+          disabled={!custom.trim() || line.launching}
           onclick={() => onask(["custom"], { request: custom, blocks: chosen.map((block) => block.id), library: customLibrary })}
         ><Glyph name="sparkle" small />Run custom task</button>
       </div>
