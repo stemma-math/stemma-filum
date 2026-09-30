@@ -226,29 +226,9 @@ pub fn run_in_workspace(
     let Some(program) = program(config, slug) else {
         return Ok(Ran::Missing);
     };
-    let mut command = Command::new(program);
-    match slug {
-        "codex" => {
-            command.args([
-                "exec",
-                "--sandbox",
-                "workspace-write",
-                "--config",
-                "sandbox_workspace_write.network_access=true",
-            ]);
-            command.arg(prompt);
-        }
-        "claude" => {
-            command.args(["-p", "--permission-mode", "acceptEdits"]);
-            command.arg(prompt);
-        }
-        "gemini" => {
-            command.arg("--sandbox");
-            command.arg("-p");
-            command.arg(prompt);
-        }
-        _ => return Ok(Ran::Missing),
-    }
+    let Some(mut command) = workspace_command(&program, slug, prompt) else {
+        return Ok(Ran::Missing);
+    };
     // The job API first, then everywhere programs are installed, so an
     // agent started by the service still finds `lake` and its own tools.
     let mut paths = vec![api_bin.to_owned()];
@@ -267,6 +247,39 @@ pub fn run_in_workspace(
         limit,
         cancelled,
     )?))
+}
+
+fn workspace_command(program: &Path, slug: &str, prompt: &str) -> Option<Command> {
+    let mut command = Command::new(program);
+    match slug {
+        "codex" => {
+            command.args([
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--config",
+                "sandbox_workspace_write.network_access=true",
+            ]);
+            command.arg(prompt);
+        }
+        "claude" => {
+            command.args([
+                "-p",
+                "--allowedTools",
+                "Bash(stemma-job *)",
+                "--permission-mode",
+                "acceptEdits",
+            ]);
+            command.arg(prompt);
+        }
+        "gemini" => {
+            command.arg("--sandbox");
+            command.arg("-p");
+            command.arg(prompt);
+        }
+        _ => return None,
+    }
+    Some(command)
 }
 
 /// Runs a program, writing what it says to a file, and gives up on it
@@ -613,6 +626,27 @@ mod tests {
 
     fn claude() -> Slug {
         Slug::parse("claude").unwrap()
+    }
+
+    #[test]
+    fn a_claude_job_can_use_the_job_api_without_a_prompt() {
+        let command = workspace_command(Path::new("claude"), "claude", "work here").unwrap();
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy())
+            .collect();
+
+        assert_eq!(
+            args,
+            [
+                "-p",
+                "--allowedTools",
+                "Bash(stemma-job *)",
+                "--permission-mode",
+                "acceptEdits",
+                "work here",
+            ]
+        );
     }
 
     #[test]
