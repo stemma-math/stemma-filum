@@ -11,7 +11,6 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -328,7 +327,7 @@ fn check(state: &State) -> Result<()> {
                 bail!("no proposed library file contains `{marker}`");
             }
         }
-        let status = Command::new("lake")
+        let status = crate::lean::tool("lake")
             .arg("build")
             .current_dir(&state.workspace)
             .status()

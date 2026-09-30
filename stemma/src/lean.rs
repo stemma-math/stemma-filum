@@ -158,7 +158,7 @@ fn library_state(clone: &Path, pins: &Pins) -> Result<LibraryState> {
         return refused("Mathlib is not pinned for this group");
     };
 
-    if !elan_is_installed() {
+    if elan().is_none() {
         return refused(
             "Lean checking needs elan. Install it from https://lean-lang.org/lean4/doc/quickstart.html, then sync again",
         );
@@ -182,7 +182,7 @@ fn library_state(clone: &Path, pins: &Pins) -> Result<LibraryState> {
     if modules.is_empty() {
         return Ok(LibraryState::Absent);
     }
-    let output = Command::new("lake")
+    let output = tool("lake")
         .current_dir(clone)
         .arg("build")
         .output()
@@ -523,7 +523,7 @@ fn extract(clone: &Path, modules: &[String]) -> Result<ExtractorReport> {
         .with_context(|| format!("cannot create {}", directory.display()))?;
     let list = directory.join("blocks.json");
     std::fs::write(&list, b"[]").with_context(|| format!("cannot write {}", list.display()))?;
-    let mut command = Command::new("lake");
+    let mut command = tool("lake");
     command
         .current_dir(clone)
         .args(["exe", "stemma-extract", "--", "--blocks"])
@@ -616,15 +616,23 @@ fn library_sources(clone: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Where elan is on this machine, if it is anywhere a program would be.
+///
+/// The one answer to whether Lean can be used here: the setup checklist and
+/// the checking of lines both ask this.
 pub fn elan() -> Option<std::path::PathBuf> {
     crate::job::agents::on_path("elan")
 }
 
-fn elan_is_installed() -> bool {
-    Command::new("elan")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
+/// A Lean tool (`lake`, `lean`, `elan`), found and run where elan installs
+/// it even when this process was started with a short path, as the
+/// application and the background service are.
+pub(crate) fn tool(program: &str) -> Command {
+    let found = crate::job::agents::on_path(program);
+    let mut command = Command::new(found.as_deref().unwrap_or(Path::new(program)));
+    if let Ok(path) = std::env::join_paths(crate::job::agents::where_programs_are()) {
+        command.env("PATH", path);
+    }
+    command
 }
 
 fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Result<(), String> {
@@ -640,7 +648,7 @@ fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Result<(), St
     if !manifest.exists()
         || std::fs::read_to_string(&resolved).ok().as_deref() != Some(resolved_from.as_str())
     {
-        let update = Command::new("lake")
+        let update = tool("lake")
             .current_dir(clone)
             .arg("update")
             .output()
@@ -655,7 +663,7 @@ fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Result<(), St
     if std::fs::read_to_string(&stamp).ok().as_deref() == Some(mathlib) {
         return Ok(());
     }
-    let cache = Command::new("lake")
+    let cache = tool("lake")
         .current_dir(clone)
         .args(["exe", "cache", "get"])
         .output()
@@ -726,7 +734,7 @@ pub fn check_offered(
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
     std::fs::write(scratch, source).map_err(|error| error.to_string())?;
-    let output = Command::new("lake")
+    let output = tool("lake")
         .current_dir(clone)
         .args(["env", "lean"])
         .arg(scratch)
@@ -763,7 +771,7 @@ fn unchecked_blocks(clone: &Path, line: &Name, diagnostic: &str) -> Vec<BlockChe
 }
 
 fn installed_version(clone: &Path) -> Option<String> {
-    let output = Command::new("lake")
+    let output = tool("lake")
         .current_dir(clone)
         .args(["env", "lean", "--version"])
         .output()
@@ -857,6 +865,22 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    #[test]
+    fn lean_tools_run_with_elans_directory_on_their_path() {
+        let command = tool("lake");
+        let path = command
+            .get_envs()
+            .find(|(name, _)| *name == "PATH")
+            .and_then(|(_, value)| value)
+            .expect("a path for the tool");
+        let places: Vec<PathBuf> = std::env::split_paths(path).collect();
+
+        assert_eq!(places, crate::job::agents::where_programs_are());
+        if let Some(home) = dirs::home_dir() {
+            assert!(places.contains(&home.join(".elan/bin")));
+        }
     }
 
     #[test]
