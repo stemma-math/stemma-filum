@@ -249,10 +249,10 @@ pub fn run_in_workspace(
         }
         _ => return Ok(Ran::Missing),
     }
+    // The job API first, then everywhere programs are installed, so an
+    // agent started by the service still finds `lake` and its own tools.
     let mut paths = vec![api_bin.to_owned()];
-    if let Some(existing) = std::env::var_os("PATH") {
-        paths.extend(std::env::split_paths(&existing));
-    }
+    paths.extend(where_programs_are());
     command
         .current_dir(workspace)
         .env("PATH", std::env::join_paths(paths)?)
