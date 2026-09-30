@@ -1328,6 +1328,10 @@ button.block__label:disabled {
 
 .block__content .cm-content {
     padding: 4px 12px 6px;
+    caret-color: transparent;
+}
+
+.block:not(.block--readonly) .block__content .cm-editor.cm-focused .cm-content {
     caret-color: var(--ink-1);
 }
 
