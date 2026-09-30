@@ -38,7 +38,7 @@ impl ResultPage {
 pub struct Release {
     /// Group that published it.
     pub group: GroupId,
-    /// Version chosen by the group.
+    /// Version assigned from the publication date and source commit.
     pub version: String,
     /// Private shared-library commit selected for publication.
     pub source_commit: String,
