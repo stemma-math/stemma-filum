@@ -89,10 +89,11 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
         )?;
         out.flush()?;
 
-        // Nothing else to do: the engine runs until the program is stopped.
-        loop {
-            std::thread::park();
-        }
+        // Registration can happen after the daemon starts. A machine event
+        // wakes this check promptly; the timeout also covers missed events.
+        wait_for_registration(woken.as_ref().expect("a listener for the daemon"), || {
+            Ok(server.node(&credentials.token)?.is_some())
+        });
     }
 
     let mut agents = crate::job::agents::look(home, &config);
@@ -164,6 +165,15 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
 
         if once {
             return Ok(());
+        }
+    }
+}
+
+fn wait_for_registration(woken: &Receiver<()>, mut registered: impl FnMut() -> Result<bool>) {
+    loop {
+        let _ = woken.recv_timeout(Duration::from_secs(BEAT_SECONDS));
+        if registered().unwrap_or(false) {
+            return;
         }
     }
 }
@@ -499,6 +509,21 @@ mod tests {
     use stemma_core::machine::Availability;
 
     use super::*;
+
+    #[test]
+    fn registration_after_start_wakes_the_daemon() {
+        let (ring, woken) = std::sync::mpsc::channel();
+        ring.send(()).unwrap();
+        ring.send(()).unwrap();
+        let mut checks = 0;
+
+        wait_for_registration(&woken, || {
+            checks += 1;
+            Ok(checks == 2)
+        });
+
+        assert_eq!(checks, 2);
+    }
 
     #[test]
     fn waiting_for_a_job_keeps_sending_heartbeats() {
