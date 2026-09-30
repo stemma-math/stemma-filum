@@ -2665,6 +2665,11 @@ body:has(.app-shell) .toasts {
     .blocks {
         padding: 20px 20px 32px;
     }
+
+    /* The narrow page has no outside margin for the selection box. */
+    .block__select {
+        left: 8px;
+    }
 }
 
 /* ── Setting this machine up ─────────────────────────────────────────── */
