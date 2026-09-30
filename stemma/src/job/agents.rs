@@ -255,6 +255,7 @@ fn workspace_command(program: &Path, slug: &str, prompt: &str) -> Option<Command
         "codex" => {
             command.args([
                 "exec",
+                "--skip-git-repo-check",
                 "--sandbox",
                 "workspace-write",
                 "--config",
@@ -644,6 +645,28 @@ mod tests {
                 "Bash(stemma-job *)",
                 "--permission-mode",
                 "acceptEdits",
+                "work here",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_codex_job_can_run_in_a_workspace_without_git_metadata() {
+        let command = workspace_command(Path::new("codex"), "codex", "work here").unwrap();
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy())
+            .collect();
+
+        assert_eq!(
+            args,
+            [
+                "exec",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "workspace-write",
+                "--config",
+                "sandbox_workspace_write.network_access=true",
                 "work here",
             ]
         );
