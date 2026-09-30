@@ -314,6 +314,26 @@ pub async fn cancel(
     Ok(Json(json!({ "cancelled": true })).into_response())
 }
 
+/// Records that the owner has dealt with what stopped a job, as the
+/// machine's page does on the web.
+pub async fn clear(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Path(id): Path<String>,
+) -> Result<Response, WebError> {
+    let id: JobId = id.parse().map_err(|_| WebError::NotFound)?;
+    let by = credential.user.id;
+    let cleared = instance
+        .write(move |connection| jobs::clear(connection, &id, &by))
+        .await?;
+    if !cleared {
+        return Err(WebError::BadRequest(
+            "Nothing about this job is waiting to be resolved.".to_owned(),
+        ));
+    }
+    Ok(Json(json!({ "cleared": true })).into_response())
+}
+
 /// What a program on a machine sends to launch a job.
 #[derive(Debug, Deserialize)]
 pub struct Asking {
@@ -392,6 +412,8 @@ pub async fn listing(
             let mut described = handed_over(job);
             described["state"] = json!(job.state.as_str());
             described["said"] = json!(said(job));
+            described["outcome"] = json!(job.outcome.as_ref().map(Outcome::as_str));
+            described["owed"] = json!(job.owes_its_owner_a_decision());
             described
         })
         .collect();

@@ -148,6 +148,7 @@ export const api = {
   machine: () => call<Machine | null>("machine"),
   jobOutput: (job: string) => call<string>("job_output", { job }),
   cancelJob: (job: string) => call<void>("cancel_job", { job }),
+  clearJob: (job: string) => call<void>("clear_job", { job }),
   nodeInit: (groups: string[]) => call<string>("node_init", { groups }),
 
   setupSurvey: () => call<Survey>("setup_survey"),

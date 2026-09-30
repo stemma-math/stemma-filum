@@ -222,6 +222,9 @@ pub struct Listed {
     pub job: String,
     /// The group's short name.
     pub group: String,
+    /// Which of its repositories.
+    #[serde(default)]
+    pub side: String,
     /// Which line of work.
     pub line: String,
     /// What is being asked.
@@ -232,6 +235,14 @@ pub struct Listed {
     pub state: String,
     /// One line about it.
     pub said: String,
+    /// How it ended, once it has: `produced`, `nothing_found`,
+    /// `could_not_try` or `broke`.
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// Whether it ended in something the machine's owner has to fix and
+    /// has not marked as resolved.
+    #[serde(default)]
+    pub owed: bool,
     /// Inspectable workspace, once the machine reports it.
     #[serde(default)]
     pub workspace: Option<String>,

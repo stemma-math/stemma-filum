@@ -409,6 +409,15 @@ impl Server {
         )
     }
 
+    /// Marks what stopped a job as resolved by the machine's owner.
+    pub fn clear_job(&self, token: &str, job: &str) -> Result<()> {
+        self.tell(
+            token,
+            &format!("/api/jobs/{}/clear", segment(job)),
+            &serde_json::json!({}),
+        )
+    }
+
     /// Puts a job in the queue.
     pub fn launch_job(&self, token: &str, asking: &Asking) -> Result<String> {
         let answer: serde_json::Value = self.ask(token, "/api/jobs", asking)?;

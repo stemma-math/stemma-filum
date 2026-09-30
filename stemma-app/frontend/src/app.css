@@ -1859,6 +1859,12 @@ button.block__label:disabled {
     border-radius: 11px;
 }
 
+/* A job waiting for this machine's owner is drawn as a warning. */
+.job--attention {
+    background: var(--warning-bg);
+    border-color: color-mix(in srgb, var(--warning-fg) 25%, transparent);
+}
+
 .job__head {
     display: flex;
     align-items: flex-start;
@@ -1883,6 +1889,32 @@ button.block__label:disabled {
     color: var(--ink-3);
 }
 
+.job__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    font-size: 12px;
+}
+
+.job__actions .button--link {
+    font-size: 12px;
+}
+
+.job__more {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+}
+
+.job__workspace {
+    font-size: 11px;
+    color: var(--ink-3);
+    overflow-wrap: anywhere;
+}
+
 .job__id {
     font-size: 11px;
     color: var(--ink-4);
@@ -1891,6 +1923,25 @@ button.block__label:disabled {
 .job__output {
     align-self: flex-start;
     font-size: 12px;
+}
+
+.job-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.job-list__finished {
+    --disclosure-inset: 0px;
+}
+
+.job-list__finished > summary {
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.job-list__failed {
+    color: var(--danger-fg);
 }
 
 .job__raw {

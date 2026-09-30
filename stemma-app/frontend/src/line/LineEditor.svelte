@@ -180,7 +180,7 @@
       </section>
       <section class="panel__section">
         <h2 class="panel__title">Jobs</h2>
-        <LineJobs />
+        <LineJobs {line} />
       </section>
       <ReviewHistory {line} />
       <section class="panel__section panel__section--foot">
