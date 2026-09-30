@@ -858,9 +858,17 @@ async fn read_work(
         // in no build yet. It belongs in this list from the moment it
         // exists, or the screen that made it appears to have done
         // nothing.
-        for digest in super::lines::unbuilt_in(instance, &group.id, side, signed).await? {
-            if nodes.line(&digest.name).is_none() {
-                nodes.lines.push(digest);
+        for (revision, digest) in
+            super::lines::current_in(instance, &group.id, side, signed).await?
+        {
+            match nodes
+                .lines
+                .iter()
+                .position(|built| built.name == digest.name)
+            {
+                Some(at) if nodes.lines[at].revision != Some(revision) => nodes.lines[at] = digest,
+                None => nodes.lines.push(digest),
+                _ => {}
             }
         }
 

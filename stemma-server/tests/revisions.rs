@@ -4,9 +4,12 @@ mod support;
 
 use axum::http::StatusCode;
 use serde_json::{Value, json};
+use stemma_core::artefact::{Kind, Nodes, Scope};
 use stemma_core::document::{Block, Document};
 use stemma_core::id::Slug;
-use stemma_server::store::{groups, users};
+use stemma_core::repository::Side;
+use stemma_server::artefacts::Shelf;
+use stemma_server::store::{artefacts as index, groups, users};
 use support::{Harness, Page};
 
 /// The password every account in these tests uses.
@@ -212,6 +215,57 @@ async fn the_machine_holding_the_line_writes_it_a_revision_at_a_time() {
         .await;
     assert!(download.says("Every group has one."));
     assert!(!download.says("From an old revision."));
+}
+
+#[tokio::test]
+async fn group_list_uses_the_current_source_when_the_last_build_is_older() {
+    let mut writing = writing().await;
+    let shelf = Shelf::new(writing.harness.instance.settings.paths.artefacts_dir());
+    writing
+        .harness
+        .instance
+        .write(move |connection| {
+            let user = users::by_login(connection, "ana")?.unwrap();
+            let group = groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.unwrap();
+            let scope = Scope::of(Side::Shared, &user.id);
+            let commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            let mut nodes = Nodes::new(group.id.clone(), Side::Shared, commit.to_owned());
+            let mut digest = support::digest(&Document::new("Old build", None));
+            digest.revision = Some(1);
+            nodes.lines.push(digest);
+            let text = nodes.to_text();
+            shelf.put(&group.id, &scope, Kind::Nodes, commit, text.as_bytes())?;
+            index::record(
+                connection,
+                &group.id,
+                &scope,
+                Kind::Nodes,
+                commit,
+                text.len(),
+                &user.id,
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    writing.take().await;
+    let source = Document::new("Current source", None)
+        .with(Block::prose("New words."))
+        .to_text();
+    let written = writing
+        .harness
+        .put_json_with_token(
+            &format!("/api/lines/{}", writing.line),
+            &writing.token,
+            &json!({"base": 1, "source": source, "page": "<p>New words.</p>"}).to_string(),
+        )
+        .await;
+    assert_eq!(written.status, StatusCode::OK, "{}", written.body);
+
+    let group = writing.harness.get("/g/algebra").await;
+    assert!(group.says("Current source"));
+    assert!(!group.says("Old build"));
 }
 
 #[tokio::test]
