@@ -31,6 +31,11 @@ const RUN_LIMIT: Duration = Duration::from_secs(20 * 60);
 /// How often to look at whether the agent has finished.
 const POLL: Duration = Duration::from_millis(50);
 
+/// The model a proposal is attributed to. Agents run with whatever model
+/// their own command-line tool uses by default, which this build does not
+/// choose and cannot see.
+pub const DEFAULT_MODEL: &str = "default";
+
 /// How this build invokes one of the agents in the catalogue.
 struct Invocation {
     /// Which agent.
@@ -102,15 +107,7 @@ pub fn look(home: &Home, config: &Config) -> Vec<Detected> {
             let name = known.id();
 
             match program(config, known.slug) {
-                Some(program) => {
-                    let mut detected =
-                        Detected::ready(name, version_of(home, &program, known.slug));
-                    if let Some(configured) = config.agents.get(known.slug) {
-                        detected.models.clone_from(&configured.models);
-                        detected.efforts.clone_from(&configured.efforts);
-                    }
-                    detected
-                }
+                Some(program) => Detected::ready(name, version_of(home, &program, known.slug)),
                 None => Detected::missing(name),
             }
         })
@@ -223,8 +220,6 @@ pub fn run_in_workspace(
     workspace: &Path,
     api_bin: &Path,
     into: &Path,
-    model: &str,
-    effort: Option<&str>,
     limit: Duration,
     cancelled: &std::sync::atomic::AtomicBool,
 ) -> Result<Ran> {
@@ -241,27 +236,14 @@ pub fn run_in_workspace(
                 "--config",
                 "sandbox_workspace_write.network_access=true",
             ]);
-            if model != "default" {
-                command.args(["--model", model]);
-            }
-            if let Some(effort) = effort {
-                command.arg("--config");
-                command.arg(format!("model_reasoning_effort=\"{effort}\""));
-            }
             command.arg(prompt);
         }
         "claude" => {
             command.args(["-p", "--permission-mode", "acceptEdits"]);
-            if model != "default" {
-                command.args(["--model", model]);
-            }
             command.arg(prompt);
         }
         "gemini" => {
             command.arg("--sandbox");
-            if model != "default" {
-                command.args(["--model", model]);
-            }
             command.arg("-p");
             command.arg(prompt);
         }
@@ -694,7 +676,6 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(root.join("nothing-here").display().to_string()),
-                ..Default::default()
             },
         );
 
@@ -724,7 +705,6 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
-                ..Default::default()
             },
         );
 
@@ -750,7 +730,6 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
-                ..Default::default()
             },
         );
 
@@ -779,7 +758,6 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
-                ..Default::default()
             },
         );
 
@@ -805,7 +783,6 @@ mod tests {
             "claude".to_owned(),
             crate::config::AgentConfig {
                 command: Some(program.display().to_string()),
-                ..Default::default()
             },
         );
 

@@ -4,6 +4,7 @@
   import Checklist from "../components/Checklist.svelte";
   import JobList from "../components/JobList.svelte";
   import { api, said } from "../lib/api";
+  import { space } from "../lib/joblist";
   import { setup } from "../lib/setup.svelte";
   import type { Machine } from "../lib/types";
 
@@ -32,6 +33,14 @@
     <Message kind="error" text={problem} />
   {:else if machine}
     <JobList jobs={machine.jobs} empty="No jobs have been assigned to this machine." />
+    <p class="setting__note">
+      {#if machine.workspaces.count}
+        Job workspaces take {space(machine.workspaces.bytes)} ({machine.workspaces.count === 1 ? "1 workspace" : `${machine.workspaces.count} workspaces`}).
+      {:else}
+        No job workspaces are kept on this machine.
+      {/if}
+      A workspace is removed once its proposal is decided, or a day after its job ended with nothing to review. Past {space(machine.workspaces.limit)}, the oldest are removed first.
+    </p>
   {:else if loaded}
     <p class="setting__note">This machine does not work for any group yet.</p>
   {:else}

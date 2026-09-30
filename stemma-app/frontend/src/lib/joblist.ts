@@ -48,3 +48,17 @@ export function standing(job: Job): { words: string; tone: string } {
     default: return { words: job.state, tone: "" };
   }
 }
+
+/** A number of bytes, in the unit that reads best. */
+export function space(bytes: number): string {
+  const units = ["KB", "MB", "GB", "TB"];
+  if (bytes < 1000) return bytes === 1 ? "1 byte" : `${bytes} bytes`;
+  let value = bytes;
+  let unit = "";
+  for (const next of units) {
+    value /= 1000;
+    unit = next;
+    if (value < 1000) break;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${unit}`;
+}

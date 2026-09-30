@@ -141,8 +141,6 @@ fn handed_over(job: &Job) -> serde_json::Value {
         "against": job.against,
         "task": job.task.to_string(),
         "agent": job.agent.as_str(),
-        "model": job.model,
-        "effort": job.effort,
         "request": job.request,
         "grants": job.grants,
         "workspace": job.workspace,
@@ -159,7 +157,7 @@ pub async fn finish(
     Path(id): Path<String>,
     Json(report): Json<Report>,
 ) -> Result<Response, WebError> {
-    let completion = report.complete();
+    let mut completion = report.complete();
     let machine = super::machines::registered(&instance, &credential).await?;
     let Ok(id) = id.parse::<JobId>() else {
         return Err(WebError::NotFound);
@@ -173,6 +171,17 @@ pub async fn finish(
         return Err(WebError::BadRequest(
             "This machine is not running that job.".to_owned(),
         ));
+    }
+    // A job that says it produced something has left it to review; only
+    // a build produces nothing but its pages.
+    if found.task != Task::Build
+        && completion.proposal.is_none()
+        && matches!(completion.outcome, Outcome::Produced { .. })
+    {
+        completion.outcome = Outcome::Broke {
+            code: "no_proposal".to_owned(),
+            said: "the agent said it was done but left nothing to review".to_owned(),
+        };
     }
     if let Some(offer) = &completion.proposal {
         let (line, number) = (found.line_id, found.revision);
@@ -355,12 +364,6 @@ pub struct Asking {
     /// Which machine, where one was chosen.
     #[serde(default)]
     pub machine: Option<String>,
-    /// Concrete model override.
-    #[serde(default)]
-    pub model: Option<String>,
-    /// Reasoning effort override.
-    #[serde(default)]
-    pub effort: Option<String>,
     /// The request for a custom task.
     #[serde(default)]
     pub request: Option<String>,
@@ -402,14 +405,21 @@ pub async fn listing(
             found.sort_by(|one, other| other.launched_at.cmp(&one.launched_at));
             found.dedup_by(|one, other| one.id == other.id);
 
-            Ok(found)
+            found
+                .into_iter()
+                .map(|job| {
+                    let review = crate::store::proposals::state_of_job(connection, &job.id)?;
+                    Ok((job, review))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()
         })
         .await?;
 
     let listed: Vec<_> = mine
         .iter()
-        .map(|job| {
+        .map(|(job, review)| {
             let mut described = handed_over(job);
+            described["review"] = json!(review);
             described["state"] = json!(job.state.as_str());
             described["said"] = json!(said(job));
             described["outcome"] = json!(job.outcome.as_ref().map(Outcome::as_str));
@@ -463,14 +473,6 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
     let asker = by.clone();
     let revision = asking.revision;
     let against = asking.against;
-    let model = asking
-        .model
-        .clone()
-        .filter(|value| !value.trim().is_empty());
-    let effort = asking
-        .effort
-        .clone()
-        .filter(|value| !value.trim().is_empty());
     let request = asking
         .request
         .clone()
@@ -520,24 +522,6 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                 if !serves {
                     anyhow::bail!(refuse("That machine does not work for this group."));
                 }
-                if let Some(offered) = machines::agents(connection, machine)?
-                    .into_iter()
-                    .find(|offered| offered.agent == agent)
-                {
-                    if let Some(model) = &model
-                        && !offered.models.is_empty()
-                        && !offered.models.contains(model)
-                    {
-                        anyhow::bail!(refuse("That model is not offered by the chosen machine."));
-                    }
-                    if let Some(effort) = &effort
-                        && !offered.efforts.is_empty()
-                        && !offered.efforts.contains(effort)
-                    {
-                        anyhow::bail!(refuse("That effort is not offered by the chosen machine."));
-                    }
-                }
-
                 // A private line exists only on its author's machines,
                 // so choosing anybody else's would be choosing a machine
                 // that cannot reach the work.
@@ -564,8 +548,6 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                     against,
                     task: task.clone(),
                     agent: agent.clone(),
-                    model: model.clone(),
-                    effort: effort.clone(),
                     request: request.clone(),
                     grants: grants.clone(),
                     choice: match chosen {
@@ -617,8 +599,6 @@ pub async fn launch(
             against: None,
             task: form.task.clone(),
             agent: agent.to_owned(),
-            model: None,
-            effort: None,
             request: None,
             grants: None,
             machine: match machine {

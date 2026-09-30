@@ -322,6 +322,18 @@ pub fn outdated(connection: &Connection, id: &ProposalId, by: &UserId) -> Result
     Ok(outdated)
 }
 
+/// Where the proposal a job left stands, when it left one.
+pub fn state_of_job(connection: &Connection, job: &JobId) -> Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT state FROM proposals WHERE job_id = ?1",
+            params![job.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .context("cannot read where the job's proposal stands")
+}
+
 /// Proposals this person still has to review.
 pub fn awaiting(connection: &Connection, by: &UserId) -> Result<Vec<Proposal>> {
     let mut statement = connection.prepare(
@@ -409,8 +421,6 @@ mod tests {
                 against: None,
                 task: Task::Explore,
                 agent: Slug::parse("claude").unwrap(),
-                model: None,
-                effort: None,
                 request: None,
                 grants: None,
                 choice: Choice::Anyone,
@@ -418,6 +428,7 @@ mod tests {
             },
         )
         .unwrap();
+        assert_eq!(state_of_job(connection, &job.id).unwrap(), None);
         let id = create(
             connection,
             &job,
@@ -437,7 +448,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(awaiting(connection, &ana.id).unwrap().len(), 1);
+        assert_eq!(
+            state_of_job(connection, &job.id).unwrap().as_deref(),
+            Some("awaiting_review")
+        );
         assert!(decide(connection, &id, &ana.id, "accept", None).unwrap());
+        assert_eq!(
+            state_of_job(connection, &job.id).unwrap().as_deref(),
+            Some("accepted")
+        );
         assert!(!decide(connection, &id, &ana.id, "reject", Some("too late")).unwrap());
         let accepted = by_id(connection, &id).unwrap().unwrap();
         assert_eq!(accepted.state, "accepted");
@@ -502,8 +521,6 @@ mod tests {
                 against: None,
                 task: Task::Explore,
                 agent: Slug::parse("claude").unwrap(),
-                model: None,
-                effort: None,
                 request: None,
                 grants: None,
                 choice: Choice::Anyone,

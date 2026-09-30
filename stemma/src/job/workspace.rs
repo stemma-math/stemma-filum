@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, anyhow, bail};
 use stemma_core::document::Document;
@@ -10,7 +11,7 @@ use stemma_core::line::{Line, Name};
 use stemma_core::proposal::{Grants, LineGrant};
 use stemma_core::repository;
 
-use crate::api::Handed;
+use crate::api::{Handed, Listed};
 use crate::home::Home;
 use crate::job::answer::{self, State};
 
@@ -41,8 +42,10 @@ pub fn root_of(home: &Home, job: &str) -> PathBuf {
     jobs_dir(home).join(crate::storage::file_name(job))
 }
 
-/// Creates a workspace for a job and deliberately leaves it there for its
-/// owner to inspect.
+/// Creates a workspace for a job and leaves it there for its owner to
+/// inspect, until [`tidy`] finds it is no longer needed. A workspace that
+/// could not be finished is removed at once, so a full disk is not left
+/// fuller.
 pub fn prepare(
     home: &Home,
     handed: &Handed,
@@ -72,8 +75,33 @@ pub fn prepare(
         created => created.with_context(|| format!("cannot create {}", root.display()))?,
     }
 
+    let prepared = fill(
+        handed,
+        task,
+        base_source,
+        repository,
+        custom_grants,
+        &line,
+        root.clone(),
+    );
+    if prepared.is_err() {
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    prepared
+}
+
+/// Puts everything a job needs in its new, empty workspace.
+fn fill(
+    handed: &Handed,
+    task: &Task,
+    base_source: &str,
+    repository: Option<&Path>,
+    custom_grants: Option<Grants>,
+    line: &Name,
+    root: PathBuf,
+) -> Result<Workspace> {
     if let Some(repository) = repository {
-        copy_tree(repository, &root)?;
+        copy_repository(repository, &root)?;
     }
     create(&root.join("scratch"))?;
     create(&root.join(".stemma"))?;
@@ -86,7 +114,7 @@ pub fn prepare(
     }
     write(&root.join("AGENTS.md"), &instructions)?;
 
-    let line_at = repository::line_entry(&root, &line);
+    let line_at = repository::line_entry(&root, line);
     if let Some(parent) = line_at.parent() {
         create(parent)?;
     }
@@ -266,6 +294,73 @@ fn grants_for(task: &Task, source: &str) -> Grants {
     grants
 }
 
+/// Copies the group's repository into a workspace, without its history,
+/// its build products or this machine's own state. Lake's packages (Mathlib
+/// among them, several gigabytes) are shared with the repository rather
+/// than copied: a job reads them and has no reason to change them.
+fn copy_repository(from: &Path, to: &Path) -> Result<()> {
+    for entry in
+        std::fs::read_dir(from).with_context(|| format!("cannot read {}", from.display()))?
+    {
+        let entry = entry.with_context(|| format!("cannot read {}", from.display()))?;
+        let name = entry.file_name();
+        if name == ".git" || name == "target" || name == ".stemma" {
+            continue;
+        }
+        let source = entry.path();
+        let target = to.join(&name);
+        let kind = entry
+            .file_type()
+            .with_context(|| format!("cannot read {}", source.display()))?;
+        if name == ".lake" && kind.is_dir() {
+            create(&target)?;
+            copy_lake(&source, &target)?;
+        } else if kind.is_dir() {
+            create(&target)?;
+            copy_tree(&source, &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(&source, &target)
+                .with_context(|| format!("cannot copy {}", source.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Copies Lake's directory, linking its packages instead of copying them.
+fn copy_lake(from: &Path, to: &Path) -> Result<()> {
+    for entry in
+        std::fs::read_dir(from).with_context(|| format!("cannot read {}", from.display()))?
+    {
+        let entry = entry.with_context(|| format!("cannot read {}", from.display()))?;
+        let source = entry.path();
+        let target = to.join(entry.file_name());
+        let kind = entry
+            .file_type()
+            .with_context(|| format!("cannot read {}", source.display()))?;
+        if entry.file_name() == "packages" && kind.is_dir() {
+            share_directory(&source, &target)?;
+        } else if kind.is_dir() {
+            create(&target)?;
+            copy_tree(&source, &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(&source, &target)
+                .with_context(|| format!("cannot copy {}", source.display()))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn share_directory(from: &Path, to: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(from, to).with_context(|| format!("cannot link {}", from.display()))
+}
+
+#[cfg(not(unix))]
+fn share_directory(from: &Path, to: &Path) -> Result<()> {
+    create(to)?;
+    copy_tree(from, to)
+}
+
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     for entry in
         std::fs::read_dir(from).with_context(|| format!("cannot read {}", from.display()))?
@@ -301,6 +396,144 @@ fn link_command(command: &Path, linked: &Path) -> Result<()> {
 fn link_command(command: &Path, linked: &Path) -> Result<()> {
     std::fs::copy(command, linked)?;
     Ok(())
+}
+
+/// How long a workspace is kept once its job ended without anything to
+/// review, for its owner to look at what happened.
+const KEPT_AFTER_ENDING: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// How long a workspace is kept when the instance no longer lists its job.
+const KEPT_UNLISTED: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+/// How much room the workspaces of this machine's jobs take.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Used {
+    /// How many there are.
+    pub count: usize,
+    /// How many bytes they take, not counting what they share with the
+    /// group's repository.
+    pub bytes: u64,
+}
+
+/// What the workspaces of this machine's jobs take now.
+pub fn used(home: &Home) -> Used {
+    let mut used = Used::default();
+    for (path, _) in workspaces(home) {
+        used.count += 1;
+        used.bytes += size_of(&path);
+    }
+    used
+}
+
+/// Whether a workspace is still of use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Standing {
+    /// Its job is queued or running: never removed.
+    Working,
+    /// Worth keeping, unless the workspaces take more than they may.
+    Kept,
+    /// Of no further use.
+    Done,
+}
+
+/// Removes the workspaces that are no longer needed, then the oldest of the
+/// rest until they fit in `limit` bytes, and says what is left.
+///
+/// A workspace is kept while its job is queued or running, while its
+/// proposal waits for review, for a day after its job ended with nothing
+/// to review, and for a week once the instance no longer lists its job.
+pub fn tidy(home: &Home, listed: &[Listed], limit: u64) -> Used {
+    let now = SystemTime::now();
+    let mut kept = Vec::new();
+    let mut used = Used::default();
+
+    for (path, touched) in workspaces(home) {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let age = now.duration_since(touched).unwrap_or_default();
+        let job = listed
+            .iter()
+            .find(|job| crate::storage::file_name(&job.job) == name);
+        match standing(job, age) {
+            Standing::Done => {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+            Standing::Working => {
+                used.count += 1;
+                used.bytes += size_of(&path);
+            }
+            Standing::Kept => kept.push((path.clone(), touched, size_of(&path))),
+        }
+    }
+
+    // The oldest go first when there is not room for all of them.
+    kept.sort_by_key(|(_, touched, _)| std::cmp::Reverse(*touched));
+    for (path, _, bytes) in kept {
+        if used.bytes + bytes > limit {
+            let _ = std::fs::remove_dir_all(&path);
+        } else {
+            used.count += 1;
+            used.bytes += bytes;
+        }
+    }
+
+    used
+}
+
+/// Where one workspace stands, from what the instance lists about its job
+/// and how long ago the workspace was last touched.
+fn standing(job: Option<&Listed>, age: Duration) -> Standing {
+    let Some(job) = job else {
+        return if age < KEPT_UNLISTED {
+            Standing::Kept
+        } else {
+            Standing::Done
+        };
+    };
+
+    match (job.state.as_str(), job.review.as_deref()) {
+        ("queued" | "running", _) => Standing::Working,
+        (_, Some("awaiting_review")) => Standing::Kept,
+        (_, Some(_)) => Standing::Done,
+        (_, None) if age < KEPT_AFTER_ENDING => Standing::Kept,
+        (_, None) => Standing::Done,
+    }
+}
+
+/// Every workspace on this machine, with when it was last touched.
+fn workspaces(home: &Home) -> Vec<(PathBuf, SystemTime)> {
+    let Ok(entries) = std::fs::read_dir(jobs_dir(home)) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| {
+            let path = entry.path();
+            let touched = [path.clone(), path.join(".stemma/job.json")]
+                .iter()
+                .filter_map(|one| one.metadata().and_then(|meta| meta.modified()).ok())
+                .max()
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+            (path, touched)
+        })
+        .collect()
+}
+
+/// How many bytes a directory takes, without following links.
+fn size_of(path: &Path) -> u64 {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !meta.is_dir() {
+        return meta.len();
+    }
+    std::fs::read_dir(path)
+        .map(|entries| entries.flatten().map(|entry| size_of(&entry.path())).sum())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -357,5 +590,186 @@ mod tests {
             error.to_string().contains("cannot be a directory"),
             "{error}"
         );
+    }
+
+    /// A directory of its own for one test, empty.
+    fn scratch(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("stemma-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    fn home_in(root: &Path) -> Home {
+        Home::locate(&Environment::from_pairs([(HOME_VARIABLE, root)]))
+    }
+
+    fn put(path: &Path, contents: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
+
+    fn listed(job: &str, state: &str, review: Option<&str>) -> Listed {
+        serde_json::from_value(serde_json::json!({
+            "job": job,
+            "group": "algebra",
+            "line": "quotients",
+            "task": "explore",
+            "agent": "claude",
+            "state": state,
+            "said": "",
+            "review": review,
+        }))
+        .unwrap()
+    }
+
+    /// A workspace for `job` holding `bytes` bytes.
+    fn workspace_of(home: &Home, job: &str, bytes: usize) -> PathBuf {
+        let root = root_of(home, job);
+        put(&root.join("line.json"), &"x".repeat(bytes));
+        root
+    }
+
+    #[test]
+    fn a_workspace_shares_lakes_packages_and_leaves_history_and_state_behind() {
+        let root = scratch("copy-repository");
+        let repository = root.join("repository");
+        put(&repository.join("Algebra.lean"), "-- the library");
+        put(
+            &repository.join(".lake/packages/mathlib/Mathlib.olean"),
+            "mathlib",
+        );
+        put(&repository.join(".lake/build/lib/Algebra.olean"), "built");
+        put(&repository.join(".git/HEAD"), "ref: refs/heads/main");
+        put(&repository.join(".stemma/check/mathlib-cache"), "stamp");
+        let to = root.join("workspace");
+        std::fs::create_dir(&to).unwrap();
+
+        copy_repository(&repository, &to).unwrap();
+
+        assert!(to.join("Algebra.lean").is_file());
+        assert!(to.join(".lake/build/lib/Algebra.olean").is_file());
+        assert!(to.join(".lake/packages/mathlib/Mathlib.olean").is_file());
+        #[cfg(unix)]
+        assert!(
+            std::fs::symlink_metadata(to.join(".lake/packages"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(!to.join(".git").exists());
+        assert!(!to.join(".stemma").exists());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_workspace_that_could_not_be_prepared_is_removed() {
+        let root = scratch("unprepared");
+        let home = home_in(&root);
+        let handed: Handed = serde_json::from_value(serde_json::json!({
+            "job": "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3T",
+            "group": "algebra",
+            "side": "shared",
+            "line": "quotients",
+            "revision": 1,
+            "task": "explore",
+            "agent": "claude",
+            "launched_by": "usr:ana",
+        }))
+        .unwrap();
+
+        let missing = root.join("no-repository-here");
+        assert!(prepare(&home, &handed, &Task::Explore, "", Some(&missing), None).is_err());
+        assert!(!root_of(&home, &handed.job).exists());
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_workspace_is_kept_while_its_job_may_still_need_it() {
+        let root = scratch("tidy-needed");
+        let home = home_in(&root);
+        let running = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3A", 10);
+        let reviewing = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3B", 10);
+        let accepted = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3C", 10);
+        let ended = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3D", 10);
+        let unlisted = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3E", 10);
+
+        let left = tidy(
+            &home,
+            &[
+                listed("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3A", "running", None),
+                listed(
+                    "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3B",
+                    "done",
+                    Some("awaiting_review"),
+                ),
+                listed("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3C", "done", Some("accepted")),
+                listed("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3D", "done", None),
+            ],
+            u64::MAX,
+        );
+
+        assert!(running.exists() && reviewing.exists() && ended.exists() && unlisted.exists());
+        assert!(!accepted.exists());
+        assert_eq!(left, used(&home));
+        assert_eq!(left.count, 4);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn the_oldest_workspaces_go_first_when_they_take_too_much() {
+        let root = scratch("tidy-limit");
+        let home = home_in(&root);
+        let running = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3A", 100);
+        let older = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3B", 100);
+        let newer = workspace_of(&home, "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3C", 100);
+        let state = newer.join(".stemma/job.json");
+        put(&state, "{}");
+        std::fs::File::options()
+            .write(true)
+            .open(&state)
+            .unwrap()
+            .set_modified(SystemTime::now() + Duration::from_secs(60 * 60))
+            .unwrap();
+
+        let left = tidy(
+            &home,
+            &[
+                listed("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3A", "running", None),
+                listed(
+                    "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3B",
+                    "done",
+                    Some("awaiting_review"),
+                ),
+                listed(
+                    "job:01K5YQ4TQ2VZ8H3M9N0P1R2S3C",
+                    "done",
+                    Some("awaiting_review"),
+                ),
+            ],
+            250,
+        );
+
+        assert!(running.exists() && newer.exists());
+        assert!(!older.exists());
+        assert_eq!(left.count, 2);
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_job_that_ended_keeps_its_workspace_a_day_and_an_unlisted_one_a_week() {
+        let hour = Duration::from_secs(60 * 60);
+        let ended = listed("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3A", "done", None);
+        let withdrawn = listed("job:01K5YQ4TQ2VZ8H3M9N0P1R2S3B", "withdrawn", None);
+
+        assert_eq!(standing(Some(&ended), hour), Standing::Kept);
+        assert_eq!(standing(Some(&ended), 25 * hour), Standing::Done);
+        assert_eq!(standing(Some(&withdrawn), 25 * hour), Standing::Done);
+        assert_eq!(standing(None, 6 * 24 * hour), Standing::Kept);
+        assert_eq!(standing(None, 8 * 24 * hour), Standing::Done);
     }
 }

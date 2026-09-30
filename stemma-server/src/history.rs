@@ -71,8 +71,6 @@ pub async fn ask_for_builds(instance: &Instance) -> Result<usize, WebError> {
                         against: None,
                         task: Task::Build,
                         agent: builder.clone(),
-                        model: None,
-                        effort: None,
                         request: None,
                         grants: None,
                         choice: Choice::Anyone,

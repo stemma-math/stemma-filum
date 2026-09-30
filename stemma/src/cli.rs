@@ -417,14 +417,6 @@ pub struct JobRun {
     #[arg(long)]
     pub here: bool,
 
-    /// Concrete model offered by the chosen machine.
-    #[arg(long)]
-    pub model: Option<String>,
-
-    /// Reasoning effort offered by the chosen machine.
-    #[arg(long)]
-    pub effort: Option<String>,
-
     /// A custom request. This selects the `custom` task.
     #[arg(long)]
     pub request: Option<String>,

@@ -39,10 +39,6 @@ pub struct Wanted {
     pub machine: Option<String>,
     /// Whether they chose this machine.
     pub here: bool,
-    /// Concrete model override.
-    pub model: Option<String>,
-    /// Reasoning effort override.
-    pub effort: Option<String>,
     /// A person's request for a custom task.
     pub request: Option<String>,
     /// Explicit capabilities for a custom task.
@@ -76,8 +72,6 @@ pub fn run(home: &Home, at: &Path, wanted: &Wanted, out: &mut impl Write) -> Res
             task: task.to_string(),
             agent: wanted.agent.clone(),
             machine: machine.clone(),
-            model: wanted.model.clone(),
-            effort: wanted.effort.clone(),
             request: wanted.request.clone(),
             grants: wanted.grants.clone(),
         },

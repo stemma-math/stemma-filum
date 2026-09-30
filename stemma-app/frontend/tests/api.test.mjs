@@ -30,7 +30,7 @@ test("without the application behind it, a command fails and nothing is heard", 
 
 test("an agent task is launched on the chosen machine with no custom request", async () => {
   const { calls } = shell();
-  await api.launch("/w/a/private/lines/l/line.json", "prove@blk:1", "claude", "mac", null, "high");
+  await api.launch("/w/a/private/lines/l/line.json", "prove@blk:1", "claude", "mac");
   assert.deepEqual(calls, [{
     command: "launch",
     args: {
@@ -39,8 +39,6 @@ test("an agent task is launched on the chosen machine with no custom request", a
       agent: "claude",
       here: false,
       machine: "mac",
-      model: null,
-      effort: "high",
       request: null,
       grantBlocks: [],
       grantLibrary: false,
@@ -50,7 +48,7 @@ test("an agent task is launched on the chosen machine with no custom request", a
 
 test("a custom task carries its request and what it may change", async () => {
   const { calls } = shell();
-  await api.launch("/p", "custom", "claude", "mac", "opus", null, { request: "Tidy it", blocks: ["blk:1"], library: true });
+  await api.launch("/p", "custom", "claude", "mac", { request: "Tidy it", blocks: ["blk:1"], library: true });
   const { request, grantBlocks, grantLibrary } = calls[0].args;
   assert.deepEqual({ request, grantBlocks, grantLibrary }, { request: "Tidy it", grantBlocks: ["blk:1"], grantLibrary: true });
 });

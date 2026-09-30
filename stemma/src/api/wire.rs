@@ -196,12 +196,6 @@ pub struct Handed {
     pub task: String,
     /// Which agent to use.
     pub agent: String,
-    /// Concrete model override.
-    #[serde(default)]
-    pub model: Option<String>,
-    /// Reasoning effort override.
-    #[serde(default)]
-    pub effort: Option<String>,
     /// A person's request for a custom task.
     #[serde(default)]
     pub request: Option<String>,
@@ -252,6 +246,10 @@ pub struct Listed {
     /// Whether cancellation has been requested.
     #[serde(default)]
     pub cancel_requested: bool,
+    /// Where its proposal stands, when it left one: `awaiting_review`,
+    /// `accepted`, `rejected` or `outdated`.
+    #[serde(default)]
+    pub review: Option<String>,
 }
 
 /// What the instance answers a running job's progress with.
@@ -280,12 +278,6 @@ pub struct Asking {
     pub agent: String,
     /// Which machine, where one was chosen.
     pub machine: Option<String>,
-    /// Concrete model override.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
-    /// Reasoning effort override.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub effort: Option<String>,
     /// A person's request for a custom task.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request: Option<String>,

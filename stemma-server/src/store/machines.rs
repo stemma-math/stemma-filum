@@ -227,15 +227,13 @@ pub fn report(connection: &mut Connection, machine: &MachineId, found: &[Detecte
     for agent in found {
         transaction
             .execute(
-                "INSERT INTO machine_agents (machine_id, agent, version, availability, models, efforts)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO machine_agents (machine_id, agent, version, availability)
+                 VALUES (?1, ?2, ?3, ?4)",
                 params![
                     machine.to_string(),
                     agent.agent.as_str(),
                     agent.version,
                     agent.availability.as_str(),
-                    serde_json::to_string(&agent.models)?,
-                    serde_json::to_string(&agent.efforts)?,
                 ],
             )
             .context("cannot record what the machine found")?;
@@ -254,17 +252,11 @@ pub fn report(connection: &mut Connection, machine: &MachineId, found: &[Detecte
 /// option shown with its reason teaches the owner about their machine.
 pub fn agents(connection: &Connection, machine: &MachineId) -> Result<Vec<Detected>> {
     let mut statement = connection
-        .prepare("SELECT agent, version, availability, models, efforts FROM machine_agents WHERE machine_id = ?1")?;
+        .prepare("SELECT agent, version, availability FROM machine_agents WHERE machine_id = ?1")?;
 
-    let reported: Vec<(String, Option<String>, String, String, String)> = statement
+    let reported: Vec<(String, Option<String>, String)> = statement
         .query_map(params![machine.to_string()], |row| {
-            Ok((
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-                row.get(4)?,
-            ))
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("cannot read what the machine reported")?;
@@ -272,17 +264,13 @@ pub fn agents(connection: &Connection, machine: &MachineId) -> Result<Vec<Detect
     let found = stemma_core::machine::CATALOGUE
         .iter()
         .map(|known| {
-            let said = reported
-                .iter()
-                .find(|(agent, _, _, _, _)| agent == known.slug);
+            let said = reported.iter().find(|(agent, _, _)| agent == known.slug);
 
             match said {
-                Some((_, version, availability, models, efforts)) => Detected {
+                Some((_, version, availability)) => Detected {
                     agent: known.id(),
                     version: version.clone(),
                     availability: availability.parse().unwrap_or_default(),
-                    models: serde_json::from_str(models).unwrap_or_default(),
-                    efforts: serde_json::from_str(efforts).unwrap_or_default(),
                 },
                 // A machine running an older client says nothing about an
                 // agent it has never heard of, and cannot run it either.

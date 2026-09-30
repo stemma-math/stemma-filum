@@ -65,8 +65,12 @@ anyone who can read it.
 Each requested agent job runs in its own directory below `jobs/` in the
 client's state directory, which only the machine's owner can enter. The directory contains the group's repository,
 the target `line.json` at the requested revision, versioned `AGENTS.md` and
-`TASK.md` instructions, and `scratch/`. It is deliberately left in place for
-the machine owner to inspect and is reported with the job.
+`TASK.md` instructions, and `scratch/`. Lake's packages are linked from the
+group's repository rather than copied. The directory is reported with the job
+and left for the machine owner to inspect until it is no longer needed: it is
+removed once its proposal is decided, or a day after its job ended with nothing
+to review. When the workspaces together take more than the configured limit,
+the oldest are removed first.
 
 Agents submit only scoped block and library-file operations through the
 `stemma-job` command placed on their `PATH`. The command validates each action,
@@ -75,26 +79,18 @@ result, and submits with `stemma-job done`. Raw vendor output stays on the
 machine. Accepted line operations are merged block by block, and library
 operations file by file, against the revision from which they were made.
 
-Models, effort levels, defaults, and the time limit are machine-owned settings
-in the client configuration. For example:
+Each agent runs with the model and effort its own command-line tool uses by
+default. The time limit and the room workspaces may take are machine-owned
+settings in the client configuration. For example:
 
 ```toml
 [jobs]
 timeout_minutes = 45
-
-[agents.codex]
-models = ["gpt-5-codex"]
-efforts = ["medium", "high"]
-model = "gpt-5-codex"
-effort = "medium"
-
-[agents.codex.tasks.prove]
-effort = "high"
+workspaces_gigabytes = 20
 ```
 
-Only declared models and effort levels are offered by the launcher. A launch
-may override the defaults among those choices. Queued and running jobs can be
-cancelled from the application or with `stemma job cancel JOB`.
+Queued and running jobs can be cancelled from the application or with
+`stemma job cancel JOB`.
 
 ## Requirements
 

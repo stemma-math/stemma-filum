@@ -115,6 +115,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "dismissed-requests",
         sql: include_str!("../migrations/0022-dismissed-requests.sql"),
     },
+    Migration {
+        name: "agent-defaults",
+        sql: include_str!("../migrations/0023-agent-defaults.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.
