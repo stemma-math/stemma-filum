@@ -4,6 +4,7 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api, said } from "./api";
+import { takenWhenFree } from "./claim";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
 import { fail, succeed, warn } from "./status.svelte";
@@ -356,7 +357,7 @@ export class LineSession {
   async lookAtClaim() {
     try {
       const claim = await api.claimStatus(this.path);
-      if (claim.standing === "open" && !this.writing) {
+      if (takenWhenFree(this.claim, claim)) {
         await this.takeClaim();
         return;
       }
