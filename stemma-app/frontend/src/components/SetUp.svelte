@@ -8,7 +8,7 @@
 
 <Dialog bind:open={setup.open} title="Set up this machine" wide>
   <div class="checklist">
-    <p class="setting__note">Everything here is optional, and can be done later from Settings → This machine.</p>
+    <p class="setting__note">Everything here is optional, and can be done later from Settings &gt; This machine.</p>
     <Checklist />
   </div>
   {#snippet actions()}
