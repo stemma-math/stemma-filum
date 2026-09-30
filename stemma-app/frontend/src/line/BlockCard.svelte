@@ -247,6 +247,14 @@
   ondragleave={() => (dropping = null)}
   ondrop={drop}
 >
+  <input
+    type="checkbox"
+    class="block__select"
+    checked={selected}
+    aria-label="Select for an agent"
+    onchange={() => onselect(true)}
+  />
+
   <div class="block__head">
     <span class="block__lead">
       {#if line.editable}
@@ -261,13 +269,6 @@
           ondragend={() => (dragging = false)}
         ><Glyph name="grip" /></span>
       {/if}
-      <input
-        type="checkbox"
-        class="block__select"
-        checked={selected}
-        aria-label="Select for an agent"
-        onchange={() => onselect(true)}
-      />
     </span>
 
     {#if statement}
