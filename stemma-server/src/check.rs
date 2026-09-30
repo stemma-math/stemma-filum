@@ -199,6 +199,7 @@ pub fn inspect(settings: &Settings, service_user: &str) -> Report {
     inspect_state_directory(&mut report, settings, service_user);
     inspect_keys(&mut report, settings);
     inspect_database(&mut report, settings);
+    inspect_policy(&mut report, settings);
     inspect_repositories(&mut report, settings);
     inspect_listen(&mut report, &settings.listen);
     inspect_mail(&mut report, settings.policy_seed.mail.as_ref());
@@ -312,6 +313,54 @@ fn inspect_database(report: &mut Report, settings: &Settings) {
             ))
             .remedy("this machine is running an older release than the database expects".to_owned()),
         ),
+    }
+}
+
+/// The policy the database holds, against the configuration file and the
+/// accounts there are.
+///
+/// The file only seeds the database, so a file that says something else
+/// decides nothing, and an operator editing it has to be told. A closed
+/// instance with no account yet still lets anyone make the first one from
+/// the web, so that it is never locked; that is said here, where the
+/// operator reads it, until an account exists.
+fn inspect_policy(report: &mut Report, settings: &Settings) {
+    let path = settings.paths.database();
+    let Ok(connection) =
+        rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
+        return;
+    };
+
+    if let Ok(found) = crate::store::settings::disagreements(&connection, &settings.policy_seed) {
+        for disagreement in found {
+            report.push(
+                Finding::warning(disagreement).remedy(
+                    "the database decides; change it from the admin area, or make the file agree"
+                        .to_owned(),
+                ),
+            );
+        }
+    }
+
+    let (Ok(policy), Ok(accounts)) = (
+        crate::store::settings::policy(&connection),
+        crate::store::users::count(&connection),
+    ) else {
+        return;
+    };
+    if !policy.registration_open && accounts == 0 {
+        report.push(
+            Finding::warning(
+                "registration is closed, but until there is an account anyone who opens \
+                 /register can create the first one",
+            )
+            .remedy(
+                "create the first administrator with `stemma-server user create` and \
+                 `stemma-server admin grant`"
+                    .to_owned(),
+            ),
+        );
     }
 }
 
@@ -530,6 +579,77 @@ fn mode_of(path: &Path) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An instance whose configuration file closes registration, with its
+    /// database migrated and seeded as `migrate` leaves it.
+    fn closed_instance(name: &str) -> Settings {
+        let root = std::env::temp_dir().join(format!("stemma-check-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let settings = Settings {
+            public_url: crate::config::PublicUrl::parse("https://stemma.example.org").unwrap(),
+            listen: "127.0.0.1:0".parse().unwrap(),
+            paths: crate::config::Paths::new(&root),
+            policy_seed: crate::config::PolicySeed {
+                registration_open: Some(false),
+                ..Default::default()
+            },
+            source: root.join("server.toml"),
+        };
+        let mut database = db::Database::open_or_create(&settings.paths.database()).unwrap();
+        database.migrate().unwrap();
+        crate::store::settings::seed(database.connection(), &settings.policy_seed).unwrap();
+
+        settings
+    }
+
+    fn says(report: &Report, words: &str) -> bool {
+        report
+            .findings
+            .iter()
+            .any(|finding| finding.message.contains(words))
+    }
+
+    #[test]
+    fn a_closed_instance_with_no_account_says_the_first_one_is_open_to_anyone() {
+        let settings = closed_instance("first-account");
+
+        let mut report = Report::default();
+        inspect_policy(&mut report, &settings);
+        assert!(says(&report, "anyone who opens /register"), "{report}");
+        assert!(!says(&report, "in the database"), "{report}");
+
+        let database = db::Database::open(&settings.paths.database()).unwrap();
+        crate::store::users::create(
+            database.connection(),
+            &stemma_core::id::Slug::parse("ana").unwrap(),
+            "ana@example.org",
+            "Ana",
+            crate::password::NO_PASSWORD,
+        )
+        .unwrap()
+        .unwrap();
+
+        let mut report = Report::default();
+        inspect_policy(&mut report, &settings);
+        assert!(report.findings.is_empty(), "{report}");
+
+        std::fs::remove_dir_all(settings.paths.database().parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn a_file_that_no_longer_decides_the_policy_is_said_to_disagree() {
+        let mut settings = closed_instance("disagreeing");
+        settings.policy_seed.registration_open = Some(true);
+
+        let mut report = Report::default();
+        inspect_policy(&mut report, &settings);
+        assert!(
+            says(&report, "`registration.open` is `false` in the database"),
+            "{report}"
+        );
+    }
 
     #[test]
     fn a_socket_directory_systemd_makes_is_not_a_reason_to_refuse_to_start() {

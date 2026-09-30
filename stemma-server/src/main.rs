@@ -12,7 +12,7 @@ use stemma_server::cli::{AdminAction, Cli, Command, UserAction};
 use stemma_server::config::{ConfigFile, Environment, Overrides, Settings};
 use stemma_server::install::{Journal, Options, RemovalOptions};
 use stemma_server::{
-    admin, backup, check, config, db, install, serve, service, setup, status, system,
+    admin, backup, check, config, db, install, serve, service, setup, status, store, system,
 };
 
 fn main() -> ExitCode {
@@ -176,7 +176,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
 
         Command::Migrate { settings } => {
             let settings = Settings::load(&config_path, &environment, &settings.overrides())?;
-            let applied = migrate(&settings)?;
+            let (applied, seeded) = migrate(&settings)?;
 
             if applied.is_empty() {
                 println!(
@@ -191,6 +191,9 @@ fn run(cli: Cli) -> Result<ExitCode> {
                     "The database is now at schema version {}.",
                     db::expected_version()
                 );
+            }
+            for key in &seeded {
+                println!("took `{key}` from the configuration file");
             }
 
             Ok(ExitCode::SUCCESS)
@@ -219,7 +222,11 @@ fn open_database(settings: &Settings) -> Result<db::Database> {
 }
 
 /// Brings the database up to date, keeping a copy of what it was.
-fn migrate(settings: &Settings) -> Result<Vec<&'static str>> {
+/// Brings the database up to date, then takes the policy the configuration
+/// file offers for whatever nobody has decided yet: what `setup` answered
+/// reaches the instance here. Says which migrations ran and which settings
+/// were taken.
+fn migrate(settings: &Settings) -> Result<(Vec<&'static str>, Vec<&'static str>)> {
     let path = settings.paths.database();
     let existed = path.exists();
     let mut database = db::Database::open_or_create(&path)?;
@@ -232,7 +239,10 @@ fn migrate(settings: &Settings) -> Result<Vec<&'static str>> {
         println!("Copied the database to {} first.", backup.display());
     }
 
-    database.migrate()
+    let applied = database.migrate()?;
+    let seeded = store::settings::seed(database.connection(), &settings.policy_seed)?;
+
+    Ok((applied, seeded))
 }
 
 /// Reads the configuration and inspects the instance it describes.

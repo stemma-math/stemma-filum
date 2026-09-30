@@ -290,6 +290,10 @@ if server admin list | grep -q '^Nobody maintains' && interactive; then
         server user create --email "$email" "$name"
         server admin grant "$name"
         echo "    Send them the link above to set their password."
+    else
+        echo "    Until there is an account, anyone who opens /register can create the first"
+        echo "    one, even with registration closed. \`stemma-server-$instance user create\`"
+        echo "    and \`admin grant\` make the administrator whenever you are ready."
     fi
 fi
 
