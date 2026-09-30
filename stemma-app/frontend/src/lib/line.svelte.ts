@@ -38,7 +38,9 @@ export class LineSession {
   writing = $state(false);
   saveState = $state<SaveState>("saved");
   claim = $state<Claim | null>(null);
-  claimError = $state<string | null>(null);
+  /** Whether the last attempt to reach the claim failed; what went wrong
+   * was raised as a message. */
+  claimFailed = $state(false);
   preview = $state<Preview | null>(null);
   previewError = $state<string | null>(null);
   /** The blocks an agent will be asked about. */
@@ -359,7 +361,7 @@ export class LineSession {
         return;
       }
       this.claim = claim;
-      this.claimError = null;
+      this.claimFailed = false;
       this.writing = claim.standing === "writing";
     } catch {
       // What was shown stays until the next look works.
@@ -376,12 +378,13 @@ export class LineSession {
     try {
       const claim = await ask();
       this.claim = claim;
-      this.claimError = null;
+      this.claimFailed = false;
       this.writing = claim.standing === "writing";
     } catch (error) {
       this.claim = null;
-      this.claimError = said(error);
+      this.claimFailed = true;
       this.writing = false;
+      fail(error);
     }
   }
 

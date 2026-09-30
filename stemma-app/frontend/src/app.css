@@ -824,11 +824,7 @@
 }
 
 .claim__words--failed {
-    max-width: 240px;
-    overflow: hidden;
     color: var(--danger-fg);
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .claim__left {
