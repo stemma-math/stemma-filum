@@ -1888,8 +1888,7 @@ a.machine-row:hover {
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
-    gap: 4px;
-    margin-left: -10px;
+    gap: 8px;
 }
 
 /* A black box: a declared absence. Hatched rather than coloured — a gap
@@ -1961,19 +1960,28 @@ a.machine-row:hover {
 
 /* ── The launcher ──────────────────────────────────────────────────────
  *
- * An agent action is offered where its effect will land: a quiet line
- * that opens into the machines and the agents on each. */
+ * An agent action is offered where its effect will land, with the exact
+ * task named on the trigger and in the opened panel. */
 
 .launcher > summary {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    font-size: 14px;
-    color: var(--link-fg);
+    gap: 8px;
+    min-height: 32px;
+    padding: 5px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent-soft-fg);
+    background: var(--surface-card);
+    border: 1px solid var(--border-strong);
     list-style: none;
     border-radius: var(--radius-sm);
     cursor: pointer;
+}
+
+.launcher > summary .glyph {
+    width: 15px;
+    height: 15px;
 }
 
 .launcher > summary::-webkit-details-marker {
@@ -1983,6 +1991,13 @@ a.machine-row:hover {
 .launcher > summary:hover,
 .launcher[open] > summary {
     background: var(--accent-soft-bg);
+    border-color: var(--accent);
+}
+
+.launcher__request {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink-2);
 }
 
 .launcher__panel {
