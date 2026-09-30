@@ -1187,8 +1187,11 @@ button.block__label:disabled {
     font: var(--text-content);
 }
 
+/* While a block is being written, its source is code: monospaced, so
+ * the markup lines up and reads as such. At rest it reads as the page. */
 .block__content .cm-editor.cm-focused {
     outline: 0;
+    font: var(--text-source);
 }
 
 .block__content .cm-scroller {
@@ -1199,6 +1202,10 @@ button.block__label:disabled {
 .block__content .cm-content {
     padding: 4px 12px 6px;
     caret-color: var(--ink-1);
+}
+
+.block:not(.block--readonly) .block__content .cm-scroller {
+    cursor: text;
 }
 
 .block__content .cm-line {
@@ -1232,34 +1239,84 @@ button.block__label:disabled {
     height: 14px;
 }
 
-/* Typst, highlighted: the markup is quieter than the words. */
-.tt-hash,
-.tt-call,
-.tt-keyword,
-.tt-marker {
-    color: var(--link-fg);
+/* Typst, highlighted, with the colours of the Typst web app and their
+ * counterparts in dark. Punctuation stays quieter than the words. */
+:root {
+    --text-source: 400 15px/1.7 var(--font-mono);
+    --syntax-comment: #74747c;
+    --syntax-keyword: #d73948;
+    --syntax-number: #b60157;
+    --syntax-string: #198810;
+    --syntax-call: #4b69c6;
+    --syntax-hash: #8b41b1;
+    --syntax-escape: #1d6c76;
+    --syntax-math: #4a3fc0;
+    --syntax-raw: #6b6b6f;
 }
 
-.tt-argument,
-.tt-punctuation,
-.tt-dollar {
-    color: var(--ink-3);
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --syntax-comment: #9a9aa6;
+        --syntax-keyword: #ff7b86;
+        --syntax-number: #ff79b6;
+        --syntax-string: #7fd67a;
+        --syntax-call: #8cb0ff;
+        --syntax-hash: #cf9bf0;
+        --syntax-escape: #5cc9d1;
+        --syntax-math: #bdb6ff;
+        --syntax-raw: #b4b4be;
+    }
 }
 
-.tt-value {
-    color: var(--success-fg);
-}
-
-.tt-math {
-    color: var(--block-definition-fg);
-}
-
-.tt-escape {
-    color: var(--warning-fg);
+:root[data-theme="dark"] {
+    --syntax-comment: #9a9aa6;
+    --syntax-keyword: #ff7b86;
+    --syntax-number: #ff79b6;
+    --syntax-string: #7fd67a;
+    --syntax-call: #8cb0ff;
+    --syntax-hash: #cf9bf0;
+    --syntax-escape: #5cc9d1;
+    --syntax-math: #bdb6ff;
+    --syntax-raw: #b4b4be;
 }
 
 .tt-comment {
     font-style: italic;
+    color: var(--syntax-comment);
+}
+
+.tt-keyword {
+    color: var(--syntax-keyword);
+}
+
+.tt-number {
+    color: var(--syntax-number);
+}
+
+.tt-string,
+.tt-dollar {
+    color: var(--syntax-string);
+}
+
+.tt-call {
+    color: var(--syntax-call);
+}
+
+.tt-hash,
+.tt-argument,
+.tt-marker {
+    color: var(--syntax-hash);
+}
+
+.tt-escape {
+    color: var(--syntax-escape);
+}
+
+.tt-math {
+    color: var(--syntax-math);
+}
+
+.tt-punctuation {
     color: var(--ink-3);
 }
 
@@ -1272,9 +1329,23 @@ button.block__label:disabled {
     font-style: italic;
 }
 
+.tt-link {
+    color: var(--link-fg);
+    text-decoration: underline;
+}
+
 .tt-raw {
     font-family: var(--font-mono);
     font-size: 0.85em;
+    color: var(--syntax-raw);
+}
+
+.cm-focused .tt-raw {
+    font-size: inherit;
+}
+
+.tt-invalid {
+    text-decoration: underline wavy var(--danger-fg);
 }
 
 .uses__pop {

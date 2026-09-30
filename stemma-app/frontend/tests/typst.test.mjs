@@ -17,7 +17,8 @@ test("a line environment reads as a call with named arguments and a body", () =>
   assert.equal(seen.get("#"), "tt-hash");
   assert.equal(seen.get("theorem"), "tt-call");
   for (const name of ["id", "central", "uses"]) assert.equal(seen.get(name), "tt-argument");
-  for (const value of [`"thm:first"`, "true", `"lem:a"`]) assert.equal(seen.get(value), "tt-value");
+  for (const value of [`"thm:first"`, `"lem:a"`]) assert.equal(seen.get(value), "tt-string");
+  assert.equal(seen.get("true"), "tt-keyword");
   assert.equal(seen.get("$"), "tt-dollar");
   // Neighbouring pieces of an equation are drawn as one stretch.
   assert.ok([...seen].some(([text, names]) => text.includes("G") && names.includes("tt-math")));
@@ -36,4 +37,10 @@ test("the notation import and comments are told apart", () => {
   const seen = classes(`#import "@stemma/notation:0.1.0": *\n// a note`);
   assert.equal(seen.get("import"), "tt-keyword");
   assert.equal(seen.get("// a note"), "tt-comment");
+});
+
+test("numbers and escapes each have their colour", () => {
+  const seen = classes(`#text(size: 12pt)[a \\$ b]`);
+  assert.equal(seen.get("12pt"), "tt-number");
+  assert.equal(seen.get("\\$"), "tt-escape");
 });
