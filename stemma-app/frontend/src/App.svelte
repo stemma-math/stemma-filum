@@ -20,7 +20,7 @@
   // command line would name.
   setRemedies({
     "sign-in": { label: "Sign In Again", run: () => void app.signOut() },
-    "set-up": { label: "Set Up This Machine…", run: () => (setup.open = true) },
+    "set-up": { label: "Set Up This Machine", run: () => (setup.open = true) },
     sync: { label: "Send Now", run: () => void api.sendNow().then(() => tell("Sending now.")).catch(fail) },
   });
 

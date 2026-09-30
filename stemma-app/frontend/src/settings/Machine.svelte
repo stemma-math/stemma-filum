@@ -42,6 +42,6 @@
   <h4 class="setting__title">Remove Stemma</h4>
   <p class="setting__note">Stops the background service, removes the command line, takes this machine back on the server and signs out.</p>
   <div class="row__actions">
-    <button type="button" class="button button--small button--danger" onclick={() => (setup.removing = true)}>Remove Stemma from This Machine…</button>
+    <button type="button" class="button button--small button--danger" onclick={() => (setup.removing = true)}>Remove Stemma from This Machine</button>
   </div>
 </section>

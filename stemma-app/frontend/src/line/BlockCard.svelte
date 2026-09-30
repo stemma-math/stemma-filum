@@ -304,7 +304,7 @@
             </button>
           {/each}
           <hr class="menu__separator" />
-          <button type="button" class="menu__item" role="menuitem" onclick={() => { typing = false; naming = true; }}>Another name…</button>
+          <button type="button" class="menu__item" role="menuitem" onclick={() => { typing = false; naming = true; }}>Another name</button>
         </Bubble>
       </span>
 
