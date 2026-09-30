@@ -374,14 +374,14 @@ fn requests_block(signed: &SignedIn, requests: &[(Request, Option<User>)]) -> Ma
 
                                 p { (request.reason) }
 
-                                form method="post"
+                                form class="inline-form" method="post"
                                      action={ "/admin/requests/" (request.id) "/approve" } {
                                     (signature(signed))
-                                    div class="field" {
-                                        label class="field__label" for={ "note-" (request.id) } { "Optional note" }
-                                        input class="input" type="text" id={ "note-" (request.id) } name="note";
+                                    label class="field__label" for={ "note-" (request.id) } {
+                                        "Note for the requester (optional)"
                                     }
-                                    div class="actions" {
+                                    div class="inline-form__row" {
+                                        input class="input" type="text" id={ "note-" (request.id) } name="note";
                                         button class="button button--primary" type="submit" { "Approve" }
                                         button class="button" type="submit"
                                                formaction={ "/admin/requests/" (request.id) "/decline" } {

@@ -492,13 +492,20 @@ async fn a_line_of_your_own_can_be_taken_out_and_its_history_stays() {
     own_a_group(&mut harness, "ana").await;
     start(&mut harness, "Quotient groups", "Does it split?", "me").await;
 
+    // The line offers it, and asks first at an address of its own.
     let line = harness.get("/g/algebra/private/quotient-groups").await;
-    assert!(line.says("Delete this line"));
+    assert!(line.says(r#"href="/g/algebra/private/quotient-groups/delete" data-dialog-link"#));
+
+    let asking = harness
+        .get("/g/algebra/private/quotient-groups/delete")
+        .await;
+    assert_eq!(asking.status, StatusCode::OK);
+    assert!(asking.says("Delete this line?"));
 
     let gone = harness
         .post(
             "/g/algebra/private/quotient-groups/delete",
-            &[("form_token", &form_token(&line))],
+            &[("form_token", &form_token(&asking))],
         )
         .await;
 

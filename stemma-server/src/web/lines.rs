@@ -330,7 +330,8 @@ struct Viewing<'a> {
     audits: &'a [crate::store::formal_audits::FormalAudit],
 }
 
-/// The line itself.
+/// The line itself: its typeset page, then its statements in order beside
+/// what is known about the line as a whole.
 fn body(viewing: &Viewing<'_>) -> Markup {
     let Viewing {
         group,
@@ -347,6 +348,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
     let central = digest.line.central();
     let checking = written
         .is_some_and(|written| digest.revision != Some(written.revision) || digest.lean.is_none());
+    let at = format!("/g/{}/{}/{}", group.slug(), side, digest.name);
 
     html! {
         header class="page-head" {
@@ -365,6 +367,12 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                         Side::Shared => span class="chip" { (super::layout::glyph("group")) "Shared" },
                         Side::Private => span class="chip" { (super::layout::glyph("lock")) "Private" },
                     }
+                    @if writing.is_some() {
+                        span class="chip chip--accent" { "Being written" }
+                    }
+                    @if let Some(written) = written {
+                        span class="numeric" { "Revision " (written.revision) }
+                    }
                 }
                 @if let Some(description) = &digest.description {
                     p class="page-subtitle" { (description) }
@@ -379,88 +387,77 @@ fn body(viewing: &Viewing<'_>) -> Markup {
             section class="block typeset" aria-labelledby="typeset-title" {
                 div class="typeset__head" {
                     h2 class="block__title" id="typeset-title" { "The page" }
-                    @if writing.is_some() {
-                        span class="chip chip--accent" { "Being written" }
-                    }
-                    @if let Some(written) = written {
-                        span class="quiet identifier" { "revision " (written.revision) }
-                    }
-                    a class="button button--quiet"
-                      href={ "/g/" (group.slug()) "/" (side) "/" (digest.name) "/line.json" }
-                      download="line.json" { "Download line.json" }
-                    a class="button button--quiet"
-                      href={ "/g/" (group.slug()) "/" (side) "/" (digest.name) "/page" }
-                      target="_blank" rel="noopener"
-                      title="Open the typeset page, then use your browser's print command" {
-                        "Print or save as PDF"
+                    div class="actions" {
+                        a class="button button--small" href={ (at) "/line.json" } download="line.json" {
+                            (super::layout::glyph("download")) "Download line.json"
+                        }
+                        a class="button button--small" href={ (at) "/page" } target="_blank" rel="noopener"
+                          title="Open the typeset page, then use your browser's print command" {
+                            (super::layout::glyph("document")) "Print or save as PDF"
+                        }
                     }
                 }
-                iframe class="typeset__frame" sandbox=""
-                       src={ "/g/" (group.slug()) "/" (side) "/" (digest.name) "/page" }
+                iframe class="typeset__frame" sandbox="" src={ (at) "/page" }
                        title={ "The typeset page of " (digest.shown_as()) } {}
             }
         }
 
-        div class="apparatus" {
-            div class="apparatus__gutter" {
-                span { "the line" }
-                span class="identifier" { (short(&nodes.commit)) }
-            }
+        div class="line-layout" {
+            section class="card statements-card" aria-labelledby="statements-title" {
+                div class="card__head" {
+                    h2 class="card__title" id="statements-title" {
+                        "Statements" span class="count" { (digest.line.nodes.len()) }
+                    }
+                    @if !nodes.commit.is_empty() {
+                        span class="quiet identifier" title=(nodes.commit) {
+                            "built from " (short(&nodes.commit))
+                        }
+                    }
+                }
 
-            div class="apparatus__document" {
                 @if digest.line.nodes.is_empty() {
-                    p class="empty" {
-                        "This line does not contain any declarations yet."
+                    div class="card__empty" {
+                        p class="empty" { "This line does not contain any declarations yet." }
                     }
-                }
-
-                @for element in digest.line.skeleton() {
-                    @match element {
-                        Element::Node(siglum) => {
-                            @if let Some(node) = digest.line.node(&siglum) {
-                                (drawn(node, digest.lean.as_ref(), audits, checking, launchers))
+                } @else {
+                    ol class="statements" {
+                        @for element in digest.line.skeleton() {
+                            @match element {
+                                Element::Node(siglum) => {
+                                    @if let Some(node) = digest.line.node(&siglum) {
+                                        (drawn(node, digest.lean.as_ref(), audits, checking, launchers))
+                                    }
+                                }
+                                Element::Box(black_box) => (drawn_box(&black_box, digest.lean.as_ref(), checking, launchers)),
                             }
                         }
-                        Element::Box(black_box) => (drawn_box(&black_box, digest.lean.as_ref(), checking, launchers)),
-                    }
-                }
 
-                // The line's open end, where a question about where it
-                // could go next belongs.
-                @if !digest.line.nodes.is_empty() {
-                    div class="node" {
-                        div class="node__mark" { span { "the end" } }
-                        div class="node__body" { (launchers.at(Task::Explore)) }
+                        // The line's open end, where a question about where
+                        // it could go next belongs.
+                        li class="statement statement--end" {
+                            div class="statement__head" { span class="label" { "The end of the line" } }
+                            div class="statement__actions" { (launchers.at(Task::Explore)) }
+                        }
                     }
                 }
             }
 
-            div class="apparatus__register" {
+            aside class="line-layout__rail" aria-label="About the line" {
                 @if side == Side::Private {
-                    div class="block" {
-                        p class="label" { "Private" }
-                        p {
-                            a href={ "/g/" (group.slug()) "/private/" (digest.name) "/share" } {
-                                "Share it with the group"
-                            }
-                        }
+                    section class="block" aria-labelledby="private-title" {
+                        h2 class="block__title" id="private-title" { "Private line" }
                         p class="quiet" {
-                            "The current line moves to the shared group repository."
+                            "Only you can see it. Sharing moves it to the group's repository."
                         }
-
-                        form method="post"
-                             action={ "/g/" (group.slug()) "/private/" (digest.name)
-                                      "/delete" }
-                             data-confirm-title="Delete this line?"
-                             data-confirm-text="It is removed from your repository. Its history is kept."
-                             data-confirm-verb="Delete line" {
-                            (signature(signed))
-                            button class="button button--danger" type="submit" {
-                                "Delete this line"
+                        div class="actions" {
+                            a class="button button--primary" href={ "/g/" (group.slug()) "/private/" (digest.name) "/share" }
+                              data-dialog-link {
+                                "Share with the group"
                             }
-                        }
-                        p class="quiet" {
-                            "The line is removed from your repository, but its history is preserved."
+                            a class="button button--danger" href={ "/g/" (group.slug()) "/private/" (digest.name) "/delete" }
+                              data-dialog-link {
+                                "Delete"
+                            }
                         }
                     }
                 }
@@ -469,11 +466,10 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                 (register(digest, &central, &boxes, nodes))
             }
         }
-
     }
 }
 
-/// One node, with what is known about it in the margin.
+/// One statement, with what is known about it.
 fn drawn(
     node: &stemma_core::line::Node,
     lean: Option<&stemma_core::artefact::LeanDigest>,
@@ -491,65 +487,69 @@ fn drawn(
     let backed = verified && (!central || audited);
 
     html! {
-        div class=@if central { "node node--central" } @else { "node" } {
-            div class="node__mark" {
-                span class="identifier" { (node.siglum.to_string()) }
-                span { (node.siglum.kind) }
+        li class=@if central { "statement statement--central" } @else { "statement" } {
+            div class="statement__head" {
+                span class="chip" { (super::profile::capitalised(&node.siglum.kind.to_string())) }
                 @if central {
-                    // Weight and this word are the same fact said twice,
+                    // The edge and this word are the same fact said twice,
                     // because colour alone must never carry a state.
-                    span { "central" }
+                    span class="chip chip--accent" { "Central" }
                 }
                 @if node.proved {
-                    span { "proved here" }
+                    span class="chip" { "Proved here" }
                 }
-                @if backed { span { "backed" } }
-                @else if verified && central { span { "audit missing" } }
-                @else { span { "formal work missing" } }
-                @if checking { span { "Checking" } }
+                @if backed { span class="chip chip--success" { "Backed" } }
+                @else if verified && central { span class="chip chip--warning" { "Audit missing" } }
+                @else { span class="chip chip--dashed" { "Formal work missing" } }
+                @if checking { span class="chip chip--dashed" { "Checking" } }
             }
 
-            div class="node__body" {
-                p class="node__name" {
+            div class="statement__title" {
+                p class="statement__name" {
                     @match &node.name {
                         Some(name) => (name),
                         None => (node.siglum.to_string()),
                     }
                 }
+                @if node.name.is_some() {
+                    span class="identifier statement__siglum" { (node.siglum.to_string()) }
+                }
+            }
 
-                @if !node.uses.is_empty() {
-                    p class="node__uses" {
-                        "uses "
-                        @for (at, used) in node.uses.iter().enumerate() {
-                            @if at > 0 { " · " }
-                            (used.to_string())
-                        }
+            @if !node.uses.is_empty() {
+                p class="statement__uses" {
+                    "Uses "
+                    @for (at, used) in node.uses.iter().enumerate() {
+                        @if at > 0 { " · " }
+                        span class="identifier" { (used.to_string()) }
                     }
                 }
+            }
 
-                @if let Some(formal) = formal {
-                    div class="formal-review" {
-                        p class="label" { "Formal statement · " (formal.state.as_str()) }
-                        @for declaration in &formal.declarations {
-                            p class="identifier" { (declaration.name) " · " (declaration.module) }
-                            pre class="source__text" { (declaration.statement) }
-                            @if !declaration.reaches.is_empty() {
-                                p class="quiet" { "Reaches " (declaration.reaches.join(", ")) }
-                            }
-                        }
-                        @if formal.declarations.is_empty() {
-                            p class="quiet" { (formal.diagnostic) }
+            @if let Some(formal) = formal {
+                div class="formal-review" {
+                    p class="label" { "Formal statement · " (formal.state.as_str()) }
+                    @for declaration in &formal.declarations {
+                        p class="identifier" { (declaration.name) " · " (declaration.module) }
+                        pre class="source__text" { (declaration.statement) }
+                        @if !declaration.reaches.is_empty() {
+                            p class="quiet" { "Reaches " (declaration.reaches.join(", ")) }
                         }
                     }
-                }
-                @if let Some(audit) = audit {
-                    div class="formal-review" {
-                        p class="label" { "Correspondence · " (audit.state.replace('_', " ")) }
-                        p { strong { "Agent reading: " } (audit.reading) }
-                        @if let Some(reason) = &audit.reason { p class="quiet" { (reason) } }
+                    @if formal.declarations.is_empty() {
+                        p class="quiet" { (formal.diagnostic) }
                     }
                 }
+            }
+            @if let Some(audit) = audit {
+                div class="formal-review" {
+                    p class="label" { "Correspondence · " (audit.state.replace('_', " ")) }
+                    p { strong { "Agent reading: " } (audit.reading) }
+                    @if let Some(reason) = &audit.reason { p class="quiet" { (reason) } }
+                }
+            }
 
+            div class="statement__actions" {
                 (launchers.at(Task::Formalize {
                     block: node.block,
                 }))
@@ -580,11 +580,11 @@ fn drawn_box(
     let verified = lean.is_some_and(|result| result.verifies_box(black_box));
 
     html! {
-        div class=@if filled { "box box--filled" } @else { "box" } {
-            div class="node__mark" {
-                span { "black box" }
-                @if verified { span { "Lean verified" } }
-                @if checking { span { "Checking" } }
+        li class=@if filled { "statement box box--filled" } @else { "statement box" } {
+            div class="statement__head" {
+                span class="chip chip--dashed" { "Black box" }
+                @if verified { span class="chip chip--success" { "Lean verified" } }
+                @if checking { span class="chip chip--dashed" { "Checking" } }
             }
 
             div class="box__band" {
@@ -603,7 +603,7 @@ fn drawn_box(
                 }
             }
 
-            div class="box__ask" {
+            div class="statement__actions" {
                 (launchers.at(Task::Fill {
                     after: black_box.after,
                 }))
@@ -630,24 +630,25 @@ fn claim_block(
     signed: &SignedIn,
 ) -> Markup {
     html! {
-        div class="block" {
-            p class="label" { "Claim" }
+        section class="block" aria-labelledby="claim-title" {
+            h2 class="block__title" id="claim-title" { "Claim" }
 
             @match writing {
-                None => p class="quiet" { "This line is available to edit." }
+                None => p class="quiet" { "Nobody is writing it. It is available to edit." }
                 Some(claim) => {
-                    p { (claim.label) " is writing it" }
-                    p class="quiet" { (claim.held().lapses_in()) }
-
-                    @if claim.asked {
-                        p class="quiet" { "Another contributor has requested access." }
+                    div class="stack stack--tight" {
+                        p { (claim.label) " is writing it." }
+                        p class="quiet" { (super::profile::capitalised(&claim.held().lapses_in())) "." }
+                        @if claim.asked {
+                            p class="quiet" { "Another contributor has asked to write it." }
+                        }
                     }
 
                     @if claim.owner == signed.user.id {
                         form method="post"
                              action={ "/g/" (group.slug()) "/" (side) "/" (line) "/claim/release" } {
                             (signature(signed))
-                            button type="submit" { "Release" }
+                            button class="button" type="submit" { "Release" }
                         }
                     }
                 }
@@ -656,7 +657,7 @@ fn claim_block(
     }
 }
 
-/// The blocks beside the document.
+/// What is known about the line as a whole.
 fn register(
     digest: &LineDigest,
     central: &[&stemma_core::line::Node],
@@ -669,8 +670,10 @@ fn register(
         .count();
 
     html! {
-        div class="block" {
-            p class="label" { "Central statements" }
+        section class="block" aria-labelledby="central-title" {
+            h2 class="block__title" id="central-title" {
+                "Central statements" span class="count" { (central.len()) }
+            }
 
             @if central.is_empty() {
                 p class="empty" { "No central statements have been declared." }
@@ -691,23 +694,32 @@ fn register(
             }
         }
 
-        div class="block" {
-            p class="label" { "Boxes" }
-            p class="numeric" {
-                (boxes.len()) " total, " (empty) " incomplete"
-            }
-        }
-
-        div class="block" {
-            p class="label" { "Built" }
-            p class="quiet identifier" { (nodes.commit) }
-            @match &nodes.typst {
-                Some(pinned) => p class="quiet" { "typst " (pinned) " is pinned" }
-                None => p class="quiet" { "No Typst version is pinned." }
-            }
-            p class="quiet" {
-                (digest.line.nodes.len()) " statements, "
-                (digest.line.dependencies().len()) " dependencies"
+        section class="block" aria-labelledby="facts-title" {
+            h2 class="block__title" id="facts-title" { "The line" }
+            dl class="facts" {
+                dt { "Statements" }
+                dd class="numeric" { (digest.line.nodes.len()) }
+                dt { "Dependencies" }
+                dd class="numeric" { (digest.line.dependencies().len()) }
+                dt { "Black boxes" }
+                dd class="numeric" {
+                    @if boxes.is_empty() { "None" } @else { (boxes.len()) ", " (empty) " not completed" }
+                }
+                dt { "Built" }
+                dd {
+                    @if nodes.commit.is_empty() {
+                        span class="quiet" { "Not yet" }
+                    } @else {
+                        span class="identifier" title=(nodes.commit) { (short(&nodes.commit)) }
+                    }
+                }
+                dt { "Typst" }
+                dd {
+                    @match &nodes.typst {
+                        Some(pinned) => span class="identifier" { (pinned) }
+                        None => span class="quiet" { "Not pinned" }
+                    }
+                }
             }
         }
     }

@@ -254,6 +254,7 @@ fn pages() -> Router<Instance> {
             "/groups/new",
             get(groups::request_form).post(groups::request),
         )
+        .route("/groups/requests/{id}/dismiss", post(groups::dismiss))
         .route("/profile", get(profile::view))
         .route("/profile/details", post(profile::details))
         .route("/profile/password", post(profile::password))
@@ -280,6 +281,7 @@ fn pages() -> Router<Instance> {
         .route("/g/{slug}/picture", post(groups::picture))
         .route("/g/{slug}/picture/remove", post(groups::remove_picture))
         .route("/g/{slug}/invitations", post(groups::invite))
+        .route("/g/{slug}/invitations/new", get(groups::invite_form))
         .route(
             "/g/{slug}/invitations/{id}/withdraw",
             post(groups::withdraw),
@@ -290,7 +292,10 @@ fn pages() -> Router<Instance> {
             "/g/{slug}/private/{line}/share",
             get(starting::share_form).post(starting::share),
         )
-        .route("/g/{slug}/private/{line}/delete", post(starting::remove))
+        .route(
+            "/g/{slug}/private/{line}/delete",
+            get(starting::remove_form).post(starting::remove),
+        )
         .route("/g/{slug}/vault", get(vault::page_view))
         .route("/g/{slug}/vault/entries", post(vault::admit))
         .route("/g/{slug}/vault/bridges", post(vault::bridge))
@@ -308,7 +313,10 @@ fn pages() -> Router<Instance> {
         .route("/proposals/{id}", get(proposals::review))
         .route("/machines/{id}", get(machines::panel))
         .route("/machines/{id}/serve", post(machines::serve))
-        .route("/machines/{id}/retire", post(machines::retire))
+        .route(
+            "/machines/{id}/retire",
+            get(machines::retire_form).post(machines::retire),
+        )
         .route("/machines/{id}/jobs/{job}/clear", post(machines::clear))
         .route("/admin", get(admin::area))
         .route(
@@ -400,9 +408,11 @@ fn assets() -> Router<Instance> {
     let router = Router::new()
         .route(assets::STYLESHEET_PATH, get(assets::stylesheet))
         .route(assets::LANDING_PATH, get(assets::landing))
+        .route(assets::LIGHT_PATH, get(assets::light))
         .route(assets::MARK_ANIMATED_PATH, get(assets::mark_animated))
         .route(assets::SYMBOL_PATH, get(assets::symbol))
         .route(assets::SHELL_PATH, get(assets::shell))
+        .route(assets::APPEARANCE_PATH, get(assets::appearance))
         .route(assets::GLYPHS_PATH, get(assets::glyphs))
         .route(assets::NOISE_PATH, get(assets::noise))
         .route(assets::MARK_ON_DARK_PATH, get(assets::mark_on_dark))

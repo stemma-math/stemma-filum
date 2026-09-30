@@ -400,6 +400,42 @@ async fn own_line(
         .ok_or(WebError::NotFound)
 }
 
+/// Asks before a line of one's own is taken out of the repository.
+pub async fn remove_form(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path((slug, line)): Path<(String, String)>,
+) -> Result<Response, WebError> {
+    let group = group_of(&instance, &slug, &signed.user.id).await?;
+    let Ok(name) = Name::parse(&line) else {
+        return Err(WebError::NotFound);
+    };
+    own_line(&instance, &signed.user, &group.id, &name).await?;
+
+    let chrome = super::layout::around(&instance, &signed, format!("Delete {name}"))
+        .await?
+        .at(format!("/g/{}", group.slug()));
+    let back = format!("/g/{}/private/{}", group.slug(), name);
+
+    Ok(page(
+        &chrome,
+        super::layout::dialog(
+            "Delete this line?",
+            &back,
+            html! {
+                p class="dialog__text" {
+                    "It is removed from your repository. Its history is kept."
+                }
+                form method="post" action={ "/g/" (group.slug()) "/private/" (name) "/delete" } {
+                    (signature(&signed))
+                    (super::layout::dialog_actions(&back, "Delete line", true))
+                }
+            },
+        ),
+    )
+    .into_response())
+}
+
 /// Takes a line of one's own out of the repository.
 pub async fn remove(
     State(instance): State<Instance>,
@@ -570,36 +606,36 @@ fn asked(
         .map(|given| given.description.clone())
         .unwrap_or_default();
     let shared = given.is_some_and(|given| given.seen_by.trim() == "group");
+    let back = format!("/g/{}", group.slug());
 
-    html! {
-        div class="sheet--narrow stack" {
-            p class="label" {
-                a href={ "/g/" (group.slug()) } { (group.name) }
-            }
-            h1 { "New line of work" }
+    super::layout::dialog(
+        "New line of work",
+        &back,
+        html! {
+            p class="dialog__text" { "In " (group.name) "." }
 
             @if let Some(problem) = problem {
                 (super::layout::message(super::layout::Kind::Error, problem))
             }
 
-            form method="post" action={ "/g/" (group.slug()) "/lines" } class="stack" {
+            form method="post" action={ "/g/" (group.slug()) "/lines" } {
                 (signature(signed))
 
-                label class="field" {
-                    span class="label" { "Title" }
-                    input class="input" type="text" name="title" value=(title) autofocus required;
+                div class="field" {
+                    label class="field__label" for="title" { "Title" }
+                    input class="input" type="text" id="title" name="title" value=(title) autofocus required;
                 }
 
-                label class="field" {
-                    span class="label" { "Description" }
-                    textarea class="input" name="description" rows="3" { (description) }
+                div class="field" {
+                    label class="field__label" for="description" { "Description" }
+                    textarea class="input" id="description" name="description" rows="3" { (description) }
                     span class="field__hint" {
                         "Optional. What this line is about, in a sentence or two."
                     }
                 }
 
                 fieldset class="fieldset" {
-                    legend class="label" { "Visibility" }
+                    legend { "Visibility" }
 
                     label class="choice" {
                         input type="radio" name="seen_by" value="me" checked[!shared];
@@ -615,10 +651,10 @@ fn asked(
                     }
                 }
 
-                button class="button button--primary" type="submit" { "Create line" }
+                (super::layout::dialog_actions(&back, "Create line", false))
             }
-        }
-    }
+        },
+    )
 }
 
 /// The sharing screen: two questions and one warning.
@@ -643,15 +679,15 @@ fn offered(
         })
         .unwrap_or_default();
 
-    html! {
-        div class="sheet--narrow stack" {
-            p class="label" {
-                a href={ "/g/" (group.slug()) } { (group.name) }
-                " · " a href={ "/g/" (group.slug()) "/private/" (name) } { (name.as_str()) }
-            }
-            h1 { "Share this line" }
-            p class="quiet" {
-                "Move this line to the shared group repository."
+    let back = format!("/g/{}/private/{}", group.slug(), name);
+
+    super::layout::dialog(
+        "Share this line",
+        &back,
+        html! {
+            p class="dialog__text" {
+                "It moves to the group's shared repository, where every member of "
+                (group.name) " can read it."
             }
 
             @if let Some(problem) = problem {
@@ -659,26 +695,23 @@ fn offered(
             }
 
             @if !held.is_empty() {
-                div class="block" {
-                    p class="label" { "This line depends on private work" }
-                    ul class="register" {
-                        @for path in held {
-                            li { span class="identifier" { (path) } }
-                        }
-                    }
-                    p class="quiet" {
-                        "Share these dependencies first or remove their references."
+                (super::layout::message(
+                    super::layout::Kind::Warning,
+                    "This line depends on private work. Share these lines first, or remove the references to them.",
+                ))
+                ul class="dialog__list" {
+                    @for path in held {
+                        li { span class="identifier" { (path) } }
                     }
                 }
             }
 
             form method="post"
-                 action={ "/g/" (group.slug()) "/private/" (name) "/share" }
-                 class="stack" {
+                 action={ "/g/" (group.slug()) "/private/" (name) "/share" } {
                 (signature(signed))
 
                 fieldset class="fieldset" {
-                    legend class="label" { "History to share" }
+                    legend { "History to share" }
 
                     label class="choice" {
                         input type="radio" name="travels" value="today" checked;
@@ -691,7 +724,7 @@ fn offered(
                 }
 
                 fieldset class="fieldset" {
-                    legend class="label" { "Who can write" }
+                    legend { "Who can write" }
 
                     label class="choice" {
                         input type="radio" name="writing" value="author" checked;
@@ -703,29 +736,31 @@ fn offered(
                     }
                 }
 
-                div class="block" {
-                    p class="label" { "What travels with the line" }
-
+                div class="field" {
+                    span class="field__label" { "What travels with the line" }
                     @if travelling.is_empty() {
-                        p class="quiet" { "No definitions of your own." }
+                        span class="field__hint" { "No definitions of your own." }
                     } @else {
-                        ul class="register" {
+                        ul class="dialog__list" {
                             @for definition in &travelling {
-                                li { span class="register__name" { (definition) } }
+                                li { (definition) }
                             }
                         }
-                        p class="quiet" {
+                        span class="field__hint" {
                             "These definitions move with the line. Sharing does not add them to the vault."
                         }
                     }
                 }
 
-                button class="button button--primary" type="submit" disabled[!held.is_empty()] {
-                    "Share"
+                div class="dialog__actions" {
+                    a class="button" href=(back) data-dialog-close { "Cancel" }
+                    button class="button button--primary" type="submit" disabled[!held.is_empty()] {
+                        "Share"
+                    }
                 }
             }
-        }
-    }
+        },
+    )
 }
 
 /// Starts a line from a machine.

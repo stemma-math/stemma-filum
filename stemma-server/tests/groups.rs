@@ -54,8 +54,11 @@ async fn somebody_asks_for_a_group_and_a_maintainer_makes_it() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;
 
+    // The form is a dialog with an address of its own: opened directly,
+    // it is a page.
     let form = harness.get("/groups/new").await;
     assert!(form.says("Request a research group"));
+    assert!(form.says("data-dialog-panel"));
 
     let asked = harness
         .post(
@@ -167,6 +170,19 @@ async fn a_declined_request_says_why_and_creates_nothing() {
 
     let made = harness.instance.read(groups::all).await.unwrap();
     assert!(made.is_empty(), "a declined request made a group");
+
+    // Once read, whoever asked puts the answer away, and it stays away.
+    let dismissed = harness
+        .post(
+            &format!("/groups/requests/{id}/dismiss"),
+            &[("form_token", &form_token(&home))],
+        )
+        .await;
+    assert_eq!(dismissed.status, StatusCode::SEE_OTHER);
+
+    let home = harness.get("/").await;
+    assert!(!home.says("Declined"));
+    assert!(!home.says("There is already a group for this."));
 }
 
 #[tokio::test]

@@ -76,6 +76,7 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
     own_a_group(&mut harness, "ana").await;
 
     let space = harness.get("/g/algebra").await;
+    let asking = harness.get("/g/algebra/invitations/new").await;
     assert!(space.says(r#"Members<span class="count">1</span>"#));
     assert!(space.says("There are no active invitations."));
 
@@ -85,7 +86,7 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
             &[
                 ("email", "enric@example.org"),
                 ("role", "member"),
-                ("form_token", &form_token(&space)),
+                ("form_token", &form_token(&asking)),
             ],
         )
         .await;
@@ -135,14 +136,14 @@ async fn an_invitation_is_for_one_person_and_then_it_is_spent() {
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
 
-    let space = harness.get("/g/algebra").await;
+    let asking = harness.get("/g/algebra/invitations/new").await;
     let made = harness
         .post(
             "/g/algebra/invitations",
             &[
                 ("email", "enric@example.org"),
                 ("role", "member"),
-                ("form_token", &form_token(&space)),
+                ("form_token", &form_token(&asking)),
             ],
         )
         .await;
@@ -174,14 +175,14 @@ async fn somebody_who_already_has_an_account_simply_joins() {
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
 
-    let space = harness.get("/g/algebra").await;
+    let asking = harness.get("/g/algebra/invitations/new").await;
     let made = harness
         .post(
             "/g/algebra/invitations",
             &[
                 ("email", ""),
                 ("role", "admin"),
-                ("form_token", &form_token(&space)),
+                ("form_token", &form_token(&asking)),
             ],
         )
         .await;
@@ -223,14 +224,14 @@ async fn a_link_with_no_address_cannot_make_an_account_and_says_so() {
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
 
-    let space = harness.get("/g/algebra").await;
+    let asking = harness.get("/g/algebra/invitations/new").await;
     let made = harness
         .post(
             "/g/algebra/invitations",
             &[
                 ("email", ""),
                 ("role", "member"),
-                ("form_token", &form_token(&space)),
+                ("form_token", &form_token(&asking)),
             ],
         )
         .await;
@@ -249,14 +250,14 @@ async fn a_withdrawn_invitation_stops_working() {
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
 
-    let space = harness.get("/g/algebra").await;
+    let asking = harness.get("/g/algebra/invitations/new").await;
     let made = harness
         .post(
             "/g/algebra/invitations",
             &[
                 ("email", "enric@example.org"),
                 ("role", "member"),
-                ("form_token", &form_token(&space)),
+                ("form_token", &form_token(&asking)),
             ],
         )
         .await;
@@ -310,9 +311,9 @@ async fn nobody_may_invite_somebody_to_more_than_they_hold() {
         .await
         .unwrap();
 
-    let space = harness.get("/g/algebra").await;
-    assert!(space.says("Admin: invites members"));
-    assert!(!space.says("Owner: can transfer"));
+    let asking = harness.get("/g/algebra/invitations/new").await;
+    assert!(asking.says("Admin: invites members"));
+    assert!(!asking.says("Owner: can transfer"));
 
     let refused = harness
         .post(
@@ -320,7 +321,7 @@ async fn nobody_may_invite_somebody_to_more_than_they_hold() {
             &[
                 ("email", ""),
                 ("role", "owner"),
-                ("form_token", &form_token(&space)),
+                ("form_token", &form_token(&asking)),
             ],
         )
         .await;
@@ -353,7 +354,10 @@ async fn a_member_sees_the_group_without_the_invitations() {
     let space = harness.get("/g/algebra").await;
 
     assert!(space.says(r#"Members<span class="count">2</span>"#));
-    assert!(!space.says("Make an invitation"));
+    assert!(!space.says("/invitations/new"));
+
+    let asking = harness.get("/g/algebra/invitations/new").await;
+    assert_eq!(asking.status, StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

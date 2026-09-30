@@ -22,11 +22,18 @@ pub const FONT_PATH: &str = "/assets/fonts/{file}";
 /// Where the front page's light and its passage to the sign-in are served.
 pub const LANDING_PATH: &str = "/assets/landing.js";
 
+/// Where the brand light, drawn by the front page and the sidebar, is
+/// served. The two import it from beside themselves.
+pub const LIGHT_PATH: &str = "/assets/light.js";
+
 /// Where the live mark is served.
 pub const MARK_ANIMATED_PATH: &str = "/assets/mark-animated.js";
 
 /// Where the still of the mark is served.
 pub const SYMBOL_PATH: &str = "/assets/symbol.webp";
+
+/// Where the appearance switch's script, loaded on every page, is served.
+pub const APPEARANCE_PATH: &str = "/assets/appearance.js";
 
 /// Where the signed-in shell's script is served.
 pub const SHELL_PATH: &str = "/assets/shell.js";
@@ -91,10 +98,16 @@ static STYLESHEET: LazyLock<Asset> = LazyLock::new(|| {
 static LANDING: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(include_bytes!("../../assets/landing.js"), JAVASCRIPT));
 
+static LIGHT: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(include_bytes!("../../assets/light.js"), JAVASCRIPT));
+
 static MARK_ANIMATED: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(stemma_identity::MARK_ANIMATED_JS.as_bytes(), JAVASCRIPT));
 
 static SYMBOL: LazyLock<Asset> = LazyLock::new(|| Asset::new(stemma_identity::SYMBOL_WEBP, WEBP));
+
+static APPEARANCE: LazyLock<Asset> =
+    LazyLock::new(|| Asset::new(include_bytes!("../../assets/appearance.js"), JAVASCRIPT));
 
 static SHELL: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(include_bytes!("../../assets/shell.js"), JAVASCRIPT));
@@ -169,6 +182,11 @@ pub async fn landing(headers: HeaderMap) -> Response {
     serve(&headers, &LANDING)
 }
 
+/// Serves the brand light.
+pub async fn light(headers: HeaderMap) -> Response {
+    serve(&headers, &LIGHT)
+}
+
 /// Serves the live mark.
 pub async fn mark_animated(headers: HeaderMap) -> Response {
     serve(&headers, &MARK_ANIMATED)
@@ -177,6 +195,11 @@ pub async fn mark_animated(headers: HeaderMap) -> Response {
 /// Serves the still of the mark.
 pub async fn symbol(headers: HeaderMap) -> Response {
     serve(&headers, &SYMBOL)
+}
+
+/// Serves the appearance switch's script.
+pub async fn appearance(headers: HeaderMap) -> Response {
+    serve(&headers, &APPEARANCE)
 }
 
 /// Serves the signed-in shell's script.

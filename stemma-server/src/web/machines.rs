@@ -300,6 +300,38 @@ pub async fn serve(
     Ok(Redirect::to(&format!("/machines/{}", machine.id)).into_response())
 }
 
+/// Asks before a machine is taken back.
+pub async fn retire_form(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(id): Path<String>,
+) -> Result<Response, WebError> {
+    let machine = own(&instance, &signed, &id).await?;
+    let chrome = super::layout::around(&instance, &signed, format!("Revoke {}", machine.label))
+        .await?
+        .at(format!("/machines/{}", machine.id));
+    let back = format!("/machines/{}", machine.id);
+
+    Ok(page(
+        &chrome,
+        super::layout::dialog(
+            "Revoke this machine?",
+            &back,
+            html! {
+                p class="dialog__text" {
+                    (machine.label) " loses access to this instance and gets no new work. "
+                    "Signing it in again makes it a new machine."
+                }
+                form method="post" action={ "/machines/" (machine.id) "/retire" } {
+                    (signature(&signed))
+                    (super::layout::dialog_actions(&back, "Revoke access", true))
+                }
+            },
+        ),
+    )
+    .into_response())
+}
+
 /// Takes a machine back.
 pub async fn retire(
     State(instance): State<Instance>,
@@ -401,33 +433,39 @@ fn body(
             (agent_list(agents))
         }
 
-        div class="block" {
-            p class="label" { "Groups this machine works for" }
+        section class="block" aria-labelledby="serving-title" {
+            h2 class="block__title" id="serving-title" { "Agent jobs by group" }
+            p class="quiet" {
+                "A job asked for in a group goes to one of the machines that take that "
+                "group's jobs. Turn a group off to stop this machine taking new jobs from it."
+            }
             @if groups.is_empty() {
                 p class="empty" { "You are not in any group yet." }
             } @else {
                 ul class="register" {
                     @for (group, serving) in groups {
-                        li {
-                            span class="register__name" { (group.name) }
-                            span class="quiet identifier" { (group.id.to_string()) }
-                            span class="register__aside" {
-                                @match serving {
-                                    true => "serving",
-                                    false => "not serving",
-                                }
+                        li class="serving" {
+                            span class="serving__group" {
+                                span class="register__name" { (group.name) }
+                                span class="quiet identifier" { (group.id.to_string()) }
                             }
-                            form method="post"
+                            form class="serving__form" method="post"
                                  action={ "/machines/" (machine.id) "/serve" } {
                                 (signature(signed))
                                 input type="hidden" name="group" value=(group.slug());
                                 input type="hidden" name="serve"
                                       value=@if *serving { "no" } @else { "yes" };
-                                button class="button" type="submit" {
+                                span class="serving__state" aria-hidden="true" {
                                     @match serving {
-                                        true => "Stop running jobs",
-                                        false => "Run jobs",
+                                        true => "Takes jobs",
+                                        false => "Off",
                                     }
+                                }
+                                button class="switch" type="submit" role="switch"
+                                       aria-checked=(serving.to_string())
+                                       aria-label={ "Take agent jobs from " (group.name) }
+                                       title=@if *serving { "Stop taking jobs from this group" } @else { "Take jobs from this group" } {
+                                    span class="switch__thumb" {}
                                 }
                             }
                         }
@@ -443,12 +481,10 @@ fn body(
             p class="quiet" {
                 "Remove access for this machine and stop assigning new work to it."
             }
-            form method="post" action={ "/machines/" (machine.id) "/retire" }
-                 data-confirm-title="Revoke this machine?"
-                 data-confirm-text="It loses access to this instance and gets no new work. Signing it in again makes it a new machine."
-                 data-confirm-verb="Revoke access" {
-                (signature(signed))
-                button class="button button--danger" type="submit" { "Revoke access" }
+            div class="actions" {
+                a class="button button--danger" href={ "/machines/" (machine.id) "/retire" } data-dialog-link {
+                    "Revoke access"
+                }
             }
         }
     }

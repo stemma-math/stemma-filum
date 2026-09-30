@@ -168,7 +168,7 @@ fn body(
                         (group_card(card, badges.get(&card.membership.group.id).map(String::as_str)))
                     }
                     @for request in &requests {
-                        (request_card(request))
+                        (request_card(signed, request))
                     }
                     @if may_ask {
                         (new_group_card(nothing))
@@ -236,8 +236,8 @@ fn group_card(card: &Card, picture: Option<&str>) -> Markup {
 }
 
 /// A group somebody asked for and nobody has decided on, or one that was
-/// declined, with what the maintainer said.
-fn request_card(request: &Request) -> Markup {
+/// declined, with what the maintainer said and the way to put it away.
+fn request_card(signed: &SignedIn, request: &Request) -> Markup {
     html! {
         div class="card group-card group-card--request" {
             span class="group-card__top" {
@@ -256,6 +256,16 @@ fn request_card(request: &Request) -> Markup {
                     _ => "A maintainer declined it.",
                 }
             }
+            @if request.outcome == Some(Outcome::Declined) {
+                form class="group-card__foot" method="post"
+                     action={ "/groups/requests/" (request.id) "/dismiss" } {
+                    (super::layout::signature(signed))
+                    @if let Some(at) = &request.decided_at {
+                        span { "Declined on " (at.get(..10).unwrap_or(at)) }
+                    }
+                    button class="button button--small" type="submit" { "Dismiss" }
+                }
+            }
         }
     }
 }
@@ -269,7 +279,7 @@ fn new_group_card(alone: bool) -> Markup {
                 @if alone { "You are not in a research group yet. " }
                 "A maintainer decides, and you become its owner."
             }
-            a class="button" href="/groups/new" {
+            a class="button" href="/groups/new" data-dialog-link {
                 (glyph("add")) "Request a group"
             }
         }

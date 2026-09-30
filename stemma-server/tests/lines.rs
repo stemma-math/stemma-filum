@@ -136,10 +136,10 @@ async fn a_line_appears_once_a_machine_has_sent_what_it_read() {
     assert!(line.says("First isomorphism theorem"));
     assert!(line.says("thm:first"));
     assert!(
-        line.says("node--central"),
+        line.says("statement--central"),
         "what the line rests on is drawn as such"
     );
-    assert!(line.says("uses def:quotient"));
+    assert!(line.says(r#"Uses <span class="identifier">def:quotient</span>"#));
 }
 
 #[tokio::test]
@@ -151,10 +151,10 @@ async fn a_box_between_two_central_statements_is_drawn_as_one() {
 
     let line = harness.get("/g/algebra/shared/quotient-groups").await;
 
-    assert!(line.says("black box"));
+    assert!(line.says("Black box"));
     assert!(line.says("Not completed"), "an empty box says so plainly");
     assert!(line.says("statements between the two it rests between"));
-    assert!(line.says("3 total, 2 incomplete"));
+    assert!(line.says("3, 2 not completed"));
 
     // A gap is hatched, never coloured: it is a declared absence, not a
     // failure and not an alarm.
@@ -173,8 +173,8 @@ async fn the_lemmas_inside_a_box_are_not_drawn_beside_the_statements() {
 
     // They are named where they are used, and counted in the box, but
     // the line stays readable: forty lemmas must not become forty rows.
-    assert!(body.contains("uses lem:kernel"));
-    assert!(!body.contains("class=\"node__name\">lem:kernel"));
+    assert!(body.contains(r#"<span class="identifier">lem:kernel</span>"#));
+    assert!(!body.contains(r#"class="statement__name">lem:kernel"#));
 }
 
 #[tokio::test]
