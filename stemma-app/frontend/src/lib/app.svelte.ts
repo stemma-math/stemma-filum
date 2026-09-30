@@ -4,7 +4,7 @@
 import { api } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
-import { lineLabel, sameLine, statesChanged, touchedLines, type Named } from "./lines";
+import { lineLabel, sameLine, statesChanged, touchedLines, withLineSummary, type Named } from "./lines";
 import { touchedBlocks } from "./review";
 import { fail, succeed, warn } from "./status.svelte";
 import type { Known, LineDocument, LineState, Mirrored, Review, Signed, Waiting } from "./types";
@@ -61,6 +61,10 @@ class App {
   /** Where one line stands, by its path. */
   stateOf(path: string): LineState {
     return this.lines.find((line) => line.path === path)?.state ?? "sent";
+  }
+
+  updateLineSummary(path: string, document: LineDocument) {
+    this.lines = withLineSummary(this.lines, path, document);
   }
 
   /** The open line's heading, or its directory name when it has none. */
