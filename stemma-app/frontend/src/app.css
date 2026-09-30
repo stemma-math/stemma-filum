@@ -2074,6 +2074,7 @@ body:has(.app-shell) .dialog {
     min-width: 0;
     min-height: 0;
     padding-right: 4px;
+    padding-bottom: 12px;
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-gutter: stable;
