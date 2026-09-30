@@ -1756,6 +1756,12 @@ button.block__label:disabled {
     color: var(--ink-3);
 }
 
+.panel__text--working {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .panel__text .glyph {
     vertical-align: -2px;
 }
