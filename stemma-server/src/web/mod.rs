@@ -344,6 +344,7 @@ fn pages() -> Router<Instance> {
 fn api() -> Router<Instance> {
     Router::new()
         .route("/api/me", get(api::me))
+        .route("/api/appearance", post(appearance::api_choose))
         .route("/api/logout", post(api::sign_out))
         .route("/api/workspace", get(api::workspace))
         .route("/api/events", get(events::stream))

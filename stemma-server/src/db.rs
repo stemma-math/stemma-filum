@@ -123,6 +123,10 @@ const MIGRATIONS: &[Migration] = &[
         name: "explicit-machine-sharing",
         sql: include_str!("../migrations/0024-explicit-machine-sharing.sql"),
     },
+    Migration {
+        name: "user-appearance",
+        sql: include_str!("../migrations/0025-user-appearance.sql"),
+    },
 ];
 
 /// The schema version this binary was built for.

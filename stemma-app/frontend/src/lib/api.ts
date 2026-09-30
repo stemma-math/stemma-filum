@@ -93,6 +93,8 @@ export function said(error: unknown): string {
 
 export const api = {
   whoami: () => call<Signed | null>("whoami"),
+  appearance: () => call<"system" | "light" | "dark" | null>("appearance"),
+  setAppearance: (appearance: "system" | "light" | "dark") => call<void>("set_appearance", { appearance }),
   signInStart: (server: string) => call<Beginning>("sign_in_start", { server }),
   signInPoll: () => call<SignInState>("sign_in_poll"),
   signOut: () => call<string>("sign_out"),

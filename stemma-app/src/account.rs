@@ -39,6 +39,31 @@ pub fn whoami() -> Result<Option<Signed>, String> {
     }))
 }
 
+/// Reads the account's appearance from the instance when reachable.
+#[tauri::command(async)]
+pub fn appearance() -> Result<Option<String>, String> {
+    let credentials = stemma::account::session::required(&home()).map_err(failed)?;
+    let server = stemma::api::Server::at(&credentials.server).map_err(failed)?;
+    let account = server
+        .whoami(&credentials.token)
+        .map_err(failed)?
+        .ok_or_else(|| "This machine is no longer signed in.".to_owned())?;
+    Ok(account.appearance)
+}
+
+/// Saves the account's appearance for the app and the web.
+#[tauri::command(async)]
+pub fn set_appearance(appearance: String) -> Result<(), String> {
+    if !matches!(appearance.as_str(), "system" | "light" | "dark") {
+        return Err("Choose System, Light or Dark.".to_owned());
+    }
+    let credentials = stemma::account::session::required(&home()).map_err(failed)?;
+    let server = stemma::api::Server::at(&credentials.server).map_err(failed)?;
+    server
+        .set_appearance(&credentials.token, &appearance)
+        .map_err(failed)
+}
+
 /// Starts the device flow against an instance.
 #[tauri::command(async)]
 pub fn sign_in_start(

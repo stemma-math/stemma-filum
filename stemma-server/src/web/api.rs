@@ -76,13 +76,21 @@ impl FromRequestParts<Instance> for Credential {
 }
 
 /// Who this credential acts for.
-pub async fn me(machine: Credential) -> Response {
-    Json(json!({
+pub async fn me(
+    State(instance): State<Instance>,
+    machine: Credential,
+) -> Result<Response, WebError> {
+    let user = machine.user.id.clone();
+    let appearance = instance
+        .read(move |connection| users::appearance(connection, &user))
+        .await?;
+    Ok(Json(json!({
         "user": machine.user.id.to_string(),
         "display_name": machine.user.display_name,
         "protocol": PROTOCOL_VERSION.to_string(),
+        "appearance": appearance,
     }))
-    .into_response()
+    .into_response())
 }
 
 /// The groups this credential can work in, and where their repositories

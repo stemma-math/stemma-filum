@@ -227,6 +227,15 @@ impl Server {
         }
     }
 
+    /// Sets the appearance shared by this account's web and desktop clients.
+    pub fn set_appearance(&self, token: &str, appearance: &str) -> Result<()> {
+        self.tell(
+            token,
+            "/api/appearance",
+            &serde_json::json!({ "appearance": appearance }),
+        )
+    }
+
     /// Gives a credential back.
     pub fn sign_out(&self, token: &str) -> Result<()> {
         let mut response = self.post_empty(token, "/api/logout")?;

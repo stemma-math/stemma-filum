@@ -1,9 +1,7 @@
 //! Light, dark, or whichever the reader's system is in.
 //!
-//! The choice is a cookie, read before any page is drawn so the page
-//! arrives in it, and changed by a form, so the switch works with
-//! JavaScript off like everything else here. Without the cookie the
-//! stylesheet follows the system.
+//! A signed-in choice belongs to the account and is shared with the
+//! desktop app. Anonymous pages keep the browser's cookie choice.
 
 use axum::extract::Request;
 use axum::http::HeaderMap;
@@ -12,8 +10,9 @@ use axum::response::{IntoResponse, Redirect, Response};
 use maud::{Markup, html};
 use serde::Deserialize;
 
-use super::visitor::safe_destination;
-use super::{Instance, cookies};
+use super::api::Credential;
+use super::visitor::{Visitor, safe_destination};
+use super::{Instance, WebError, cookies};
 
 /// The cookie that holds the choice.
 pub const COOKIE: &str = "stemma_appearance";
@@ -62,6 +61,11 @@ impl Appearance {
             "dark" => Self::Dark,
             _ => Self::System,
         }
+    }
+
+    /// Only the three supported choices can be saved.
+    fn valid(word: &str) -> bool {
+        matches!(word, "system" | "light" | "dark")
     }
 
     /// The root's `data-theme`, when it has to say one.
@@ -139,28 +143,63 @@ pub struct Choice {
 /// change somebody's colours.
 pub async fn choose(
     axum::extract::State(instance): axum::extract::State<Instance>,
+    visitor: Visitor,
     axum::Form(choice): axum::Form<Choice>,
-) -> Response {
+) -> Result<Response, WebError> {
+    if !Appearance::valid(&choice.appearance) {
+        return Err(WebError::BadRequest(
+            "Choose System, Light or Dark.".to_owned(),
+        ));
+    }
     let secure = instance.settings.public_url.is_secure();
-    let cookie = match Appearance::parse(&choice.appearance) {
-        Appearance::System => cookies::clear(COOKIE, secure),
-        other => cookies::set(COOKIE, other.as_str(), KEPT, secure),
+    let cookie = match visitor.user() {
+        Some(user) => {
+            let id = user.id.clone();
+            let chosen = choice.appearance.clone();
+            instance
+                .write(move |connection| {
+                    crate::store::users::set_appearance(connection, &id, &chosen)
+                })
+                .await?;
+            cookies::clear(COOKIE, secure)
+        }
+        None => match Appearance::parse(&choice.appearance) {
+            Appearance::System => cookies::clear(COOKIE, secure),
+            other => cookies::set(COOKIE, other.as_str(), KEPT, secure),
+        },
     };
 
     let mut headers = HeaderMap::new();
     cookies::attach(&mut headers, cookie);
 
-    (
+    Ok((
         headers,
         Redirect::to(&safe_destination(choice.back.as_deref())),
     )
-        .into_response()
+        .into_response())
+}
+
+/// Changes the same account choice from a machine credential.
+pub async fn api_choose(
+    axum::extract::State(instance): axum::extract::State<Instance>,
+    credential: Credential,
+    axum::Json(choice): axum::Json<Choice>,
+) -> Result<Response, WebError> {
+    if !Appearance::valid(&choice.appearance) {
+        return Err(WebError::BadRequest(
+            "Choose System, Light or Dark.".to_owned(),
+        ));
+    }
+    let id = credential.user.id;
+    let chosen = choice.appearance.clone();
+    instance
+        .write(move |connection| crate::store::users::set_appearance(connection, &id, &chosen))
+        .await?;
+    Ok(axum::Json(serde_json::json!({ "appearance": choice.appearance })).into_response())
 }
 
 /// The switch: three buttons, the chosen one pressed.
-pub fn switch(class: &str) -> Markup {
-    let chosen = chosen();
-
+pub fn switch(class: &str, chosen: Appearance) -> Markup {
     html! {
         form class={ "appearance " (class) } method="post" action="/appearance" {
             input type="hidden" name="back" value=(here());

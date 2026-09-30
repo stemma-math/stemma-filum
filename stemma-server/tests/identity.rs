@@ -76,6 +76,43 @@ async fn registering_creates_the_account_and_signs_the_person_in() {
 }
 
 #[tokio::test]
+async fn appearance_chosen_on_web_is_shared_with_the_machine_and_back() {
+    let mut harness = Harness::new();
+    harness
+        .post("/register", &fields(&registration("ana")))
+        .await;
+    let session = harness.cookie.clone();
+
+    let saved = harness
+        .post(
+            "/appearance",
+            &[("appearance", "light"), ("back", "/profile")],
+        )
+        .await;
+    assert_eq!(saved.status, StatusCode::SEE_OTHER);
+    assert_eq!(saved.location.as_deref(), Some("/profile"));
+    harness.cookie = session;
+    let profile = harness.get("/profile").await;
+    assert!(profile.says("data-theme=\"light\""));
+
+    let token = harness.credential("ana").await;
+    let account = harness.get_with_token("/api/me", &token).await;
+    assert!(account.says("\"appearance\":\"light\""));
+
+    let changed = harness
+        .post_json_with_token("/api/appearance", &token, "{\"appearance\":\"dark\"}")
+        .await;
+    assert_eq!(changed.status, StatusCode::OK);
+    assert!(harness.get("/profile").await.says("data-theme=\"dark\""));
+
+    let invalid = harness
+        .post_json_with_token("/api/appearance", &token, "{\"appearance\":\"blue\"}")
+        .await;
+    assert_eq!(invalid.status, StatusCode::BAD_REQUEST);
+    assert!(harness.get("/profile").await.says("data-theme=\"dark\""));
+}
+
+#[tokio::test]
 async fn an_instance_over_plain_http_does_not_claim_its_cookie_is_encrypted() {
     let mut harness = Harness::at("http://localhost:8080");
     let form = registration("ana");

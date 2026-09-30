@@ -10,6 +10,7 @@
   import Tooltips from "./components/Tooltips.svelte";
   import { api, onCloseRequested, onMachineChosen, onOpenReview, onRepaired, onViewChosen, said } from "./lib/api";
   import { app } from "./lib/app.svelte";
+  import { appearance } from "./lib/appearance.svelte";
   import { subscriptions } from "./lib/lifecycle";
   import { live } from "./lib/live.svelte";
   import { setup } from "./lib/setup.svelte";
@@ -67,6 +68,9 @@
     listeners.add(onRepaired(() => void setup.load()));
     listeners.add(onOpenReview(() => void app.openPendingReview()));
     listeners.add(live.start());
+    const refreshAppearance = () => { if (app.signed) void appearance.refresh().catch(() => {}); };
+    window.addEventListener("focus", refreshAppearance);
+    listeners.add(() => window.removeEventListener("focus", refreshAppearance));
 
     void app.boot();
     return () => listeners.stop();

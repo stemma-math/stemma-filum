@@ -610,4 +610,7 @@ pub struct Whoami {
     pub user: String,
     /// What to call them.
     pub display_name: String,
+    /// The account-wide appearance, if one has been chosen.
+    #[serde(default)]
+    pub appearance: Option<String>,
 }

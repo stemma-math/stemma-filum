@@ -2,6 +2,7 @@
 // showing, the open line, and moving between them.
 
 import { api } from "./api";
+import { appearance } from "./appearance.svelte";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
 import { lineLabel, sameLine, statesChanged, touchedLines, withLineSummary, type Named } from "./lines";
@@ -86,6 +87,7 @@ class App {
     window.clearInterval(this.#renewal);
     try { this.signed = await api.whoami(); } catch { this.signed = null; }
     if (this.signed) {
+      try { await appearance.refresh(); } catch { /* Keep the local choice while offline. */ }
       try { await this.refreshWaiting(); } catch { this.waiting = []; this.recent = []; }
       try { this.mirrored = await api.standing(); } catch { this.mirrored = null; }
       await this.#loadGroups();
