@@ -3,7 +3,7 @@
 
 import type {
   AuditAction, AuditTarget, Beginning, BridgeKind, Claim, Conflict, Decision, Heard, Known, LineDocument, LineProposal,
-  Machine, Mirrored, Offer, OpenLine, Preview, Review, Reviews, Signed, SignInState, Survey, Tried, Vault, Verdict,
+  LeanDigest, Machine, Mirrored, Offer, OpenLine, Preview, Review, Reviews, Signed, SignInState, Survey, Tried, Vault, Verdict,
 } from "./types";
 
 type Bridge = { core: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } };
@@ -111,11 +111,13 @@ export const api = {
     call<string>("share_line", { path, history, mineToWrite }),
 
   openLine: (path: string) => call<OpenLine>("open_line", { path }),
+  checkLineLean: (path: string) => call<LeanDigest | null>("check_line_lean", { path }),
   saveLine: (path: string, document: LineDocument) => call<OpenLine>("save_line", { path, document }),
   preview: (path: string, document: LineDocument) => call<Preview>("preview", { path, document }),
   reviewPage: (path: string, document: LineDocument) => call<string>("review_page", { path, document }),
 
   claim: (path: string) => call<Claim>("claim", { path }),
+  renewClaim: (path: string) => call<Claim>("renew_claim", { path }),
   claimStatus: (path: string) => call<Claim>("claim_status", { path }),
   release: (path: string) => call<Claim>("release", { path }),
   requestClaim: (path: string) => call<Claim>("request_claim", { path }),

@@ -93,6 +93,12 @@ pub fn claim(path: String) -> Result<Claim, String> {
     with_claim(&path, Server::take_claim)
 }
 
+/// Extends an existing claim without taking an unclaimed line.
+#[tauri::command(async)]
+pub fn renew_claim(path: String) -> Result<Claim, String> {
+    with_claim(&path, Server::renew_claim)
+}
+
 /// Sends what was written, then releases the claim. The release goes
 /// ahead even if sending fails: a claim that cannot be released is worse
 /// than one released with writing that leaves on the next round.

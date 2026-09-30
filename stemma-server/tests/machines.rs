@@ -286,9 +286,13 @@ async fn a_job_launched_from_a_line_is_taken_by_the_machine_that_was_chosen() {
     let machine = offer_a_machine(&mut harness, &token, "ana's laptop").await;
 
     let line = harness.get("/g/algebra/shared/quotient-groups").await;
-    assert!(line.says("fill this box"), "no launcher on the box");
+    assert!(
+        line.says("Ask an agent to fill this box"),
+        "no launcher on the box"
+    );
     assert!(line.says("look for a counterexample"));
     assert!(line.says("say where the line could go next"));
+    assert!(line.says("#sparkles"));
     assert!(line.says("Claude Code"));
 
     // An agent the machine does not have is named and shown out of

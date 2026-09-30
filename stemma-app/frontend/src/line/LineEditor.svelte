@@ -22,10 +22,9 @@
   let { line }: { line: LineSession } = $props();
 
   onMount(() => {
-    void (async () => {
-      await line.takeClaim();
-      await line.render();
-    })();
+    void line.lookAtClaim();
+    void line.render();
+    void line.refreshLean();
     return () => line.detach();
   });
 
@@ -64,6 +63,7 @@
     if (!line.document || !title || title === line.document.title) return;
     line.document.title = title;
     line.changed();
+    app.updateLineSummary(line.path, line.document);
   }
 
   function redescribe(value: string) {
@@ -73,6 +73,7 @@
     if (description) line.document.description = description;
     else delete line.document.description;
     line.changed();
+    app.updateLineSummary(line.path, line.document);
   }
 
   let titleDraft = $state("");

@@ -4,7 +4,7 @@
 import { api } from "./api";
 import { latestRequest } from "./lifecycle";
 import { LineSession } from "./line.svelte";
-import { lineLabel, sameLine, statesChanged, touchedLines, type Named } from "./lines";
+import { lineLabel, sameLine, statesChanged, touchedLines, withLineSummary, type Named } from "./lines";
 import { touchedBlocks } from "./review";
 import { fail, succeed, warn } from "./status.svelte";
 import type { Known, LineDocument, LineState, Mirrored, Review, Signed, Waiting } from "./types";
@@ -63,6 +63,10 @@ class App {
     return this.lines.find((line) => line.path === path)?.state ?? "sent";
   }
 
+  updateLineSummary(path: string, document: LineDocument) {
+    this.lines = withLineSummary(this.lines, path, document);
+  }
+
   /** The open line's heading, or its directory name when it has none. */
   get lineTitle() {
     const entry = this.line?.opened.entry;
@@ -88,7 +92,7 @@ class App {
       await this.#loadLines();
       this.stage = "welcome";
       this.#renewal = window.setInterval(() => {
-        if (this.#openLine?.writing) void this.#openLine.takeClaim();
+        if (this.#openLine?.writing) void this.#openLine.renewClaim();
       }, RENEW);
     }
     this.ready = true;
@@ -172,15 +176,18 @@ class App {
     try {
       await leaving?.save();
       const opened = await api.openLine(path);
-      const offers = await api.offers(opened.entry.group).catch(() => []);
       if (!active()) return;
       if (leaving) {
         await leaving.flush();
         if (!active()) return;
       }
-      this.line = new LineSession(opened, offers);
+      const line = new LineSession(opened, []);
+      this.line = line;
       this.stage = "editor";
       void this.refreshTouched();
+      void api.offers(opened.entry.group).then((offers) => {
+        if (this.line === line) line.offersChanged(offers);
+      }).catch(() => {});
     } catch (error) {
       fail(error);
     }

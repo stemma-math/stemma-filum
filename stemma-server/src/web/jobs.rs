@@ -701,11 +701,8 @@ pub fn machine_list(offers: &[Offer]) -> Markup {
 
 /// The launcher, anchored to the thing the work will land on.
 ///
-/// At rest it is one line of grey grotesk: something that starts work
-/// must never be the loudest thing on a page of mathematics. Opened, it
-/// is the apparatus again — machines as words with their state, the
-/// agents each one actually has nested under it, and the combinations
-/// that cannot be chosen greyed with their reason rather than hidden.
+/// At rest it names the agent task beside its sparkle. Opened, it shows
+/// machines and agents, including unavailable choices and their reasons.
 pub fn launcher(
     signed: &SignedIn,
     group: &Slug,
@@ -717,9 +714,10 @@ pub fn launcher(
 ) -> Markup {
     html! {
         details class="launcher" {
-            summary { (task.asked_for()) }
+            summary { (super::layout::glyph("sparkles")) "Ask an agent to " (task.asked_for()) }
 
             div class="launcher__panel" {
+                p class="launcher__request" { "Ask an agent to " strong { (task.asked_for()) } "." }
                 @if offers.is_empty() {
                     p class="empty" {
                         "No machines are available for this group."
@@ -742,7 +740,9 @@ pub fn launcher(
 
                         (choices("anyone", "Whoever is free", None, &free(offers)))
 
-                        button class="button button--primary" type="submit" { "Ask" }
+                        button class="button button--primary" type="submit" {
+                            (super::layout::glyph("sparkles")) "Start agent job"
+                        }
                     }
                 }
             }

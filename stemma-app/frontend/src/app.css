@@ -185,6 +185,10 @@
     position: relative;
 }
 
+.sidebar__group--open {
+    z-index: 31;
+}
+
 .group-switch {
     display: flex;
     align-items: center;
@@ -202,6 +206,11 @@
 
 .group-switch:hover {
     background: rgb(255 255 255 / 9%);
+}
+
+.sidebar__group--open .group-switch {
+    border-bottom-color: transparent;
+    border-radius: 12px 12px 0 0;
 }
 
 .group-switch > .glyph {
@@ -734,7 +743,29 @@
 }
 
 .sidebar__group .bubble {
+    top: calc(100% - 1px);
+    left: 0;
     right: 0;
+    min-width: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    color: var(--on-dark-1);
+    background: var(--navy-800);
+    border-color: rgb(170 200 240 / 18%);
+    border-top: 0;
+    border-radius: 0 0 12px 12px;
+}
+
+.sidebar__group .menu__item:hover,
+.sidebar__group .menu__item:focus-visible,
+.sidebar__group .menu__item[aria-checked="true"] {
+    color: var(--on-dark-1);
+    background: rgb(255 255 255 / 9%);
+}
+
+.sidebar__group .menu__hint,
+.sidebar__group .menu__item .glyph {
+    color: var(--on-dark-3);
 }
 
 .sync .bubble {
@@ -939,6 +970,12 @@
 .claim .button--small {
     min-height: 34px;
     border-radius: 9px;
+}
+
+.claim .button--small:has(.spinner) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .editor-body {
@@ -1280,6 +1317,8 @@ button.block__label:disabled {
 .block__content .cm-editor {
     color: var(--ink-1);
     background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     font: var(--text-content);
 }
 
@@ -1287,6 +1326,7 @@ button.block__label:disabled {
  * the markup lines up and reads as such. At rest it reads as the page. */
 .block__content .cm-editor.cm-focused {
     outline: 0;
+    border-color: var(--accent);
     font: var(--text-source);
 }
 
@@ -1297,6 +1337,10 @@ button.block__label:disabled {
 
 .block__content .cm-content {
     padding: 4px 12px 6px;
+    caret-color: transparent;
+}
+
+.block:not(.block--readonly) .block__content .cm-editor.cm-focused .cm-content {
     caret-color: var(--ink-1);
 }
 
@@ -1712,6 +1756,12 @@ button.block__label:disabled {
     color: var(--ink-3);
 }
 
+.panel__text--working {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .panel__text .glyph {
     vertical-align: -2px;
 }
@@ -2074,6 +2124,7 @@ body:has(.app-shell) .dialog {
     min-width: 0;
     min-height: 0;
     padding-right: 4px;
+    padding-bottom: 12px;
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-gutter: stable;
@@ -2633,6 +2684,11 @@ body:has(.app-shell) .toasts {
     .blocks {
         padding: 20px 20px 32px;
     }
+
+    /* The narrow page has no outside margin for the selection box. */
+    .block__select {
+        left: 8px;
+    }
 }
 
 /* ── Setting this machine up ─────────────────────────────────────────── */
@@ -2642,9 +2698,10 @@ body:has(.app-shell) .toasts {
     flex-direction: column;
     gap: 18px;
     max-height: min(560px, calc(100vh - 240px));
-    padding-right: 4px;
+    padding-right: 12px;
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-gutter: stable;
 }
 
 .checklist__item .setting__title .chip {

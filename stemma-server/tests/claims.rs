@@ -217,6 +217,29 @@ async fn letting_a_line_go_leaves_it_open_to_the_next_machine() {
 }
 
 #[tokio::test]
+async fn renewal_does_not_take_a_released_line_again() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    a_group_with_a_line(&mut harness, "ana").await;
+
+    let laptop = a_machine(&mut harness, "ana", "ana's laptop").await;
+    harness
+        .post_json_with_token("/api/claims", &laptop, &about())
+        .await;
+    harness
+        .post_json_with_token("/api/claims/release", &laptop, &about())
+        .await;
+
+    let renewed = harness
+        .post_json_with_token("/api/claims/renew", &laptop, &about())
+        .await;
+    assert_eq!(renewed.status, StatusCode::NOT_FOUND);
+
+    let claims = parsed(&harness.get_with_token("/api/claims", &laptop).await);
+    assert_eq!(claims["claims"].as_array().map(Vec::len), Some(0));
+}
+
+#[tokio::test]
 async fn the_owner_can_hand_back_a_line_their_own_machine_is_holding() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;

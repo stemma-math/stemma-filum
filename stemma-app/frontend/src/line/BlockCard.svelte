@@ -365,7 +365,7 @@
       {:else if verified}
         <span class="chip"><Glyph name="warning" small />Verified with missing backing</span>
       {:else}
-        <span class="chip chip--dashed">Missing formal statement</span>
+        <span class="chip chip--dashed" data-tip={line.leanProblem ?? (line.opened.lean && !line.opened.lean.compiled ? line.opened.lean.diagnostic : null)}>Missing formal statement</span>
       {/if}
     </div>
   {/if}

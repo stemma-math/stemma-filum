@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lineLabel, sameLine, statesChanged, touchedLines } from "../src/lib/lines.ts";
+import { lineLabel, sameLine, statesChanged, touchedLines, withLineSummary } from "../src/lib/lines.ts";
 
 const known = (name, state = "sent") => ({ group: "algebra", side: "private", name, state });
 
@@ -16,6 +16,18 @@ test("a line is named as the engine names it in its reports", () => {
   assert.equal(lineLabel(known("quotients")), "algebra/private/quotients");
   assert.ok(sameLine(known("quotients"), { group: "algebra", side: "private", name: "quotients" }));
   assert.ok(!sameLine(known("quotients"), { group: "algebra", side: "shared", name: "quotients" }));
+});
+
+test("a local title and description edit updates only its line in the rail", () => {
+  const before = [
+    { ...known("first"), path: "/first", title: "Old", description: "Old note" },
+    { ...known("second"), path: "/second", title: "Other", description: null },
+  ];
+  const after = withLineSummary(before, "/first", { title: "New", blocks: [] });
+
+  assert.equal(after[0].title, "New");
+  assert.equal(after[0].description, null);
+  assert.strictEqual(after[1], before[1]);
 });
 
 test("the rail is stale when a line starts or stops needing something", () => {

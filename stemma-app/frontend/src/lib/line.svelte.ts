@@ -4,7 +4,6 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api, said } from "./api";
-import { takenWhenFree } from "./claim";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
 import { fail, succeed, warn } from "./status.svelte";
@@ -40,8 +39,10 @@ export class LineSession {
   /** Whether the last attempt to reach the claim failed; what went wrong
    * was raised as a message. */
   claimFailed = $state(false);
+  releasing = $state(false);
   preview = $state<Preview | null>(null);
   previewError = $state<string | null>(null);
+  leanProblem = $state<string | null>(null);
   /** The blocks an agent will be asked about. */
   readonly selected = new SvelteSet<string>();
   /** The agent that is asked, as `machine|agent`. */
@@ -64,9 +65,12 @@ export class LineSession {
   #attached = true;
   #saveTimer = 0;
   #previewTimer = 0;
+  #leanTimer = 0;
   #savesInFlight = 0;
   #enqueueSave = serially();
   #previewRequest = latestRequest();
+  #leanRequest = latestRequest();
+  #claimRequest = latestRequest();
 
   constructor(opened: OpenLine, offers: Offer[]) {
     this.opened = opened;
@@ -180,11 +184,9 @@ export class LineSession {
 
   /** What is wrong with the line and is not about any one block. */
   get general(): string[] {
-    const lean = this.opened.lean;
     return [
       ...this.opened.faults.filter((fault) => fault.at === null).map((fault) => fault.message),
       ...(this.preview?.diagnostics.filter((diagnostic) => diagnostic.block === null).map((diagnostic) => diagnostic.message) ?? []),
-      ...(lean && !lean.compiled ? [lean.diagnostic] : []),
     ];
   }
 
@@ -193,6 +195,7 @@ export class LineSession {
     this.#attached = false;
     window.clearTimeout(this.#saveTimer);
     window.clearTimeout(this.#previewTimer);
+    window.clearTimeout(this.#leanTimer);
     window.clearTimeout(this.#stepTimer);
   }
 
@@ -279,6 +282,7 @@ export class LineSession {
       if (!this.#attached) return;
       this.opened = saved;
       this.#remember(saved);
+      this.#scheduleLean();
       if (this.#text() === text) this.saveState = "saved";
     } catch (error) {
       if (this.#attached) this.saveState = "not saved";
@@ -310,6 +314,7 @@ export class LineSession {
       this.canUndo = false;
       this.canRedo = false;
       void this.render();
+      this.#scheduleLean();
     } catch {
       // What is shown stays until the next look works.
     }
@@ -330,40 +335,49 @@ export class LineSession {
   }
 
   takeClaim() {
+    if (this.releasing) return;
     return this.#claimWith(() => api.claim(this.path));
+  }
+
+  /** Extends a claim already held by this machine without taking it again. */
+  renewClaim() {
+    if (this.releasing || !this.writing) return;
+    return this.#claimWith(() => api.renewClaim(this.path));
   }
 
   /** Lets the line go, once everything is saved; edits that cannot be
    * saved keep the claim, so they are not left behind. */
   async release() {
+    if (this.releasing) return;
+    this.releasing = true;
+    const active = this.#claimRequest();
     try {
       await this.flush();
+      const claim = await api.release(this.path);
+      if (active()) this.#showClaim(claim);
     } catch (error) {
       fail(error);
-      return;
+      if (active()) await this.lookAtClaim();
+    } finally {
+      this.releasing = false;
     }
-    return this.#claimWith(() => api.release(this.path));
   }
 
   requestClaim() {
     return this.#claimWith(() => api.requestClaim(this.path));
   }
 
-  /** Looks at who is writing the line again, taking nothing: the instance
-   * said the claim changed. A line this machine was waiting for and is
-   * now free is taken, as opening it would have. */
+  /** Looks at who is writing the line again, taking nothing. */
   async lookAtClaim() {
+    const active = this.#claimRequest();
     try {
       const claim = await api.claimStatus(this.path);
-      if (takenWhenFree(this.claim, claim)) {
-        await this.takeClaim();
-        return;
+      if (active()) this.#showClaim(claim);
+    } catch (error) {
+      if (active() && this.claim === null) {
+        this.claimFailed = true;
+        fail(error);
       }
-      this.claim = claim;
-      this.claimFailed = false;
-      this.writing = claim.standing === "writing";
-    } catch {
-      // What was shown stays until the next look works.
     }
   }
 
@@ -374,16 +388,42 @@ export class LineSession {
   }
 
   async #claimWith(ask: () => Promise<Claim>) {
+    const active = this.#claimRequest();
     try {
       const claim = await ask();
-      this.claim = claim;
-      this.claimFailed = false;
-      this.writing = claim.standing === "writing";
+      if (active()) this.#showClaim(claim);
     } catch (error) {
+      if (!active()) return;
       this.claim = null;
       this.claimFailed = true;
       this.writing = false;
       fail(error);
+    }
+  }
+
+  #showClaim(claim: Claim) {
+    this.claim = claim;
+    this.claimFailed = false;
+    this.writing = claim.standing === "writing";
+  }
+
+  #scheduleLean() {
+    this.#leanRequest();
+    window.clearTimeout(this.#leanTimer);
+    this.#leanTimer = window.setTimeout(() => void this.refreshLean(), 1000);
+  }
+
+  /** Checks formal work in the background, independently of opening or saving. */
+  async refreshLean() {
+    const active = this.#leanRequest();
+    try {
+      const lean = await api.checkLineLean(this.path);
+      if (!active() || !this.#attached) return;
+      this.opened.lean = lean;
+      this.leanProblem = null;
+    } catch (error) {
+      if (!active() || !this.#attached) return;
+      this.leanProblem = said(error);
     }
   }
 

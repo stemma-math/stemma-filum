@@ -1,6 +1,6 @@
 // Telling lines apart, and knowing when what the rail shows is out of date.
 
-import type { LineState, Mirrored } from "./types";
+import type { Known, LineDocument, LineState, Mirrored } from "./types";
 
 /** A line named by its group, repository and name. */
 export type Named = { group: string; side: string; name: string };
@@ -13,6 +13,13 @@ export function lineLabel(line: Named): string {
 /** Whether two descriptions name the same line. */
 export function sameLine(one: Named, other: Named): boolean {
   return one.group === other.group && one.side === other.side && one.name === other.name;
+}
+
+/** Shows a local title or description edit in the rail immediately. */
+export function withLineSummary(lines: Known[], path: string, document: LineDocument): Known[] {
+  return lines.map((line) => line.path === path
+    ? { ...line, title: document.title, description: document.description ?? null }
+    : line);
 }
 
 /** Whether a round of the engine changed where any line the rail shows

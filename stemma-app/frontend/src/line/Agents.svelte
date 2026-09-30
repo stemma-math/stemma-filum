@@ -66,7 +66,7 @@
   </div>
 
   {#if line.launching}
-    <p class="panel__text"><span class="spinner" aria-hidden="true"></span>Starting the job…</p>
+    <p class="panel__text panel__text--working"><span class="spinner" aria-hidden="true"></span>Starting the job…</p>
   {/if}
 
   {#if chosen.length}
