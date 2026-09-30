@@ -62,11 +62,17 @@ anyone who can read it.
 
 ## Agent jobs
 
+Only a machine's owner can launch agents on it by default. On the machine's
+web page, the owner can explicitly share its agents with a group; only then
+can other members choose it. Turning the group off stops that machine taking
+new jobs from it.
+
 Each requested agent job runs in its own directory below `jobs/` in the
 client's state directory, which only the machine's owner can enter. The directory contains the group's repository,
 the target `line.json` at the requested revision, versioned `AGENTS.md` and
-`TASK.md` instructions, and `scratch/`. Lake's packages are linked from the
-group's repository rather than copied. The directory is reported with the job
+`TASK.md` instructions, and `scratch/`. Stemma prepares Lake's pinned packages
+before the agent starts, then links them from the group's repository rather
+than copying them. The directory is reported with the job
 and left for the machine owner to inspect until it is no longer needed: it is
 removed once its proposal is decided, or a day after its job ended with nothing
 to review. When the workspaces together take more than the configured limit,
@@ -138,9 +144,11 @@ the application offers.
 
 *Remove Stemma from This Machine…* (in the application menu and in
 Settings), or `stemma uninstall`, sends what is not on the server yet,
-removes the service, the link and the path line, takes the machine back
-on the server, signs out, and asks whether to delete what Stemma keeps on
-the machine.
+takes the machine back on the server, removes the service, the link and the
+path line, signs out, and asks whether to delete what Stemma keeps on the
+machine. If the server is unavailable, removal keeps the credential so it can
+be retried. A machine whose application was deleted directly can be revoked
+from its web page.
 
 The bundle is suitable for local testing. Its ad-hoc signature has no Apple
 Developer identity, so distribution to another Mac still requires Developer ID

@@ -232,11 +232,35 @@ pub fn apply_line_operations(
 /// Whether a library path stays below the package root.
 pub fn safe_library_path(path: &str) -> bool {
     let path = Path::new(path);
+    let normal: Vec<_> = path
+        .components()
+        .filter_map(|part| match part {
+            Component::Normal(name) => Some(name),
+            _ => None,
+        })
+        .collect();
     !path.as_os_str().is_empty()
         && !path.is_absolute()
+        && !(normal.len() == 1
+            && matches!(
+                normal[0].to_str(),
+                Some(
+                    crate::repository::MANIFEST
+                        | crate::repository::LAKEFILE
+                        | crate::repository::LEAN_TOOLCHAIN
+                        | "GroupLibrary.lean"
+                        | "PrivateLibrary.lean"
+                )
+            ))
         && path
             .components()
             .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
+        && !path.components().any(|part| {
+            matches!(
+                part.as_os_str().to_str(),
+                Some(".git" | ".lake" | ".stemma" | "lines")
+            )
+        })
 }
 
 /// Machine-checked evidence attached to a proposed Lean library change.
@@ -855,7 +879,15 @@ mod tests {
         for safe in ["Next.lean", "Algebra/Groups.lean", "./Next.lean"] {
             assert!(safe_library_path(safe), "refused {safe}");
         }
-        for unsafe_path in ["", "/etc/passwd", "../Next.lean", "Algebra/../../Next.lean"] {
+        for unsafe_path in [
+            "",
+            "/etc/passwd",
+            "../Next.lean",
+            "Algebra/../../Next.lean",
+            ".lake/workspace-shared/GroupLibrary.lean",
+            "GroupLibrary.lean",
+            "stemma.toml",
+        ] {
             assert!(!safe_library_path(unsafe_path), "accepted {unsafe_path}");
         }
     }

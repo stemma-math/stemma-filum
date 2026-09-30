@@ -222,6 +222,9 @@ pub struct Change {
     /// Whether the machine is to serve it.
     #[serde(default)]
     pub serve: String,
+    /// Whether other members may launch agents on this machine.
+    #[serde(default)]
+    pub share: String,
     /// The CSRF token [`crate::web::layout::signature`] put in the form.
     pub form_token: String,
 }
@@ -236,13 +239,14 @@ pub async fn panel(
     let owner = signed.user.id.clone();
     let of = machine.id;
 
-    let (agents, serving, memberships, ran) = instance
+    let (agents, serving, memberships, ran, shared) = instance
         .read(move |connection| {
             Ok((
                 machines::agents(connection, &of)?,
                 machines::groups(connection, &of)?,
                 groups::for_user(connection, &owner)?,
                 jobs::for_machine(connection, &of, RECENT)?,
+                machines::shared_groups(connection, &of)?,
             ))
         })
         .await?;
@@ -251,11 +255,12 @@ pub async fn panel(
         .await?
         .at(format!("/machines/{}", machine.id));
 
-    let groups: Vec<(Group, bool)> = memberships
+    let groups: Vec<(Group, bool, bool)> = memberships
         .into_iter()
         .map(|membership| {
             let serving = serving.contains(&membership.group.id);
-            (membership.group, serving)
+            let is_shared = shared.contains(&membership.group.id);
+            (membership.group, serving, is_shared)
         })
         .collect();
 
@@ -294,6 +299,36 @@ pub async fn serve(
                 true => machines::enable(connection, &of, &group),
                 false => machines::disable(connection, &of, &group),
             }
+        })
+        .await?;
+
+    Ok(Redirect::to(&format!("/machines/{}", machine.id)).into_response())
+}
+
+/// Lets the owner explicitly allow or stop other group members using agents here.
+pub async fn share(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(id): Path<String>,
+    axum::Form(change): axum::Form<Change>,
+) -> Result<Response, WebError> {
+    signed.check_form(&change.form_token)?;
+    let machine = own(&instance, &signed, &id).await?;
+    let slug = Slug::parse(change.group.trim())
+        .map_err(|_| WebError::BadRequest("That is not a group.".to_owned()))?;
+    let group = GroupId::new(slug);
+    let owner = signed.user.id.clone();
+    let of = machine.id;
+    let wanted = change.share == "yes";
+
+    instance
+        .write(move |connection| {
+            if groups::role_of(connection, &group, &owner)?.is_none()
+                || !machines::groups(connection, &of)?.contains(&group)
+            {
+                return Ok(());
+            }
+            machines::share(connection, &of, &group, wanted)
         })
         .await?;
 
@@ -398,7 +433,7 @@ fn body(
     signed: &SignedIn,
     machine: &Machine,
     agents: &[Detected],
-    groups: &[(Group, bool)],
+    groups: &[(Group, bool, bool)],
     ran: &[jobs::Job],
 ) -> Markup {
     let owed = ran
@@ -436,14 +471,14 @@ fn body(
         section class="block" aria-labelledby="serving-title" {
             h2 class="block__title" id="serving-title" { "Agent jobs by group" }
             p class="quiet" {
-                "A job asked for in a group goes to one of the machines that take that "
-                "group's jobs. Turn a group off to stop this machine taking new jobs from it."
+                "This machine takes your jobs in enabled groups. Share it explicitly to let "
+                "other members launch agents on it."
             }
             @if groups.is_empty() {
                 p class="empty" { "You are not in any group yet." }
             } @else {
                 ul class="register" {
-                    @for (group, serving) in groups {
+                    @for (group, serving, shared) in groups {
                         li class="serving" {
                             span class="serving__group" {
                                 span class="register__name" { (group.name) }
@@ -466,6 +501,24 @@ fn body(
                                        aria-label={ "Take agent jobs from " (group.name) }
                                        title=@if *serving { "Stop taking jobs from this group" } @else { "Take jobs from this group" } {
                                     span class="switch__thumb" {}
+                                }
+                            }
+                            @if *serving {
+                                form class="serving__form" method="post"
+                                     action={ "/machines/" (machine.id) "/share" } {
+                                    (signature(signed))
+                                    input type="hidden" name="group" value=(group.slug());
+                                    input type="hidden" name="share"
+                                          value=@if *shared { "no" } @else { "yes" };
+                                    span class="serving__state" aria-hidden="true" {
+                                        @if *shared { "Shared with group" } @else { "Owner only" }
+                                    }
+                                    button class="switch" type="submit" role="switch"
+                                           aria-checked=(shared.to_string())
+                                           aria-label={ "Share agents on this machine with " (group.name) }
+                                           title=@if *shared { "Stop sharing with this group" } @else { "Share with this group" } {
+                                        span class="switch__thumb" {}
+                                    }
                                 }
                             }
                         }

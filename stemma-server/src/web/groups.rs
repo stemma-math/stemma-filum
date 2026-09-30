@@ -881,7 +881,7 @@ async fn read_machines(
     group: &Group,
     signed: &SignedIn,
 ) -> Result<(Vec<super::jobs::Offer>, Vec<crate::store::jobs::Job>), WebError> {
-    let offers = super::jobs::offers(instance, &group.id).await?;
+    let offers = super::jobs::offers(instance, &group.id, &signed.user.id).await?;
 
     let id = group.id.clone();
     let reader = signed.user.id.clone();
@@ -1025,7 +1025,7 @@ fn space_body(
                 section class="card members-card" aria-labelledby="members-title" {
                     div class="card__head" {
                         h2 class="card__title" id="members-title" {
-                            "Members" span class="count" { (members.len()) }
+                            "Members" span class="count" { (members.len() + invitations.len()) }
                         }
                         @if role.can_invite() {
                             a class="button button--small add-member"
@@ -1052,11 +1052,32 @@ fn space_body(
                                 }
                             }
                         }
+                        @for invitation in invitations {
+                            li class="person person--pending" {
+                                span class="person__who" {
+                                    span class="person__name" {
+                                        @match &invitation.email {
+                                            Some(email) => (email),
+                                            None => "Anybody with the link",
+                                        }
+                                    }
+                                    span class="identifier quiet" {
+                                        "Invited as "
+                                        (super::profile::capitalised(&invitation.role.to_string()))
+                                        " · expires "
+                                        (invitation.expires_at.get(..10).unwrap_or(&invitation.expires_at))
+                                    }
+                                }
+                                span class="person__role person__role--pending" { "Pending" }
+                                form method="post"
+                                     action={ "/g/" (group.slug()) "/invitations/"
+                                              (invitation.id) "/withdraw" } {
+                                    (signature(signed))
+                                    button class="button button--small" type="submit" { "Withdraw" }
+                                }
+                            }
+                        }
                     }
-                }
-
-                @if role.can_invite() {
-                    (invitations_block(signed, group, invitations))
                 }
             }
         }
@@ -1109,56 +1130,6 @@ fn lines_block(group: &Group, work: &[(Side, Nodes)]) -> Markup {
                                     (line.line.nodes.len()) " in all"
                                 }
                                 span class="chevron" { (glyph("chevron-right")) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// The invitations out of this group, and the way to make one.
-fn invitations_block(signed: &SignedIn, group: &Group, invitations: &[Invitation]) -> Markup {
-    html! {
-        section class="card members-card" id="invitations" aria-labelledby="invitations-title" {
-            div class="card__head" {
-                h2 class="card__title" id="invitations-title" {
-                    "Invitations" span class="count" { (invitations.len()) }
-                }
-                a class="button button--small add-member" href={ "/g/" (group.slug()) "/invitations/new" }
-                  data-dialog-link {
-                    (glyph("add-person")) "Invite"
-                }
-            }
-
-            @if invitations.is_empty() {
-                div class="card__empty" {
-                    p class="empty" { "There are no active invitations." }
-                }
-            } @else {
-                ul class="people" {
-                    @for invitation in invitations {
-                        li class="person" {
-                            span class="person__who" {
-                                span class="person__name" {
-                                    @match &invitation.email {
-                                        Some(email) => (email),
-                                        None => "Anybody with the link",
-                                    }
-                                }
-                                span class="person__role numeric" {
-                                    (super::profile::capitalised(&invitation.role.to_string()))
-                                    " · until " (invitation.expires_at.get(..10).unwrap_or(&invitation.expires_at))
-                                }
-                            }
-                            form method="post"
-                                 action={ "/g/" (group.slug()) "/invitations/"
-                                          (invitation.id) "/withdraw" } {
-                                (signature(signed))
-                                button class="button button--small" type="submit" {
-                                    "Withdraw"
-                                }
                             }
                         }
                     }

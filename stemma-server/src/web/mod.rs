@@ -227,13 +227,24 @@ fn lock(database: &Mutex<Database>) -> Result<std::sync::MutexGuard<'_, Database
 /// web can be added beside these first.
 pub fn router() -> Router<Instance> {
     Router::new()
-        .merge(pages())
+        .merge(pages().layer(axum::middleware::from_fn(fresh_page)))
         .merge(api())
         .merge(git())
         .merge(assets())
         .fallback(get(not_found))
         .layer(axum::middleware::from_fn(in_the_form_it_was_asked_for))
         .layer(axum::middleware::from_fn(appearance::remember))
+}
+
+/// HTML and line pages depend on the reader and the latest revision.
+/// A browser must ask the instance again even when revisiting a URL.
+async fn fresh_page(request: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("private, no-store"),
+    );
+    response
 }
 
 /// Server-rendered pages and the forms they post.
@@ -318,6 +329,7 @@ fn pages() -> Router<Instance> {
             get(machines::retire_form).post(machines::retire),
         )
         .route("/machines/{id}/jobs/{job}/clear", post(machines::clear))
+        .route("/machines/{id}/share", post(machines::share))
         .route("/admin", get(admin::area))
         .route(
             "/admin/authenticate",

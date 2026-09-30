@@ -3,8 +3,8 @@
 //! The steps are the same from the application and from the command
 //! line, and each is here on its own so the application can ask its
 //! questions between them: what was written reaches the server first;
-//! then the service, the link and the profile line go; the server takes
-//! the machine back; the credential is forgotten; and last, if the owner
+//! then the server takes the machine back, the service, the link and the
+//! profile line go; the credential is forgotten; and last, if the owner
 //! says so, everything Stemma kept here.
 
 use std::io::{BufRead, Write};
@@ -58,35 +58,37 @@ pub fn take_down(home: &Home) -> Result<Vec<String>> {
 /// Takes this machine back on the server and forgets the credential.
 /// Answers what was done, in sentences.
 ///
-/// A server out of reach does not keep the credential here: the machine
-/// can still be taken back from its page on the web.
+/// If the server is out of reach, keep the credential so removal can be
+/// retried. Losing it first would leave an inaccessible, listed machine.
 pub fn leave(home: &Home) -> Result<Vec<String>> {
     let path = home.credentials_file();
     let Some(credentials) = Credentials::read(&path)? else {
         return Ok(vec!["This machine was not signed in.".to_owned()]);
     };
 
-    let mut done = Vec::new();
-    let told = Server::at(&credentials.server).and_then(|server| {
-        let retired = server.retire_node(&credentials.token)?;
-        // Taking the machine back revokes its credential too; one that
-        // never offered to work gives it back itself.
-        if !retired {
-            server.sign_out(&credentials.token)?;
-        }
-        Ok(retired)
-    });
+    let retired = Server::at(&credentials.server)
+        .and_then(|server| {
+            let retired = server.retire_node(&credentials.token)?;
+            // Taking the machine back revokes its credential too; one that
+            // never offered to work gives it back itself.
+            if !retired {
+                server.sign_out(&credentials.token)?;
+            }
+            Ok(retired)
+        })
+        .with_context(|| {
+            format!(
+                "{} could not be told; retry removal or revoke the machine on the web",
+                credentials.server
+            )
+        })?;
 
-    match told {
-        Ok(true) => done.push(format!(
+    let mut done = Vec::new();
+    if retired {
+        done.push(format!(
             "{} no longer counts this machine among yours.",
             credentials.server
-        )),
-        Ok(false) => {}
-        Err(error) => done.push(format!(
-            "{} could not be told, so the machine is still listed there: {error:#}",
-            credentials.server
-        )),
+        ));
     }
 
     Credentials::forget(&path)?;
@@ -192,10 +194,10 @@ pub fn run(
         }
     }
 
-    for said in take_down(home)? {
+    for said in leave(home)? {
         writeln!(out, "{said}")?;
     }
-    for said in leave(home)? {
+    for said in take_down(home)? {
         writeln!(out, "{said}")?;
     }
 
@@ -297,6 +299,24 @@ mod tests {
             leave(&home).unwrap(),
             vec!["This machine was not signed in.".to_owned()]
         );
+    }
+
+    #[test]
+    fn an_unreachable_server_does_not_lose_the_machine_credential() {
+        let home = home("offline");
+        let credentials = Credentials {
+            server: "http://127.0.0.1:1".to_owned(),
+            user: "usr:ana".to_owned(),
+            token: "a secret".to_owned(),
+        };
+        credentials.write(&home.credentials_file()).unwrap();
+
+        assert!(leave(&home).is_err());
+        assert_eq!(
+            Credentials::read(&home.credentials_file()).unwrap(),
+            Some(credentials)
+        );
+        let _ = std::fs::remove_dir_all(home.config_dir());
     }
 
     #[test]

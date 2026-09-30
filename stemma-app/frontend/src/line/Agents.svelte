@@ -106,5 +106,5 @@
     <p class="panel__text">Select blocks to ask an agent about several at once, or use <Glyph name="sparkles" small /> on a block.</p>
   {/if}
 {:else}
-  <p class="panel__text">No machine works for this group yet.</p>
+  <p class="panel__text">No machine is available to you in this group yet.</p>
 {/if}

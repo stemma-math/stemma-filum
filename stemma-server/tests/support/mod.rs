@@ -271,6 +271,8 @@ pub struct Page {
     pub set_cookie: Option<String>,
     /// What kind of thing it says it is.
     pub content_type: Option<String>,
+    /// Whether a response may be served without asking the instance again.
+    pub cache_control: Option<String>,
     /// What it says.
     pub body: String,
 }
@@ -290,6 +292,7 @@ impl Page {
         let location = header(header::LOCATION);
         let set_cookie = header(header::SET_COOKIE);
         let content_type = header(header::CONTENT_TYPE);
+        let cache_control = header(header::CACHE_CONTROL);
 
         let body = axum::body::to_bytes(response.into_body(), 1 << 20)
             .await
@@ -300,6 +303,7 @@ impl Page {
             location,
             set_cookie,
             content_type,
+            cache_control,
             body: String::from_utf8_lossy(&body).into_owned(),
         }
     }

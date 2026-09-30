@@ -177,6 +177,62 @@ pub fn for_group(connection: &Connection, group: &GroupId) -> Result<Vec<Machine
     )
 }
 
+/// Machines this member may choose for a job in the group.
+pub fn available_to(
+    connection: &Connection,
+    group: &GroupId,
+    member: &UserId,
+) -> Result<Vec<Machine>> {
+    list(
+        connection,
+        "retired_at IS NULL
+         AND id IN (SELECT machine_id FROM machine_groups
+                    WHERE group_id = ?1 AND (shared = 1 OR machines.user_id = ?2))
+         AND user_id IN (SELECT user_id FROM memberships WHERE group_id = ?1)",
+        params![group.to_string(), member.to_string()],
+    )
+}
+
+/// Whether the owner has explicitly shared this machine with the group.
+pub fn is_shared(connection: &Connection, machine: &MachineId, group: &GroupId) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT shared FROM machine_groups WHERE machine_id = ?1 AND group_id = ?2",
+            params![machine.to_string(), group.to_string()],
+            |row| row.get::<_, bool>(0),
+        )
+        .optional()
+        .map(|shared| shared.unwrap_or(false))
+        .context("cannot read the machine's sharing permission")
+}
+
+/// Groups the owner has shared this machine with.
+pub fn shared_groups(connection: &Connection, machine: &MachineId) -> Result<Vec<GroupId>> {
+    Ok(super::rows(
+        connection,
+        "SELECT group_id FROM machine_groups WHERE machine_id = ?1 AND shared = 1",
+        params![machine.to_string()],
+        |row| id_at(row, "group_id"),
+    )?)
+}
+
+/// Changes sharing independently of whether the machine serves the group.
+pub fn share(
+    connection: &Connection,
+    machine: &MachineId,
+    group: &GroupId,
+    shared: bool,
+) -> Result<()> {
+    connection
+        .execute(
+            "UPDATE machine_groups SET shared = ?3 WHERE machine_id = ?1 AND group_id = ?2",
+            params![machine.to_string(), group.to_string(), shared],
+        )
+        .context("cannot change the machine's sharing permission")?;
+    tell(connection, machine, Some(group))?;
+    Ok(())
+}
+
 /// Reads several machines.
 fn list(
     connection: &Connection,
@@ -550,6 +606,48 @@ mod tests {
         assert!(groups(connection, &machine.id).unwrap().is_empty());
 
         disable(connection, &machine.id, &algebra).unwrap();
+    }
+
+    #[test]
+    fn serving_a_group_does_not_share_agents_until_the_owner_chooses_to() {
+        let mut database = test_database();
+        let (ana, token) = account(database.connection(), "ana");
+        let algebra = group(database.connection_mut(), "algebra", &ana);
+        let (enric, _) = account(database.connection(), "enric");
+        group_store::add_member(
+            database.connection(),
+            &algebra,
+            &enric,
+            stemma_core::access::GroupRole::Member,
+        )
+        .unwrap();
+        let connection = database.connection();
+        let machine = register(connection, &ana, &token, "a laptop").unwrap();
+        enable(connection, &machine.id, &algebra).unwrap();
+
+        assert_eq!(
+            available_to(connection, &algebra, &ana).unwrap(),
+            vec![machine.clone()]
+        );
+        assert!(
+            available_to(connection, &algebra, &enric)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!is_shared(connection, &machine.id, &algebra).unwrap());
+
+        share(connection, &machine.id, &algebra, true).unwrap();
+        assert_eq!(
+            available_to(connection, &algebra, &enric).unwrap(),
+            vec![machine.clone()]
+        );
+
+        share(connection, &machine.id, &algebra, false).unwrap();
+        assert!(
+            available_to(connection, &algebra, &enric)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

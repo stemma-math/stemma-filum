@@ -536,7 +536,7 @@ async fn a_job_that_leaves_nothing_to_review_does_not_end_as_done() {
 }
 
 #[tokio::test]
-async fn somebody_elses_machine_is_never_handed_a_job_that_named_mine() {
+async fn another_members_machine_requires_its_owners_explicit_sharing() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;
     own_a_group(&mut harness, "ana").await;
@@ -552,10 +552,19 @@ async fn somebody_elses_machine_is_never_handed_a_job_that_named_mine() {
     let his = harness.credential("enric").await;
     offer_a_machine(&mut harness, &his, "the workstation").await;
 
+    let choices = parsed(
+        &harness
+            .get_with_token("/api/groups/algebra/machines", &his)
+            .await,
+    );
+    assert_eq!(choices["machines"].as_array().unwrap().len(), 1);
+    assert_eq!(choices["machines"][0]["label"], "the workstation");
+
     // Enric launches the work on her machine on purpose.
     let line = harness.get("/g/algebra/shared/quotient-groups").await;
     let refute = task(&line, "refute");
-    harness
+    assert!(!line.says("ana's laptop"));
+    let refused = harness
         .post(
             "/g/algebra/shared/quotient-groups/jobs",
             &[
@@ -566,6 +575,49 @@ async fn somebody_elses_machine_is_never_handed_a_job_that_named_mine() {
             ],
         )
         .await;
+    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+
+    harness.post("/logout", &[]).await;
+    harness
+        .post("/login", &[("login", "ana"), ("password", PASSWORD)])
+        .await;
+    let panel = harness.get(&format!("/machines/{her_machine}")).await;
+    assert!(panel.says("Owner only"));
+    harness
+        .post(
+            &format!("/machines/{her_machine}/share"),
+            &[
+                ("group", "algebra"),
+                ("share", "yes"),
+                ("form_token", &form_token(&panel)),
+            ],
+        )
+        .await;
+
+    harness.post("/logout", &[]).await;
+    harness
+        .post("/login", &[("login", "enric"), ("password", PASSWORD)])
+        .await;
+    let choices = parsed(
+        &harness
+            .get_with_token("/api/groups/algebra/machines", &his)
+            .await,
+    );
+    assert_eq!(choices["machines"].as_array().unwrap().len(), 2);
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    assert!(line.says("ana's laptop"));
+    let launched = harness
+        .post(
+            "/g/algebra/shared/quotient-groups/jobs",
+            &[
+                ("on", &format!("{her_machine}|claude")),
+                ("task", &task(&line, "refute")),
+                ("revision", "1"),
+                ("form_token", &form_token(&line)),
+            ],
+        )
+        .await;
+    assert!(launched.status.is_redirection());
 
     // His own machine is free and could run it, and is given nothing.
     assert_eq!(

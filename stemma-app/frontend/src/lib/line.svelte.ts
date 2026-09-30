@@ -81,7 +81,7 @@ export class LineSession {
     this.choose(this.#usable());
   }
 
-  /** Every agent on every machine that works for this group. */
+  /** Every agent on a machine available to this group member. */
   get agents(): AgentChoice[] {
     return this.offers.flatMap((machine) =>
       machine.agents.map((agent) => ({

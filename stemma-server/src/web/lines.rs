@@ -69,7 +69,7 @@ pub async fn view(
         None => Nodes::new(group.id.clone(), side, String::new()),
     };
 
-    let offers = super::jobs::offers(&instance, &group.id).await?;
+    let offers = super::jobs::offers(&instance, &group.id, &signed.user.id).await?;
     let audits = match &written {
         Some(written) => {
             let line = written.line;

@@ -201,6 +201,7 @@ async fn the_machine_holding_the_line_writes_it_a_revision_at_a_time() {
         .await;
     assert!(view.says("Being written"));
     assert!(view.says("Revision 2"));
+    assert_eq!(view.cache_control.as_deref(), Some("private, no-store"));
     assert!(view.says("Download line.json"));
     assert!(view.says("Print or save as PDF"));
     assert!(!view.says("Typst source"));

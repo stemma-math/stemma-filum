@@ -280,6 +280,7 @@ async fn somebody_elses_line_is_not_theirs_to_hand_back() {
     register(&mut harness, "bruno").await;
     add_member(&mut harness, "bruno").await;
     sign_in(&mut harness, "bruno").await;
+    a_machine(&mut harness, "bruno", "bruno's laptop").await;
 
     let line = harness.get(&format!("/g/algebra/shared/{LINE}")).await;
 

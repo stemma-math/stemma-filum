@@ -1799,6 +1799,18 @@ a.machine-row:hover {
     color: var(--accent-soft-fg);
 }
 
+.person--pending {
+    background: var(--surface-subtle);
+}
+
+.person__role--pending {
+    color: var(--warning-fg);
+}
+
+.person--pending form {
+    flex-shrink: 0;
+}
+
 /* ── A line on the web ─────────────────────────────────────────────────
  *
  * The typeset page first, then the line's statements in order in one

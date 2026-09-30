@@ -67,6 +67,7 @@ fn start_logging() {
 
 /// Binds the address and serves until interrupted.
 async fn run(instance: Instance) -> Result<()> {
+    upgrade_legacy_pins(&instance).await?;
     let listen = instance.settings.listen.clone();
     let public_url = instance.settings.public_url.clone();
     tokio::spawn(maintain(instance.clone()));
@@ -101,6 +102,39 @@ async fn run(instance: Instance) -> Result<()> {
                 .context("the server stopped unexpectedly")
         }
     }
+}
+
+/// Replaces the never-published default tag before machines sync or run jobs.
+async fn upgrade_legacy_pins(instance: &Instance) -> Result<()> {
+    let groups = instance.read(crate::store::groups::all).await?;
+    for group in groups {
+        let id = group.id.clone();
+        let commit = instance
+            .writing_git(move |repositories| {
+                crate::git::upgrade_unpublished_stemma_pin(repositories, &id)
+            })
+            .await?;
+        if let Some(commit) = commit {
+            let id = group.id.clone();
+            let event = stemma_core::event::Event::Library {
+                group: group.slug().as_str().to_owned(),
+                side: stemma_core::repository::Side::Shared,
+                commit,
+                change: stemma_core::event::LibraryChange::PinsChanged,
+            };
+            instance
+                .write(move |connection| {
+                    crate::store::events::publish(
+                        connection,
+                        crate::store::events::Audience::Group(&id),
+                        &event,
+                    )?;
+                    Ok(())
+                })
+                .await?;
+        }
+    }
+    Ok(())
 }
 
 /// Housekeeping nobody asks for, on a timer, for as long as the server

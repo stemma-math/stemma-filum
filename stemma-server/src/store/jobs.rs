@@ -306,6 +306,9 @@ pub fn take_next(
                          OR (chosen_machine IS NULL AND task = 'build'))
                     AND group_id IN (SELECT group_id FROM machine_groups
                                       WHERE machine_id = ?1)
+                    AND (task = 'build' OR launched_by = (SELECT user_id FROM machines WHERE id = ?1)
+                         OR EXISTS (SELECT 1 FROM machine_groups
+                                    WHERE machine_id = ?1 AND group_id = jobs.group_id AND shared = 1))
                     AND group_id IN (SELECT group_id FROM memberships
                                       WHERE user_id = (SELECT user_id FROM machines
                                                         WHERE id = ?1))
@@ -638,6 +641,45 @@ mod tests {
             )
             .unwrap()
             .is_none()
+        );
+    }
+
+    #[test]
+    fn another_members_job_is_taken_only_after_explicit_sharing() {
+        let mut database = test_database();
+        let (algebra, ana) = ready(database.connection_mut());
+        let enric = person(database.connection(), "enric");
+        group_store::add_member(
+            database.connection(),
+            &algebra,
+            &enric.user,
+            GroupRole::Member,
+        )
+        .unwrap();
+        let job = launch(
+            database.connection(),
+            &asked(
+                &algebra,
+                &enric.user,
+                Choice::Machine {
+                    machine: ana.machine,
+                },
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            take_next(database.connection_mut(), &ana.machine, &[claude()])
+                .unwrap()
+                .is_none()
+        );
+        machines::share(database.connection(), &ana.machine, &algebra, true).unwrap();
+        assert_eq!(
+            take_next(database.connection_mut(), &ana.machine, &[claude()])
+                .unwrap()
+                .unwrap()
+                .id,
+            job.id
         );
     }
 

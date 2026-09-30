@@ -432,8 +432,8 @@ pub fn removal_send() -> Vec<String> {
 #[tauri::command(async)]
 pub fn removal_leave() -> Result<Vec<String>, String> {
     let home = home();
-    let mut done = stemma::machine::uninstall::take_down(&home).map_err(failed)?;
-    done.extend(stemma::machine::uninstall::leave(&home).map_err(failed)?);
+    let mut done = stemma::machine::uninstall::leave(&home).map_err(failed)?;
+    done.extend(stemma::machine::uninstall::take_down(&home).map_err(failed)?);
 
     Ok(done)
 }

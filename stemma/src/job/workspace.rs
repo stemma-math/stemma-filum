@@ -16,7 +16,7 @@ use crate::home::Home;
 use crate::job::answer::{self, State};
 
 /// The versioned instruction contract shipped by this build.
-pub const INSTRUCTION_REVISION: &str = "workspace-api/1";
+pub const INSTRUCTION_REVISION: &str = "workspace-api/2";
 
 /// A prepared job directory and its private API state.
 pub struct Workspace {
@@ -100,8 +100,15 @@ fn fill(
     line: &Name,
     root: PathBuf,
 ) -> Result<Workspace> {
+    let grants = custom_grants.unwrap_or_else(|| grants_for(task, base_source));
     if let Some(repository) = repository {
+        if grants.library {
+            crate::lean::prepare_for_job(repository)?;
+        }
         copy_repository(repository, &root)?;
+        if grants.library {
+            prepare_private_library(repository, &root)?;
+        }
     }
     create(&root.join("scratch"))?;
     create(&root.join(".stemma"))?;
@@ -121,7 +128,6 @@ fn fill(
     write(&line_at, base_source)?;
     write(&root.join("line.json"), base_source)?;
 
-    let grants = custom_grants.unwrap_or_else(|| grants_for(task, base_source));
     write(&root.join("TASK.md"), &task_file(handed, task, &grants)?)?;
 
     let api_bin = root.join(".stemma/bin");
@@ -158,6 +164,49 @@ fn fill(
         api_bin,
         grants,
     })
+}
+
+/// Lake's private package normally refers to a sibling shared checkout.
+/// Job workspaces have no such sibling, so give each one an isolated copy.
+fn prepare_private_library(repository: &Path, root: &Path) -> Result<()> {
+    let manifest_path = repository.join(repository::MANIFEST);
+    if !manifest_path.exists() {
+        return Ok(());
+    }
+    let manifest = crate::repository::read_manifest(repository)?;
+    if manifest.side != repository::Side::Private {
+        return Ok(());
+    }
+    let shared = repository
+        .parent()
+        .context("the private library has no group directory")?
+        .join("shared");
+    let local_shared = root.join(".lake/workspace-shared");
+    create(&local_shared)?;
+    copy_repository(&shared, &local_shared)?;
+
+    relocate_private_lakefile(root)?;
+    let pins = crate::repository::group_pins(repository, &manifest);
+    let lean = pins
+        .lean
+        .as_deref()
+        .context("Lean is not pinned for this group")?;
+    let mathlib = pins
+        .mathlib
+        .as_deref()
+        .context("Mathlib is not pinned for this group")?;
+    crate::lean::prepare_environment(root, lean, mathlib).map_err(anyhow::Error::msg)
+}
+
+fn relocate_private_lakefile(root: &Path) -> Result<()> {
+    let lakefile = root.join(repository::LAKEFILE);
+    let source = std::fs::read_to_string(&lakefile)?;
+    let relocated = source.replace("path = \"../shared\"", "path = \".lake/workspace-shared\"");
+    if relocated == source {
+        bail!("the private Lake project does not identify its shared library");
+    }
+    std::fs::write(&lakefile, relocated)?;
+    Ok(())
 }
 
 /// What the agent is asked to do, and with what grants.
@@ -661,6 +710,25 @@ mod tests {
         assert!(!to.join(".stemma").exists());
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_private_job_points_lake_to_its_own_shared_copy() {
+        let root = scratch("private-lakefile");
+        let manifest = stemma_core::repository::Manifest::new(
+            "grp:algebra".parse().unwrap(),
+            repository::Side::Private,
+            "Algebra, private",
+        );
+        for (path, source) in manifest.lake_files() {
+            std::fs::write(root.join(path), source).unwrap();
+        }
+
+        relocate_private_lakefile(&root).unwrap();
+        let lakefile = std::fs::read_to_string(root.join(repository::LAKEFILE)).unwrap();
+        assert!(lakefile.contains("path = \".lake/workspace-shared\""));
+        assert!(!lakefile.contains("path = \"../shared\""));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
