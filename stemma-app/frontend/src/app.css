@@ -2642,9 +2642,10 @@ body:has(.app-shell) .toasts {
     flex-direction: column;
     gap: 18px;
     max-height: min(560px, calc(100vh - 240px));
-    padding-right: 4px;
+    padding-right: 12px;
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-gutter: stable;
 }
 
 .checklist__item .setting__title .chip {
