@@ -225,6 +225,25 @@ impl Store {
         crate::storage::replace(&self.file(&record.id), &text)
     }
 
+    /// The groups the instance last said this person belongs to; none
+    /// before it has said.
+    pub fn groups(&self) -> Result<Vec<String>> {
+        let path = self.root.join("groups.json");
+
+        match std::fs::read_to_string(&path) {
+            Ok(text) => serde_json::from_str(&text)
+                .with_context(|| format!("{} is not a list of groups", path.display())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(error) => Err(error).with_context(|| format!("cannot read {}", path.display())),
+        }
+    }
+
+    /// Remembers the groups the instance lists.
+    pub fn put_groups(&self, groups: &[String]) -> Result<()> {
+        let text = serde_json::to_string_pretty(groups).context("cannot write the groups")?;
+        crate::storage::replace(&self.root.join("groups.json"), &text)
+    }
+
     /// Forgets a record.
     pub fn remove(&self, id: &str) -> Result<()> {
         match std::fs::remove_file(self.file(id)) {
