@@ -154,25 +154,28 @@ pub fn send_now() -> Result<(), String> {
     }
 }
 
-/// The groups on this machine, sorted.
+/// The groups this person belongs to, sorted: as the instance says, or,
+/// when it cannot be reached, as it last said. Nothing on this machine
+/// makes a group appear.
 #[tauri::command(async)]
 pub fn groups() -> Result<Vec<String>, String> {
-    let home = home();
-    let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
-    let mut found: Vec<String> = config.groups.keys().cloned().collect();
+    let listed = Session::open()
+        .and_then(|session| session.server.workspace(&session.token).map_err(failed));
 
-    if let Ok(entries) = std::fs::read_dir(config.workspace_or(home.workspace())) {
-        for entry in entries.filter_map(Result::ok) {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            // A hidden directory, such as `.git`, is never a group.
-            if !name.starts_with('.') && entry.path().is_dir() && !found.contains(&name) {
-                found.push(name);
-            }
+    match listed {
+        Ok(workspace) => {
+            let mut groups: Vec<String> = workspace
+                .groups
+                .into_iter()
+                .map(|group| group.slug)
+                .collect();
+            groups.sort();
+            Ok(groups)
         }
+        Err(_) => Mirror::at(&home())
+            .and_then(|mirror| mirror.groups())
+            .map_err(failed),
     }
-
-    found.sort();
-    Ok(found)
 }
 
 /// The groups whose details this person may change, as the instance says.

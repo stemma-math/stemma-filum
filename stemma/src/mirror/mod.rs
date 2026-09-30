@@ -446,12 +446,29 @@ impl Mirror {
     ) -> Result<()> {
         self.tidy(report)?;
 
-        if full {
-            self.roots(remote, &remote.groups()?)?;
+        let groups = match full {
+            true => Some(remote.groups()?),
+            false => None,
+        };
+        if let Some(groups) = &groups {
+            self.roots(remote, groups)?;
+            self.store.put_groups(groups)?;
         }
 
         self.take_in(remote, report)?;
+        if let Some(groups) = &groups {
+            self.clear_unlisted(groups)?;
+        }
         self.send_into(remote, sending, report)
+    }
+
+    /// The groups the instance last said this person belongs to, sorted.
+    /// Only the instance's word counts: nothing on this machine makes a
+    /// group appear.
+    pub fn groups(&self) -> Result<Vec<String>> {
+        let mut groups = self.store.groups()?;
+        groups.sort();
+        Ok(groups)
     }
 
     /// Sends the lines asked for, and nothing else.
@@ -534,6 +551,40 @@ impl Mirror {
                     .unwrap_or_else(|| "it has not been sent yet".to_owned()),
             ),
         })
+    }
+
+    /// Removes what is shown of groups the instance no longer lists.
+    ///
+    /// Only once none of their lines is left here: a line taken off this
+    /// machine has already had what the instance does not have put aside,
+    /// so what is left is what Stemma wrote. Only a directory holding a
+    /// repository Stemma wrote is removed, and never a group kept
+    /// somewhere of its own.
+    fn clear_unlisted(&self, listed: &[String]) -> Result<()> {
+        let Ok(entries) = std::fs::read_dir(&self.workspace) else {
+            return Ok(());
+        };
+        let records = self.store.all()?;
+
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let path = entry.path();
+            let unlisted = !listed.contains(&name)
+                && !self.config.groups.contains_key(&name)
+                && !records.iter().any(|record| record.group == name);
+            let written = [Side::Shared, Side::Private].iter().any(|side| {
+                path.join(side.as_str())
+                    .join(repository::MANIFEST)
+                    .is_file()
+            });
+
+            if unlisted && written && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                std::fs::remove_dir_all(&path)
+                    .with_context(|| format!("cannot remove {}", path.display()))?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Writes the files at the root of every repository of these groups.

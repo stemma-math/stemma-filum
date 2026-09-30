@@ -35,6 +35,9 @@ struct Pretend {
     writes: Cell<usize>,
     /// The write, counting from one, that finds the instance gone.
     lost_at_write: Cell<Option<usize>>,
+    /// Groups listed besides `algebra`, and whether `algebra` is not.
+    other_groups: RefCell<Vec<String>>,
+    left_algebra: Cell<bool>,
 }
 
 impl Pretend {
@@ -96,7 +99,11 @@ impl Pretend {
 impl Remote for Pretend {
     fn groups(&self) -> Result<Vec<String>> {
         self.reachable()?;
-        Ok(vec!["algebra".to_owned()])
+        let mut groups = self.other_groups.borrow().clone();
+        if !self.left_algebra.get() {
+            groups.insert(0, "algebra".to_owned());
+        }
+        Ok(groups)
     }
 
     fn lines(&self) -> Result<Vec<Listing>> {
@@ -827,4 +834,51 @@ fn the_daemons_engine_waits_quietly_while_the_window_keeps_the_machine() {
         .recv_timeout(Duration::from_secs(10))
         .expect("the engine is still going with nobody left to nudge it");
     assert_eq!(rounds, 0, "the engine worked while the window was open");
+}
+
+#[test]
+fn only_the_groups_the_instance_lists_are_the_machines() {
+    let (world, _) = started("listed-groups");
+    world
+        .instance
+        .other_groups
+        .borrow_mut()
+        .push("topology".to_owned());
+    world.step();
+
+    // A directory left from an earlier instance at the same address.
+    let stray = world.root.join("workspace/geometry/shared");
+    std::fs::create_dir_all(stray.join("lines/circles")).unwrap();
+    std::fs::write(stray.join(repository::MANIFEST), manifest("shared")).unwrap();
+    std::fs::write(stray.join("lines/circles/line.json"), "{}").unwrap();
+    // And something that is not a repository Stemma wrote.
+    let notes = world.root.join("workspace/notes");
+    std::fs::create_dir_all(&notes).unwrap();
+
+    assert_eq!(world.mirror.groups().unwrap(), ["algebra", "topology"]);
+
+    world.step();
+
+    assert!(!world.root.join("workspace/geometry").exists());
+    assert!(notes.exists());
+    assert!(world.root.join("workspace/topology/shared").exists());
+    assert_eq!(world.mirror.groups().unwrap(), ["algebra", "topology"]);
+}
+
+#[test]
+fn a_group_left_goes_once_its_lines_have_gone() {
+    let (world, document) = started("left-group");
+    world.save(&saying(&document, 0, "Not sent."));
+    world.instance.away.set(true);
+    world.mirror.step(&world.instance, false, &Which::All);
+    world.instance.away.set(false);
+
+    world.instance.left_algebra.set(true);
+    world.instance.lines.borrow_mut().clear();
+    let report = world.step();
+
+    assert!(!world.root.join("workspace/algebra").exists());
+    assert!(world.mirror.groups().unwrap().is_empty());
+    // What was not sent was kept aside before the group went.
+    assert!(!report.aside.is_empty());
 }
