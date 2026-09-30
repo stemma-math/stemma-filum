@@ -99,7 +99,7 @@ static LANDING: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(include_bytes!("../../assets/landing.js"), JAVASCRIPT));
 
 static LIGHT: LazyLock<Asset> =
-    LazyLock::new(|| Asset::new(include_bytes!("../../assets/light.js"), JAVASCRIPT));
+    LazyLock::new(|| Asset::new(include_bytes!("../../../identity/js/light.js"), JAVASCRIPT));
 
 static MARK_ANIMATED: LazyLock<Asset> =
     LazyLock::new(|| Asset::new(stemma_identity::MARK_ANIMATED_JS.as_bytes(), JAVASCRIPT));
