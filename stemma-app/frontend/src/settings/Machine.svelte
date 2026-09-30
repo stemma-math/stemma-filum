@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { onMount } from "svelte";
   import Checklist from "../components/Checklist.svelte";
   import JobList from "../components/JobList.svelte";
@@ -28,7 +29,7 @@
     {/if}
   </h4>
   {#if problem}
-    <p class="setting__note setting__note--failed">{problem}</p>
+    <Message kind="error" text={problem} />
   {:else if machine}
     <JobList jobs={machine.jobs} empty="No jobs have been assigned to this machine." />
   {:else if loaded}

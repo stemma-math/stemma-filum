@@ -1,8 +1,9 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { api, said } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import { latestRequest } from "../lib/lifecycle";
-  import { fail, tell } from "../lib/status.svelte";
+  import { fail, succeed } from "../lib/status.svelte";
   import type { AuditAction, AuditTarget, BridgeKind, Vault } from "../lib/types";
 
   const loadRequest = latestRequest();
@@ -35,7 +36,7 @@
     event.preventDefault();
     const group = app.group!;
     try {
-      tell(await work(group));
+      succeed(await work(group));
       await load(group);
     } catch (error) {
       fail(error);
@@ -87,7 +88,7 @@
     <section class="card pane__card">
       <h2 class="card__title">Definitions {#if vault}<span class="count">{vault.entries.length}</span>{/if}</h2>
       {#if problem}
-        <p class="setting__note setting__note--failed">{problem}</p>
+        <Message kind="error" text={problem} />
       {:else if !vault}
         <div class="skeleton setting__skeleton"></div>
       {:else}

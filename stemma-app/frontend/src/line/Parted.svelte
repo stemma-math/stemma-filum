@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import Glyph from "../components/Glyph.svelte";
   import { api, said } from "../lib/api";
   import { app } from "../lib/app.svelte";
@@ -54,7 +55,7 @@
   <section class="panel__section conflicts">
     <h2 class="panel__title"><Glyph name="warning" small />Needs a decision</h2>
     {#if problem}
-      <p class="panel__text panel__text--failed">{problem}</p>
+      <Message kind="error" text={problem} />
     {:else}
       <p class="panel__text">These blocks were changed on this machine and elsewhere. Choose which version to keep; everything else was brought together already.</p>
       {#each found as one (one.block)}

@@ -1,10 +1,11 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { onMount } from "svelte";
   import { api, said } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import type { LineSession } from "../lib/line.svelte";
   import { reviewedBlocks } from "../lib/review";
-  import { fail, tell } from "../lib/status.svelte";
+  import { fail, succeed } from "../lib/status.svelte";
   import type { LineDocument, Review as ReviewData, Verdict } from "../lib/types";
 
   let { line, review }: { line: LineSession; review: ReviewData } = $props();
@@ -67,9 +68,9 @@
     try {
       await line.flush();
       if (verdict === "ask_again") await api.sendNow();
-      tell(await api.decideProposal(review.proposal, verdict, note.trim() || null));
+      succeed(await api.decideProposal(review.proposal, verdict, note.trim() || null));
       if (verdict === "accept") {
-        tell(await api.applyProposal(review.proposal));
+        succeed(await api.applyProposal(review.proposal));
         await line.reread();
         await app.lookAgain();
       }
@@ -89,7 +90,7 @@
       await api.handoffProposal(review.proposal, handoffTo);
       await app.refreshWaiting();
       await app.refreshReview();
-      tell("Review handed to the group member.");
+      succeed("Review handed to the group member.");
     } catch (error) { fail(error); }
     finally { acting = false; }
   }
@@ -109,7 +110,7 @@
   </div>
 
   {#if review.outdated.length}
-    <p class="notice notice--warning" role="alert">This proposal is outdated in {review.outdated.length} block{review.outdated.length === 1 ? "" : "s"}. Ask again on the current line.</p>
+    <Message kind="warning" text="This proposal is outdated in {review.outdated.length} block{review.outdated.length === 1 ? '' : 's'}. Ask again on the current line." />
   {/if}
 
   {#if view === "typeset"}

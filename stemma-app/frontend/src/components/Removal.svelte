@@ -3,6 +3,7 @@
   // sent is sent or knowingly given up; the service, the command line and
   // the machine on the server go; then the owner decides about the data
   // kept here and about the application itself.
+  import Message from "./Message.svelte";
   import { api, said } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import { setup } from "../lib/setup.svelte";
@@ -105,7 +106,7 @@
         <p>Stemma is removed from this machine.{#if trashable} The application itself can go to the Trash.{/if}</p>
       {/if}
     {/if}
-    {#if problem}<p class="setting__note setting__note--failed">{problem}</p>{/if}
+    {#if problem}<Message kind="error" text={problem} />{/if}
   </div>
   {#snippet actions()}
     {#if stage === "confirm"}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { flip } from "svelte/animate";
   import { isStatement, move, moveTo, remove } from "../lib/blocks";
   import { app } from "../lib/app.svelte";
@@ -120,9 +121,9 @@
 
 <div class="blocks">
   {#if line.general.length}
-    <ul class="blocks__problems">
-      {#each line.general as problem, index (index)}<li>{problem}</li>{/each}
-    </ul>
+    <div class="blocks__problems">
+      {#each line.general as problem, index (index)}<Message kind="error" text={problem} />{/each}
+    </div>
   {/if}
 
   {#if document.blocks.length === 0}

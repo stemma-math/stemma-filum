@@ -1,11 +1,12 @@
 <script lang="ts">
   // Setting this machine up: five items, each with where it stands and
   // the one button that does it. Every item can be left as it is.
+  import Message from "./Message.svelte";
   import { onMount, type Snippet } from "svelte";
   import { api } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import { setup } from "../lib/setup.svelte";
-  import { fail, tell } from "../lib/status.svelte";
+  import { fail, succeed, warn } from "../lib/status.svelte";
   import type { SetupAgent, SetupItem, SetupState } from "../lib/types";
 
   const words: Record<SetupState, string> = {
@@ -34,7 +35,9 @@
     busy = `agent:${agent.name}`;
     try {
       const tried = await api.tryAgent(agent.name);
-      tell(`${agent.called}: ${tried.said}`);
+      const said = `${agent.called}: ${tried.said}`;
+      if (tried.availability === "ready") succeed(said);
+      else warn(said);
     } catch (error) {
       fail(error);
     } finally {
@@ -77,7 +80,7 @@
 {/snippet}
 
 {#if setup.problem && !setup.survey}
-  <p class="setting__note setting__note--failed">{setup.problem}</p>
+  <Message kind="error" text={setup.problem} />
 {:else if !setup.survey}
   <div class="skeleton setting__skeleton"></div>
   <div class="skeleton setting__skeleton"></div>

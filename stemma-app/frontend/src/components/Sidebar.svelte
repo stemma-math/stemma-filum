@@ -29,11 +29,11 @@
       aria-current={line.path === here ? "page" : undefined}
       onclick={() => app.open(line.path)}
     >
-      <span class="sidebar__line-title">{line.title ?? line.name}</span>
+      <span class="sidebar__line-title" title={line.title ?? line.name}>{line.title ?? line.name}</span>
       {#if line.state !== "sent"}
         <span class="sidebar__line-state">{line.state === "needs_decision" ? "Needs a decision" : "Not sent yet"}</span>
       {/if}
-      {#if line.description}<span class="sidebar__line-about">{line.description}</span>{/if}
+      {#if line.description}<span class="sidebar__line-about" title={line.description}>{line.description}</span>{/if}
     </button>
   {:else}
     <p class="sidebar__empty">{empty}</p>
@@ -56,7 +56,7 @@
     >
       {#if app.group}
         <span class="group-switch__badge" aria-hidden="true">{initials(app.group)}</span>
-        <span class="group-switch__name">{app.group}</span>
+        <span class="group-switch__name" title={app.group}>{app.group}</span>
       {:else}
         <span class="group-switch__name group-switch__name--none">No group</span>
       {/if}
@@ -128,8 +128,8 @@
       >
         <span class="avatar" aria-hidden="true">{initials(signed.user)}</span>
         <span class="user-card__who">
-          <span class="identifier user-card__id">{signed.user}</span>
-          <span class="identifier user-card__server">{signed.server}</span>
+          <span class="identifier user-card__id" title={signed.user}>{signed.user}</span>
+          <span class="identifier user-card__server" title={signed.server}>{signed.server}</span>
         </span>
       </button>
       <button

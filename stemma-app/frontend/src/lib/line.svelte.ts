@@ -6,7 +6,7 @@ import { SvelteSet } from "svelte/reactivity";
 import { api, said } from "./api";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
-import { fail, tell } from "./status.svelte";
+import { fail, succeed, warn } from "./status.svelte";
 import type { BlockCheck, Claim, CustomTask, Diagnostic, LineDocument, Node, Offer, OpenLine, Preview } from "./types";
 
 const SAVE_AFTER = 450;
@@ -115,7 +115,7 @@ export class LineSession {
   async ask(tasks: string[], custom?: CustomTask): Promise<number> {
     const [machine, agent] = this.agent.split("|");
     if (!machine || !agent) {
-      tell("Choose an agent first.");
+      warn("Choose an agent first.");
       return 0;
     }
     await this.flush();
@@ -129,7 +129,7 @@ export class LineSession {
         return started;
       }
     }
-    tell(started === 1 ? "Job started." : `${started} jobs started.`);
+    succeed(started === 1 ? "Job started." : `${started} jobs started.`);
     return started;
   }
 

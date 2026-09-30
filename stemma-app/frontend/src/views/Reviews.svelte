@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { onMount } from "svelte";
   import { app } from "../lib/app.svelte";
   import { said } from "../lib/api";
@@ -13,7 +14,7 @@
     <h1>Reviews <span class="count">{app.waiting.length}</span></h1>
     <p>Proposals waiting for your decision across all groups and lines.</p>
   </header>
-  {#if problem}<p class="problem">{problem}</p>{/if}
+  {#if problem}<Message kind="error" text={problem} />{/if}
   <section class="reviews-view__list" aria-label="Waiting proposals">
     <h2>Waiting</h2>
     {#each app.waiting as one (one.proposal)}

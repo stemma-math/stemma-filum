@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Message from "../components/Message.svelte";
   import { onMount } from "svelte";
   import JobList from "../components/JobList.svelte";
   import { jobs } from "../lib/jobs.svelte";
@@ -7,7 +8,7 @@
 </script>
 
 {#if jobs.problem}
-  <p class="panel__text panel__text--failed">{jobs.problem}</p>
+  <Message kind="error" text={jobs.problem} />
 {:else}
   <JobList jobs={jobs.list} empty="Nothing is running." />
 {/if}

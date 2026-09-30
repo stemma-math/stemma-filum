@@ -17,8 +17,9 @@
         outline-offset: 2px;
     }
 
+    /* A toast's time left is how long it stays, not motion to spare. */
     @media (prefers-reduced-motion: reduce) {
-        *,
+        *:not(.toast__time),
         *::before,
         *::after {
             transition-duration: 1ms !important;
@@ -45,10 +46,13 @@
     }
 
     /* Identifiers are verbatim: `usr:`, `grp:`, `thm:`, paths, versions. */
+    /* One may be longer than the room it has, so it breaks anywhere
+     * rather than push past it. */
     .identifier {
         font-family: var(--font-mono);
         font-size: 0.87em;
         font-weight: 400;
+        overflow-wrap: anywhere;
     }
 
     .visually-hidden {
@@ -740,6 +744,65 @@
         color: var(--ink-3);
     }
 
+    /* ── Disclosure ────────────────────────────────────────────────────
+     *
+     * On a `details`: what is only wanted now and then waits behind its
+     * summary, which leads with a chevron. Everything in it is inset as far
+     * as the summary, by `--disclosure-inset`; on a `.card` that is the
+     * card's own inset. */
+
+    .disclosure {
+        --disclosure-inset: 16px;
+        --disclosure-block: 12px;
+    }
+
+    .card.disclosure {
+        --disclosure-inset: 24px;
+        --disclosure-block: 16px;
+    }
+
+    .disclosure > summary {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: var(--disclosure-block) var(--disclosure-inset);
+        font-weight: 500;
+        list-style: none;
+        cursor: pointer;
+    }
+
+    .disclosure > summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .disclosure > summary::before {
+        flex-shrink: 0;
+        width: 7px;
+        height: 7px;
+        content: "";
+        border-right: 1.5px solid var(--ink-3);
+        border-bottom: 1.5px solid var(--ink-3);
+        transform: rotate(-45deg);
+        transition: transform var(--dur-ui) var(--ease-out);
+    }
+
+    .disclosure[open] > summary::before {
+        transform: rotate(45deg);
+    }
+
+    .disclosure > :not(summary) {
+        margin-right: var(--disclosure-inset);
+        margin-left: var(--disclosure-inset);
+    }
+
+    .disclosure > :not(summary) + :not(summary) {
+        margin-top: var(--space-2);
+    }
+
+    .disclosure > :last-child:not(summary) {
+        margin-bottom: var(--disclosure-inset);
+    }
+
     /* ── Dialog ────────────────────────────────────────────────────────
      *
      * On a `dialog` opened with `showModal()`: a title in a sentence, what
@@ -792,80 +855,144 @@
         padding-top: var(--space-2);
     }
 
-    /* ── Notice ────────────────────────────────────────────────────────
+    /* ── Message ───────────────────────────────────────────────────────
      *
-     * Something that went wrong with what was asked, above the thing it is
-     * about. `--warning` is a condition to keep in mind; plain is neutral. */
+     * Anything said to the person about what happened or what to keep in
+     * mind, in one of four kinds: `--error`, `--warning`, `--success` and
+     * `--info`. Each carries its glyph first (`alert`, `warning`, `done`,
+     * `info`), then its words in `.message__text`, then an optional action
+     * and `.message__close`. The words can always be selected, and links in
+     * them are underlined in the message's colour. */
 
-    .problem {
+    .message {
+        box-sizing: border-box;
         display: flex;
         align-items: flex-start;
         gap: var(--space-2);
+        min-width: 0;
         margin: 0;
-        padding: 10px 14px;
+        padding: 10px 12px 10px 14px;
         font: var(--text-meta);
-        color: var(--danger-fg);
-        background: var(--danger-bg);
-        border: 1px solid rgb(214 69 69 / 30%);
+        color: var(--message-fg);
+        background: var(--message-bg);
+        border: 1px solid var(--message-border);
         border-radius: var(--radius-md);
+        -webkit-user-select: text;
+        user-select: text;
     }
 
-    .notice {
+    .message--error {
+        --message-fg: var(--danger-fg);
+        --message-bg: var(--danger-bg);
+        --message-border: color-mix(in srgb, var(--danger-border) 35%, transparent);
+    }
+
+    .message--warning {
+        --message-fg: var(--warning-fg);
+        --message-bg: var(--warning-bg);
+        --message-border: color-mix(in srgb, var(--warning-fg) 25%, transparent);
+    }
+
+    .message--success {
+        --message-fg: var(--success-fg);
+        --message-bg: var(--success-bg);
+        --message-border: color-mix(in srgb, var(--success-icon) 30%, transparent);
+    }
+
+    .message--info {
+        --message-fg: var(--accent-soft-fg);
+        --message-bg: var(--accent-soft-bg);
+        --message-border: color-mix(in srgb, var(--accent-soft-fg) 22%, transparent);
+    }
+
+    /* The glyph sits on the first line of the words. */
+    .message > .glyph {
+        margin-top: 1px;
+    }
+
+    .message__text {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        overflow-wrap: anywhere;
+        cursor: text;
+        -webkit-user-select: text;
+        user-select: text;
+    }
+
+    .message__text a,
+    .message .button--link {
+        color: inherit;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+
+    .message .button--link {
+        flex-shrink: 0;
+        font-weight: 600;
+    }
+
+    .message__close {
         display: flex;
-        align-items: flex-start;
-        gap: var(--space-2);
-        margin: 0;
-        padding: 10px 14px;
-        font: var(--text-meta);
-        color: var(--ink-2);
-        background: var(--surface-subtle);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        margin: -1px -4px -1px 0;
+        padding: 0;
+        color: inherit;
+        background: transparent;
+        border: 0;
+        border-radius: var(--radius-xs);
+        opacity: 0.7;
+        cursor: pointer;
     }
 
-    .notice--warning {
-        color: var(--warning-fg);
-        background: var(--warning-bg);
-        border-color: transparent;
-    }
-
-    .notice--success {
-        color: var(--success-fg);
-        background: var(--success-bg);
-        border-color: transparent;
+    .message__close:hover {
+        opacity: 1;
+        background: color-mix(in srgb, currentColor 10%, transparent);
     }
 
     /* ── Toast ─────────────────────────────────────────────────────────
      *
-     * One line saying what just happened, with an optional action. Where
-     * it sits is the consumer's to say. */
+     * A message raised over everything else, on `.message`: it floats, and
+     * when it goes away by itself `.toast__time` shows how long it has
+     * left, from `--toast-life`. The time stops while the pointer is over
+     * it, so it can be read and copied. Where it sits is the consumer's to
+     * say. */
 
     .toast {
-        box-sizing: border-box;
-        display: flex;
-        align-items: center;
-        gap: var(--space-3);
+        position: relative;
         max-width: min(560px, calc(100vw - 32px));
-        padding: 10px 12px 10px 16px;
-        font: var(--text-meta);
-        color: var(--on-dark-1);
-        background: var(--navy-800);
-        border-radius: var(--radius-md);
+        overflow: hidden;
         box-shadow: var(--shadow-float);
     }
 
-    .toast--error {
-        color: var(--danger-fg);
-        background: var(--surface-card);
-        border: 1px solid rgb(214 69 69 / 35%);
+    .toast__time {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: 3px;
+        background: currentColor;
+        opacity: 0.45;
+        transform-origin: left;
+        animation: stemma-toast-time var(--toast-life, 8s) linear forwards;
     }
 
-    .toast .button--link {
-        color: var(--sky-200);
+    .toast:hover .toast__time {
+        animation-play-state: paused;
     }
 
-    .toast--error .button--link {
-        color: var(--danger-fg);
+    @keyframes stemma-toast-time {
+        from {
+            transform: scaleX(1);
+        }
+
+        to {
+            transform: scaleX(0);
+        }
     }
 
     /* ── Tooltip ───────────────────────────────────────────────────────
