@@ -12,7 +12,7 @@ use stemma_core::model::Verification;
 use stemma_core::proposal::{FormalImpact, FormalReview, Offer, ReviewedBlock};
 use stemma_core::repository::{self, Side};
 use stemma_server::git::{self, Author, LibraryWritten};
-use stemma_server::store::{formal_audits, groups, jobs, lines, proposals, users};
+use stemma_server::store::{formal_audits, groups, jobs, lines, proposals, releases, users};
 use support::{Harness, Page};
 
 const PASSWORD: &str = "a long enough password";
@@ -183,6 +183,7 @@ async fn an_audited_library_gets_public_documentation_and_permanent_result_pages
     let mut harness = Harness::new();
     group_ready_to_release(&mut harness, true).await;
     let form = harness.get("/g/algebra/releases").await;
+    assert!(!form.says("name=\"version\""));
     let published = harness
         .post(
             "/g/algebra/releases",
@@ -190,16 +191,39 @@ async fn an_audited_library_gets_public_documentation_and_permanent_result_pages
         )
         .await;
     assert_eq!(published.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        published.location.as_deref(),
-        Some("/releases/algebra/1.0.0")
-    );
+    let location = published.location.as_deref().expect("the release URL");
+    let version = location
+        .strip_prefix("/releases/algebra/")
+        .expect("the generated version")
+        .to_owned();
+    assert_eq!(version.len(), 23);
+    assert_eq!(&version[4..5], "-");
+    assert_eq!(&version[7..8], "-");
+    assert_eq!(&version[10..11], "-");
+    assert!(version[11..].bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert!(!version.contains("1.0.0"));
+    let recorded = harness
+        .instance
+        .read(|connection| {
+            let group = groups::by_slug(connection, &Slug::parse("algebra")?)?.unwrap();
+            releases::for_group(connection, &group.id)
+        })
+        .await
+        .unwrap();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(&recorded[0].source_commit[..12], &version[11..]);
+
+    let duplicate = harness
+        .post("/g/algebra/releases", &[("form_token", &form_token(&form))])
+        .await;
+    assert_eq!(duplicate.status, StatusCode::BAD_REQUEST);
+    assert!(duplicate.says("already released today"));
 
     harness.post("/logout", &[]).await;
-    let docs = harness.get("/releases/algebra/1.0.0").await;
+    let docs = harness.get(&format!("/releases/algebra/{version}")).await;
     assert!(docs.status.is_success());
     assert!(docs.says("Finiteness theorem"));
-    assert!(docs.says("rev = &quot;v1.0.0&quot;"));
+    assert!(docs.says(&format!("rev = &quot;v{version}&quot;")));
     assert!(
         !docs.says("hiddenHelper"),
         "helpers leaked into documentation"
@@ -207,7 +231,7 @@ async fn an_audited_library_gets_public_documentation_and_permanent_result_pages
 
     let result = harness
         .get(&format!(
-            "/releases/algebra/1.0.0/quotient-groups/{}",
+            "/releases/algebra/{version}/quotient-groups/{}",
             central_block()
         ))
         .await;
@@ -220,7 +244,9 @@ async fn an_audited_library_gets_public_documentation_and_permanent_result_pages
     );
 
     let source = harness
-        .get("/releases/algebra/1.0.0/source/Algebra/Quotients.lean")
+        .get(&format!(
+            "/releases/algebra/{version}/source/Algebra/Quotients.lean"
+        ))
         .await;
     assert!(
         source.says("hiddenHelper"),
@@ -234,16 +260,13 @@ async fn a_central_result_without_a_current_formal_audit_blocks_publication() {
     group_ready_to_release(&mut harness, false).await;
     let form = harness.get("/g/algebra/releases").await;
     let refused = harness
-        .post(
-            "/g/algebra/releases",
-            &[("version", "1.0.0"), ("form_token", &form_token(&form))],
-        )
+        .post("/g/algebra/releases", &[("form_token", &form_token(&form))])
         .await;
 
     assert_eq!(refused.status, StatusCode::BAD_REQUEST);
     assert!(refused.says("Every central result must have a current"));
     assert_eq!(
-        harness.get("/releases/algebra/1.0.0").await.status,
+        harness.get("/releases/algebra").await.status,
         StatusCode::NOT_FOUND
     );
 }
@@ -262,10 +285,7 @@ async fn an_audit_of_different_prose_cannot_document_the_released_source() {
         .unwrap();
     let form = harness.get("/g/algebra/releases").await;
     let refused = harness
-        .post(
-            "/g/algebra/releases",
-            &[("version", "1.0.0"), ("form_token", &form_token(&form))],
-        )
+        .post("/g/algebra/releases", &[("form_token", &form_token(&form))])
         .await;
 
     assert_eq!(refused.status, StatusCode::BAD_REQUEST);

@@ -26,8 +26,6 @@ use crate::store::releases::{self, Release, ResultPage};
 /// What the publication form sends.
 #[derive(Debug, Deserialize)]
 pub struct Publish {
-    /// Version chosen by the group, without the Git tag's `v` prefix.
-    pub version: String,
     /// The CSRF token [`signature`] put in the form.
     pub form_token: String,
 }
@@ -64,20 +62,6 @@ pub async fn publish(
             "Only an admin or the owner of this group can publish a release.".to_owned(),
         ));
     }
-    let version = normalized_version(&form.version)?;
-    let id = group.id.clone();
-    let exists = instance
-        .read({
-            let version = version.clone();
-            move |connection| Ok(releases::by_version(connection, &id, &version)?.is_some())
-        })
-        .await?;
-    if exists {
-        return Err(WebError::BadRequest(format!(
-            "Version {version} has already been published and cannot be replaced."
-        )));
-    }
-
     let group_id = group.id.clone();
     let (source_commit, documents) = instance
         .with_repositories(move |repositories| {
@@ -104,6 +88,32 @@ pub async fn publish(
         .read(move |connection| documented(connection, &group_id, &reader, documents))
         .await?
         .map_err(WebError::BadRequest)?;
+
+    let group_id = group.id.clone();
+    let (published_on, existing): (String, Vec<Release>) = instance
+        .read(move |connection| {
+            let date =
+                connection.query_row("SELECT strftime('%Y-%m-%d', 'now')", [], |row| row.get(0))?;
+            Ok((date, releases::for_group(connection, &group_id)?))
+        })
+        .await?;
+    if let Some(release) = existing.iter().find(|release| {
+        release.source_commit == source_commit
+            && release.version.starts_with(&format!("{published_on}-"))
+    }) {
+        return Err(WebError::BadRequest(format!(
+            "Commit {source_commit} was already released today as {}.",
+            release.version
+        )));
+    }
+    let version = generated_version(
+        &published_on,
+        &source_commit,
+        &existing
+            .iter()
+            .map(|release| release.version.as_str())
+            .collect::<Vec<_>>(),
+    )?;
 
     let group_id = group.id.clone();
     let source = source_commit.clone();
@@ -322,22 +332,17 @@ fn documented(
     Ok(Ok(pages))
 }
 
-fn normalized_version(given: &str) -> Result<String, WebError> {
-    let version = given.trim();
-    let valid = !version.is_empty()
-        && version.len() <= 64
-        && version.as_bytes()[0].is_ascii_digit()
-        && version.as_bytes()[version.len() - 1].is_ascii_alphanumeric()
-        && !version.contains("..")
-        && version
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'));
-    if !valid {
-        return Err(WebError::BadRequest(
-            "Use a version such as 1.0.0 or 2.1.0-rc.1, without a leading v.".to_owned(),
-        ));
+fn generated_version(date: &str, source_commit: &str, used: &[&str]) -> Result<String> {
+    if source_commit.len() < 12 || !source_commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("the shared library has an invalid source commit");
     }
-    Ok(version.to_owned())
+    for length in 12..=source_commit.len() {
+        let version = format!("{date}-{}", &source_commit[..length]);
+        if !used.contains(&version.as_str()) {
+            return Ok(version);
+        }
+    }
+    bail!("the shared library's source commit has no unused release name")
 }
 
 fn safe_source_path(path: &str) -> bool {
@@ -402,10 +407,9 @@ fn manage_body(signed: &SignedIn, group: &Group, role: GroupRole, releases: &[Re
                 }
                 form method="post" action={ "/g/" (group.slug()) "/releases" } class="stack" {
                     (signature(signed))
-                    div class="field" {
-                        label class="field__label" for="version" { "Version" }
-                        input class="input" id="version" name="version" placeholder="1.0.0" required;
-                        span class="field__hint" { "Versions are permanent and cannot be replaced." }
+                    p class="field__hint" {
+                        "The version is assigned when published: UTC date and the shared source commit. "
+                        "Releases are permanent and cannot be replaced."
                     }
                     button class="button button--primary" type="submit" { "Publish release" }
                 }
@@ -538,13 +542,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn versions_are_safe_git_tags_and_paths() {
-        for good in ["1.0.0", "2.1.0-rc.1", "2026.09+final"] {
-            assert_eq!(normalized_version(good).unwrap(), good);
-        }
-        for bad in ["", "v1.0.0", "../main", "1/2", ".1", "1."] {
-            assert!(normalized_version(bad).is_err(), "accepted {bad}");
-        }
+    fn generated_versions_name_the_date_and_source_commit() {
+        assert_eq!(
+            generated_version(
+                "2026-09-30",
+                "0123456789abcdef0123456789abcdef01234567",
+                &[]
+            )
+            .unwrap(),
+            "2026-09-30-0123456789ab"
+        );
+        assert_eq!(
+            generated_version(
+                "2026-09-30",
+                "0123456789abcdef0123456789abcdef01234567",
+                &["2026-09-30-0123456789ab"],
+            )
+            .unwrap(),
+            "2026-09-30-0123456789abc"
+        );
+        assert!(generated_version("2026-09-30", "not-a-commit", &[]).is_err());
     }
 
     #[test]
