@@ -1311,6 +1311,8 @@ button.block__label:disabled {
 .block__content .cm-editor {
     color: var(--ink-1);
     background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     font: var(--text-content);
 }
 
@@ -1318,6 +1320,7 @@ button.block__label:disabled {
  * the markup lines up and reads as such. At rest it reads as the page. */
 .block__content .cm-editor.cm-focused {
     outline: 0;
+    border-color: var(--accent);
     font: var(--text-source);
 }
 
