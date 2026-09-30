@@ -121,6 +121,30 @@ export function moveTo(document: LineDocument, id: string, to: number) {
   document.blocks.splice(target > at ? target - 1 : target, 0, block);
 }
 
+/** Moves a block so that it ends up at `index` in the new order. */
+export function placeAt(document: LineDocument, id: string, index: number) {
+  const at = document.blocks.findIndex((block) => block.id === id);
+  if (at < 0) return;
+  moveTo(document, id, index > at ? index + 1 : index);
+}
+
+/** Where a dragged block lands among the others: how many of them its
+ * middle has passed. `heights` are the other blocks' heights in order,
+ * `gap` the space between two blocks, and `centre` the middle of the
+ * dragged block, measured from where the first block starts. Each block
+ * is passed at its own middle, as the others lie without the dragged one,
+ * so the answer does not change with the room made for it. */
+export function dropIndex(heights: number[], gap: number, centre: number): number {
+  let top = 0;
+  let passed = 0;
+  for (const height of heights) {
+    if (centre < top + height / 2) break;
+    passed += 1;
+    top += height + gap;
+  }
+  return passed;
+}
+
 /** Which colour pairs each statement with its proof: statements carrying a
  * proof are numbered in order, and the proof shares the number. */
 export function pairs(document: LineDocument): Map<string, number> {

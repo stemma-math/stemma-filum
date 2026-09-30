@@ -19,21 +19,27 @@ const parser = (base.parser as TypstLezerParser).configure([
 ]);
 export const typst = new LanguageSupport(new Language(base.data, parser, [], "typst"));
 
-/** Class names the stylesheet colours, so the palette follows the theme. */
+/** Class names the stylesheet colours, so the palette follows the theme.
+ * The tags and their grouping are those of the package's own style, which
+ * is the Typst web app's; the stylesheet gives each group that app's
+ * colour in light and a matching one in dark. */
 export const typstHighlighter = tagHighlighter([
   { tag: tags.comment, class: "tt-comment" },
-  { tag: tags.keyword, class: "tt-keyword" },
+  { tag: [tags.keyword, tags.null, tags.atom, tags.bool], class: "tt-keyword" },
+  { tag: tags.number, class: "tt-number" },
+  { tag: tags.string, class: "tt-string" },
   { tag: tags.function(tags.variableName), class: "tt-call" },
   { tag: typstTags.interpolated, class: "tt-hash" },
-  { tag: tags.attributeName, class: "tt-argument" },
-  { tag: [tags.string, tags.bool, tags.number], class: "tt-value" },
+  { tag: [tags.attributeName, tags.propertyName], class: "tt-argument" },
   { tag: [tags.punctuation, tags.operator, tags.paren], class: "tt-punctuation" },
   { tag: math, class: "tt-math" },
   { tag: typstTags.mathDelimiter, class: "tt-dollar" },
-  { tag: tags.escape, class: "tt-escape" },
+  { tag: [tags.escape, tags.labelName], class: "tt-escape" },
   { tag: tags.heading, class: "tt-heading" },
   { tag: tags.strong, class: "tt-strong" },
   { tag: tags.emphasis, class: "tt-emphasis" },
+  { tag: tags.link, class: "tt-link" },
   { tag: tags.monospace, class: "tt-raw" },
   { tag: typstTags.listMarker, class: "tt-marker" },
+  { tag: tags.invalid, class: "tt-invalid" },
 ]);

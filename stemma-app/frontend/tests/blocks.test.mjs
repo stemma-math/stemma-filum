@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  blockId, cited, insert, move, moveTo, pairs, proofOf, references, remove, setProof, siglumPrefix,
+  blockId, cited, dropIndex, insert, move, moveTo, pairs, placeAt, proofOf, references, remove, setProof, siglumPrefix,
 } from "../src/lib/blocks.ts";
 
 const line = () => ({ format: 1, title: "A line", blocks: [] });
@@ -121,4 +121,29 @@ test("a dragged block lands where it was dropped", () => {
   assert.deepEqual(order(), [a.id, c.id, b.id]);
   moveTo(document, c.id, 2);
   assert.deepEqual(order(), [a.id, c.id, b.id], "dropping a block next to itself leaves it there");
+});
+
+test("a block is placed at the position it ends up in", () => {
+  const document = line();
+  document.blocks = ["a", "b", "c", "d"].map((id) => ({ kind: "prose", id, content: "" }));
+  const order = () => document.blocks.map((block) => block.id).join("");
+  placeAt(document, "a", 2);
+  assert.equal(order(), "bcad");
+  placeAt(document, "d", 0);
+  assert.equal(order(), "dbca");
+  placeAt(document, "c", 2);
+  assert.equal(order(), "dbca");
+  placeAt(document, "b", 3);
+  assert.equal(order(), "dcab");
+});
+
+test("a dragged block lands past the blocks whose middle it has crossed", () => {
+  const heights = [100, 40, 60];
+  assert.equal(dropIndex(heights, 10, -30), 0);
+  assert.equal(dropIndex(heights, 10, 49), 0);
+  assert.equal(dropIndex(heights, 10, 50), 1);
+  assert.equal(dropIndex(heights, 10, 129), 1);
+  assert.equal(dropIndex(heights, 10, 130), 2);
+  assert.equal(dropIndex(heights, 10, 900), 3);
+  assert.equal(dropIndex([], 10, 50), 0);
 });

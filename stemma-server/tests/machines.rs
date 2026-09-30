@@ -423,6 +423,67 @@ async fn a_machine_that_could_not_try_says_so_on_the_machine() {
 }
 
 #[tokio::test]
+async fn the_desktop_application_sees_how_a_job_ended_and_can_resolve_it() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    publish(&mut harness, "ana").await;
+
+    let token = harness.credential("ana").await;
+    let machine = offer_a_machine(&mut harness, &token, "ana's laptop").await;
+
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    harness
+        .post(
+            "/g/algebra/shared/quotient-groups/jobs",
+            &[
+                ("on", &format!("{machine}|claude")),
+                ("task", "fill"),
+                ("revision", "1"),
+                ("form_token", &form_token(&line)),
+            ],
+        )
+        .await;
+
+    let job = parsed(&harness.post_with_token("/api/jobs/take", &token).await)["job"]
+        .as_str()
+        .expect("a job")
+        .to_owned();
+
+    // Nothing is resolved before anything went wrong.
+    let early = harness
+        .post_with_token(&format!("/api/jobs/{job}/clear"), &token)
+        .await;
+    assert_eq!(early.status, StatusCode::BAD_REQUEST);
+
+    harness
+        .post_json_with_token(
+            &format!("/api/jobs/{job}/finish"),
+            &token,
+            r#"{"outcome":"could_not_try","code":"agent_not_authenticated",
+                "said":"`claude` is not signed in on this machine"}"#,
+        )
+        .await;
+
+    let listed = parsed(&harness.get_with_token("/api/jobs", &token).await);
+    let ended = &listed["jobs"][0];
+    assert_eq!(ended["line"].as_str(), Some("quotient-groups"));
+    assert_eq!(ended["side"].as_str(), Some("shared"));
+    assert_eq!(ended["outcome"].as_str(), Some("could_not_try"));
+    assert_eq!(ended["owed"].as_bool(), Some(true));
+
+    let cleared = harness
+        .post_with_token(&format!("/api/jobs/{job}/clear"), &token)
+        .await;
+    assert_eq!(cleared.status, StatusCode::OK);
+
+    let listed = parsed(&harness.get_with_token("/api/jobs", &token).await);
+    assert_eq!(listed["jobs"][0]["owed"].as_bool(), Some(false));
+    assert_eq!(listed["jobs"][0]["outcome"].as_str(), Some("could_not_try"));
+    assert!(!harness.get("/").await.says("to deal with"));
+}
+
+#[tokio::test]
 async fn somebody_elses_machine_is_never_handed_a_job_that_named_mine() {
     let mut harness = Harness::new();
     register(&mut harness, "ana").await;

@@ -446,12 +446,14 @@ pub fn progress(
 ///
 /// The outcome stays in the record, saying what happened then. What
 /// clears is the decision it asked of them, which is the only part that
-/// was ever counted.
+/// was ever counted; a job that asks none has nothing to clear, so a
+/// failure it comes to later is still counted.
 pub fn clear(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool> {
     let cleared = connection
         .execute(
             "UPDATE jobs SET cleared_at = datetime('now')
               WHERE id = ?1 AND cleared_at IS NULL
+                AND outcome = 'could_not_try' AND code GLOB 'agent_*'
                 AND taken_by IN (SELECT id FROM machines WHERE user_id = ?2)",
             params![id.to_string(), by.to_string()],
         )

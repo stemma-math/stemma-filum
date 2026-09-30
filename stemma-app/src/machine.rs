@@ -39,7 +39,12 @@ impl Agent {
 #[derive(Serialize)]
 pub struct Job {
     id: String,
+    group: String,
+    side: String,
+    line: String,
     state: String,
+    outcome: Option<String>,
+    owed: bool,
     task: String,
     agent: String,
     said: String,
@@ -84,7 +89,12 @@ pub fn machine() -> Result<Option<MachinePanel>, String> {
         .map(|job| Job {
             raw_output: stemma::job::work::output_exists(&home, &job.job),
             id: job.job,
+            group: job.group,
+            side: job.side,
+            line: job.line,
             state: job.state,
+            outcome: job.outcome,
+            owed: job.owed,
             task: job.task,
             agent: job.agent,
             said: job.said,
@@ -106,6 +116,16 @@ pub fn machine() -> Result<Option<MachinePanel>, String> {
 #[tauri::command(async)]
 pub fn job_output(job: String) -> Result<String, String> {
     carried_out(|home, out| stemma::job::launch::output(home, &job, out))
+}
+
+/// Marks what stopped a job as resolved, once its owner has fixed it.
+#[tauri::command(async)]
+pub fn clear_job(job: String) -> Result<(), String> {
+    let session = Session::open()?;
+    session
+        .server
+        .clear_job(&session.token, &job)
+        .map_err(failed)
 }
 
 /// Cancels a queued job or asks its running agent to stop.

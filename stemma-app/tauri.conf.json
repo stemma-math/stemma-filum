@@ -16,8 +16,8 @@
         "title": "Stemma",
         "width": 1480,
         "height": 940,
-        "minWidth": 820,
-        "minHeight": 600,
+        "minWidth": 760,
+        "minHeight": 440,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "dragDropEnabled": false

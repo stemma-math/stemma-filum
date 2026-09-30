@@ -9,9 +9,9 @@
 </script>
 
 <div class="claim" data-tip={line.claim?.said ?? null}>
-  {#if line.claimError}
+  {#if line.claimFailed}
     <Glyph name="alert" small />
-    <span class="claim__words claim__words--failed" title={line.claimError}>{line.claimError}</span>
+    <span class="claim__words claim__words--failed">Sync failed</span>
     <button type="button" class="button button--small" onclick={() => line.takeClaim()}>Retry</button>
   {:else if line.claim}
     {@const claim = line.claim}

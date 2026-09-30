@@ -1,7 +1,7 @@
 <script lang="ts">
   import Message from "../components/Message.svelte";
   import { flip } from "svelte/animate";
-  import { isStatement, move, moveTo, remove } from "../lib/blocks";
+  import { dropIndex, isStatement, move, placeAt, remove } from "../lib/blocks";
   import { app } from "../lib/app.svelte";
   import { blockCard, blockText } from "../lib/dom";
   import type { LineSession } from "../lib/line.svelte";
@@ -75,8 +75,136 @@
     return (target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable=true], .bubble, dialog");
   }
 
+  /** The block being dragged, and where it would land as its position
+   * among the others. The list shows it there, faded, while a copy of it
+   * follows the pointer. */
+  let drag = $state<{ id: string; to: number } | null>(null);
+
+  /** The blocks in the order shown: the line's, or the one a drop would
+   * leave. */
+  const shown = $derived.by(() => {
+    const dragged = drag && document.blocks.find((block) => block.id === drag!.id);
+    if (!drag || !dragged) return document.blocks;
+    const others = document.blocks.filter((block) => block !== dragged);
+    return [...others.slice(0, drag.to), dragged, ...others.slice(drag.to)];
+  });
+
+  let list = $state<HTMLElement>();
+
+  /** How far the pointer goes before a press on a grip becomes a drag. */
+  const THRESHOLD = 4;
+  /** How close to the top or bottom of the view the pointer scrolls it. */
+  const EDGE = 56;
+
+  /** A press on a grip, while it lasts. What is measured when the drag
+   * begins stays fixed until it ends, so the landing place depends on the
+   * pointer alone. */
+  let held: {
+    id: string;
+    pointer: number;
+    /** Where the pointer was pressed, and where it is now. */
+    from: number;
+    y: number;
+    /** From the top of the block to the pointer. */
+    grab: number;
+    height: number;
+    /** The other blocks' heights, in order, and the space between two. */
+    heights: number[];
+    gap: number;
+    /** From the top of the list to the first block. */
+    first: number;
+    ghost: HTMLElement | null;
+    frame: number;
+  } | null = null;
+
+  function grab(id: string, event: PointerEvent) {
+    if (!line.editable || !list || event.button !== 0 || held) return;
+    const slot = slotOf(id);
+    if (!slot) return;
+    // A drawn drag rather than the browser's: the browser's offers the block
+    // to every field it passes over, which shows the pointer for a copy.
+    event.preventDefault();
+    list.setPointerCapture(event.pointerId);
+    const grab = event.clientY - slot.getBoundingClientRect().top;
+    held = { id, pointer: event.pointerId, from: event.clientY, y: event.clientY, grab, height: 0, heights: [], gap: 0, first: 0, ghost: null, frame: 0 };
+  }
+
+  function slotOf(id: string) {
+    return list?.querySelector<HTMLElement>(`:scope > [data-slot="${id}"]`) ?? null;
+  }
+
+  function begin() {
+    const card = held && blockCard(held.id);
+    const slots = [...(list?.querySelectorAll<HTMLElement>(":scope > .blocks__slot") ?? [])];
+    if (!held || !list || !card || !slots.length) return;
+    const { id } = held;
+    const top = list.getBoundingClientRect().top;
+    held.first = slots[0].getBoundingClientRect().top - top;
+    held.heights = slots.filter((slot) => slot.dataset.slot !== id).map((slot) => slot.getBoundingClientRect().height);
+    held.height = slotOf(id)?.getBoundingClientRect().height ?? 0;
+    held.gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+
+    const box = card.getBoundingClientRect();
+    const ghost = card.cloneNode(true) as HTMLElement;
+    ghost.classList.add("block--ghost");
+    ghost.removeAttribute("data-block");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.inert = true;
+    Object.assign(ghost.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px` });
+    window.document.body.append(ghost);
+    held.ghost = ghost;
+
+    window.document.documentElement.classList.add("dragging-block");
+    drag = { id, to: document.blocks.findIndex((block) => block.id === id) };
+    held.frame = requestAnimationFrame(follow);
+  }
+
+  /** Once a frame while dragging: scrolls near the edges, moves the copy
+   * with the pointer and makes room where it would land. */
+  function follow() {
+    if (!held || !drag || !list) return;
+    const view = list.closest<HTMLElement>(".writing");
+    if (view) {
+      const box = view.getBoundingClientRect();
+      const past = held.y < box.top + EDGE ? held.y - box.top - EDGE : held.y > box.bottom - EDGE ? held.y - box.bottom + EDGE : 0;
+      if (past) view.scrollTop += Math.max(-1, Math.min(1, past / EDGE)) * 14;
+    }
+    if (held.ghost) held.ghost.style.translate = `0 ${held.y - held.from}px`;
+    const centre = held.y - held.grab + held.height / 2 - (list.getBoundingClientRect().top + held.first);
+    const to = dropIndex(held.heights, held.gap, centre);
+    if (to !== drag.to) drag = { id: drag.id, to };
+    held.frame = requestAnimationFrame(follow);
+  }
+
+  function pointerMove(event: PointerEvent) {
+    if (!held || event.pointerId !== held.pointer) return;
+    held.y = event.clientY;
+    if (!drag && Math.abs(held.y - held.from) > THRESHOLD) begin();
+  }
+
+  /** Ends the press: a drag puts the block where it was shown, unless it
+   * was cancelled. */
+  function finish(dropping: boolean) {
+    if (!held) return;
+    const { id, frame, ghost } = held;
+    held = null;
+    cancelAnimationFrame(frame);
+    ghost?.remove();
+    window.document.documentElement.classList.remove("dragging-block");
+    const to = drag?.to;
+    drag = null;
+    if (dropping && to !== undefined && to !== document.blocks.findIndex((block) => block.id === id)) {
+      edit(() => placeAt(document, id, to));
+    }
+  }
+
   /** The keyboard over the blocks, while no field has it. */
   function keys(event: KeyboardEvent) {
+    if (event.key === "Escape" && held) {
+      event.preventDefault();
+      finish(false);
+      return;
+    }
     if (editing(event.target) || event.defaultPrevented) return;
     const blocks = document.blocks;
     const current = only();
@@ -117,9 +245,15 @@
   }
 </script>
 
-<svelte:window onkeydown={keys} />
+<svelte:window
+  onkeydown={keys}
+  onpointermove={pointerMove}
+  onpointerup={(event) => { if (event.pointerId === held?.pointer) finish(true); }}
+  onpointercancel={(event) => { if (event.pointerId === held?.pointer) finish(false); }}
+  onblur={() => finish(false)}
+/>
 
-<div class="blocks">
+<div class="blocks" bind:this={list}>
   {#if line.general.length}
     <div class="blocks__problems">
       {#each line.general as problem, index (index)}<Message kind="error" text={problem} />{/each}
@@ -132,13 +266,19 @@
       <p class="quiet">Use Add block below to write the first one.</p>
     </div>
   {:else}
-    {#each document.blocks as block, at (block.id)}
+    {#each shown as block (block.id)}
       {@const partner = partners.get(block.id)}
-      <div class="blocks__slot" class:blocks__slot--proposed={app.proposalBlocks.includes(block.id)} animate:flip={{ duration: 180 }}>
+      <div
+        class="blocks__slot"
+        class:blocks__slot--proposed={app.proposalBlocks.includes(block.id)}
+        class:blocks__slot--landing={drag?.id === block.id}
+        data-slot={block.id}
+        animate:flip={{ duration: 180 }}
+      >
         <BlockCard
           {line}
           {block}
-          {at}
+          at={document.blocks.indexOf(block)}
           number={numbers.get(block.id) ?? null}
           proves={block.kind === "proof" ? called(block.of) : null}
           partnered={!!partner && (line.selected.has(partner) || focused === partner)}
@@ -147,7 +287,7 @@
           onselect={(adding) => select(block.id, adding)}
           onfocus={(yes) => (focused = yes ? block.id : focused === block.id ? null : focused)}
           ondelete={(which) => askToDelete(which ?? block)}
-          onmove={(id, to) => edit(() => moveTo(document, id, to))}
+          ongrab={(event) => grab(block.id, event)}
         />
       </div>
     {/each}

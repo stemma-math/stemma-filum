@@ -1,11 +1,20 @@
 <script lang="ts">
+  // Jobs, sorted by what they ask of the reader: what is under way and
+  // what waits for this machine's owner are in view, each a short row whose
+  // details open on request; what has finished is put away under one line.
   import { api, said } from "../lib/api";
+  import { failed, sorted, standing } from "../lib/joblist";
+  import { fail } from "../lib/status.svelte";
   import { LABELS } from "../lib/tasks";
   import type { Job } from "../lib/types";
   import Glyph from "./Glyph.svelte";
 
   let { jobs, empty }: { jobs: Job[]; empty: string } = $props();
   let outputs = $state<Record<string, string>>({});
+  let opened = $state<Record<string, boolean>>({});
+
+  const groups = $derived(sorted(jobs));
+  const failures = $derived(groups.finished.filter(failed).length);
 
   async function show(job: string) {
     if (outputs[job] !== undefined) {
@@ -21,7 +30,16 @@
       job.cancel_requested = true;
       if (job.state === "queued") job.state = "withdrawn";
     } catch (error) {
-      outputs[job.id] = said(error);
+      fail(error);
+    }
+  }
+
+  async function resolve(job: Job) {
+    try {
+      await api.clearJob(job.id);
+      job.owed = false;
+    } catch (error) {
+      fail(error);
     }
   }
 
@@ -32,37 +50,42 @@
     return { words, about: about ?? null };
   }
 
-  const states: Record<string, { words: string; tone: string }> = {
-    queued: { words: "Queued", tone: "" },
-    running: { words: "Running", tone: "chip--accent" },
-    done: { words: "Done", tone: "chip--success" },
-    withdrawn: { words: "Withdrawn", tone: "chip--dashed" },
-  };
+  /** The one line worth reading without opening the job. */
+  function news(job: Job): string | null {
+    if (job.state === "running") return job.cancel_requested ? "Cancellation requested" : job.progress;
+    return job.said || null;
+  }
 </script>
 
-{#if jobs.length}
-  <ul class="jobs">
-    {#each jobs as job (job.id)}
-      {@const task = asked(job.task)}
-      {@const state = states[job.state] ?? { words: job.state, tone: "" }}
-      <li class="job">
-        <div class="job__head">
-          <span class="job__task">{task.words}</span>
-          <span class="chip {state.tone}">
-            {#if job.state === "running"}<span class="spinner" aria-hidden="true"></span>{/if}{state.words}
-          </span>
-        </div>
-        <span class="job__meta">
-          {#if task.about}<span class="identifier">{task.about}</span> · {/if}{job.agent}
-        </span>
-        {#if job.said}<span class="job__said">{job.said}</span>{/if}
-        {#if job.progress}<span class="job__said">{job.progress}</span>{/if}
-        {#if job.workspace}<span class="identifier">{job.workspace}</span>{/if}
-        {#if (job.state === "queued" || job.state === "running") && !job.cancel_requested}
-          <button type="button" class="button button--link job__output" onclick={() => cancel(job)}>Cancel</button>
-        {:else if job.cancel_requested && job.state === "running"}
-          <span class="job__said">Cancellation requested</span>
-        {/if}
+{#snippet row(job: Job)}
+  {@const task = asked(job.task)}
+  {@const state = standing(job)}
+  {@const told = news(job)}
+  <li class="job" class:job--attention={job.owed}>
+    <div class="job__head">
+      <span class="job__task">{task.words}</span>
+      <span class="chip {state.tone}">
+        {#if job.state === "running"}<span class="spinner" aria-hidden="true"></span>{/if}{state.words}
+      </span>
+    </div>
+    <span class="job__meta">
+      {#if task.about}<span class="identifier">{task.about}</span> · {/if}{job.agent}
+    </span>
+    {#if told}<span class="job__said">{told}</span>{/if}
+    <div class="job__actions">
+      {#if job.owed}
+        <button type="button" class="button button--small" onclick={() => resolve(job)}>Mark as resolved</button>
+      {/if}
+      {#if (job.state === "queued" || job.state === "running") && !job.cancel_requested}
+        <button type="button" class="button button--link" onclick={() => cancel(job)}>Cancel</button>
+      {/if}
+      <button type="button" class="button button--link job__details" aria-expanded={!!opened[job.id]}
+        onclick={() => (opened[job.id] = !opened[job.id])}>{opened[job.id] ? "Hide details" : "Details"}</button>
+    </div>
+    {#if opened[job.id]}
+      <div class="job__more">
+        {#if job.state === "running" && job.said}<span class="job__said">{job.said}</span>{/if}
+        {#if job.workspace}<span class="identifier job__workspace">{job.workspace}</span>{/if}
         {#if job.raw_output}
           <button type="button" class="button button--link job__output" aria-expanded={outputs[job.id] !== undefined} onclick={() => show(job.id)}>
             {outputs[job.id] === undefined ? "View output" : "Hide output"}
@@ -70,9 +93,29 @@
           {#if outputs[job.id] !== undefined}<pre class="job__raw">{outputs[job.id]}</pre>{/if}
         {/if}
         <span class="identifier job__id">{job.id}</span>
-      </li>
-    {/each}
-  </ul>
-{:else}
-  <p class="empty-box"><Glyph name="sparkle" small />{empty}</p>
-{/if}
+      </div>
+    {/if}
+  </li>
+{/snippet}
+
+<div class="job-list">
+  {#if groups.active.length || groups.attention.length}
+    <ul class="jobs">
+      {#each groups.attention as job (job.id)}{@render row(job)}{/each}
+      {#each groups.active as job (job.id)}{@render row(job)}{/each}
+    </ul>
+  {:else}
+    <p class="empty-box"><Glyph name="sparkle" small />{empty}</p>
+  {/if}
+
+  {#if groups.finished.length}
+    <details class="disclosure job-list__finished">
+      <summary>
+        Finished · {groups.finished.length}{#if failures}<span class="job-list__failed">{` · ${failures} failed`}</span>{/if}
+      </summary>
+      <ul class="jobs">
+        {#each groups.finished as job (job.id)}{@render row(job)}{/each}
+      </ul>
+    </details>
+  {/if}
+</div>

@@ -154,6 +154,10 @@
     padding-top: 44px;
 }
 
+.sidebar > :not(.sidebar__lines) {
+    flex-shrink: 0;
+}
+
 .sidebar__head {
     display: flex;
     align-items: center;
@@ -265,12 +269,14 @@
     transform: scale(0.96);
 }
 
+/* The lines give way first when the window is short, but always keep room
+ * for a couple of them; they scroll. */
 .sidebar__lines {
     display: flex;
     flex: 1;
     flex-direction: column;
     gap: 2px;
-    min-height: 0;
+    min-height: 88px;
     margin: 0 -4px;
     padding: 0 4px;
     overflow-y: auto;
@@ -340,6 +346,12 @@
 }
 
 .sidebar__foot {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.sidebar__places {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -587,6 +599,88 @@
     border-radius: var(--radius-pill);
 }
 
+/* In a short window the sidebar tightens: less space around everything,
+ * the places side by side, and the connection and the account on one line
+ * each. Nothing in it scrolls but the lines, so its menus are never cut. */
+@media (max-height: 760px) {
+    .sidebar {
+        gap: 10px;
+        padding-bottom: 10px;
+    }
+
+    .mac .sidebar {
+        padding-top: 38px;
+    }
+
+    .brand .mark {
+        width: 26px;
+    }
+
+    .sidebar .wordmark {
+        font-size: 18px;
+    }
+
+    .group-switch {
+        padding: 6px 8px;
+    }
+
+    .group-switch__badge {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+
+    .sidebar__new {
+        height: 32px;
+    }
+
+    .sidebar__section {
+        padding-top: 8px;
+    }
+
+    .sidebar__line {
+        padding: 6px 12px;
+    }
+
+    .sidebar__foot {
+        gap: 8px;
+    }
+
+    .sidebar__places {
+        flex-direction: row;
+        gap: 4px;
+    }
+
+    .sidebar__places .sidebar__item {
+        flex: 1;
+        justify-content: center;
+        gap: 8px;
+        min-width: 0;
+        height: 32px;
+        padding: 0 8px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    .sync__button {
+        padding: 6px 12px;
+    }
+
+    .sync__words {
+        flex-direction: row;
+        align-items: baseline;
+        gap: 6px;
+    }
+
+    .user-card {
+        padding: 6px 8px;
+    }
+
+    .user-card__server {
+        display: none;
+    }
+}
+
 /* ── Popovers and menus ────────────────────────────────────────────────
  *
  * A bubble opens beside the button that asked for it; the element holding
@@ -824,11 +918,7 @@
 }
 
 .claim__words--failed {
-    max-width: 240px;
-    overflow: hidden;
     color: var(--danger-fg);
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .claim__left {
@@ -921,33 +1011,33 @@
     border-style: dashed;
 }
 
-.block--dragging {
-    opacity: 0.5;
+/* While a block is dragged, the list makes room for it where it would
+ * land and shows it there faded; a copy of it follows the pointer. */
+.blocks__slot--landing {
+    opacity: 0.35;
+    pointer-events: none;
 }
 
-.block--drop-above::before,
-.block--drop-below::after {
-    position: absolute;
-    right: 8px;
-    left: 8px;
-    height: 3px;
-    content: "";
-    background: var(--accent);
-    border-radius: 2px;
+.block--ghost {
+    position: fixed;
+    z-index: 40;
+    margin: 0;
+    pointer-events: none;
+    box-shadow: var(--shadow-float);
 }
 
-.block--drop-above::before {
-    top: -9px;
+.dragging-block,
+.dragging-block * {
+    cursor: grabbing !important;
+    user-select: none !important;
 }
 
-.block--drop-below::after {
-    bottom: -9px;
-}
-
+/* In a narrow window what does not fit goes to a second row. */
 .block__head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 6px 10px;
     padding: 10px 12px 6px 10px;
 }
 
@@ -957,7 +1047,6 @@
 }
 
 .block__lead {
-    position: relative;
     display: flex;
     flex-shrink: 0;
     align-items: center;
@@ -967,6 +1056,7 @@
 
 .block__grip {
     display: flex;
+    touch-action: none;
     align-items: center;
     justify-content: center;
     width: 22px;
@@ -986,18 +1076,22 @@
     background: var(--fill-muted);
 }
 
-/* The box that adds a block to the selection sits in the margin beside
- * the grip, and shows itself on hover or once anything is selected. The
- * grip never hides: hiding it under the pointer would cancel a drag. */
+/* The box that adds a block to the selection sits in the margin to the
+ * left of the block, halfway down it, and shows itself on hover or once
+ * anything is selected. It is the identity's checkbox, a size larger so it
+ * holds its own beside a whole card. */
 .block__select {
     position: absolute;
-    top: 4px;
-    left: -30px;
-    width: 16px;
-    height: 16px;
-    margin: 0;
+    top: 50%;
+    left: -32px;
+    width: 18px;
+    height: 18px;
     opacity: 0;
-    cursor: pointer;
+    translate: 0 -50%;
+}
+
+.block__select:checked {
+    background-size: 14px;
 }
 
 .block:hover .block__select,
@@ -1189,8 +1283,11 @@ button.block__label:disabled {
     font: var(--text-content);
 }
 
+/* While a block is being written, its source is code: monospaced, so
+ * the markup lines up and reads as such. At rest it reads as the page. */
 .block__content .cm-editor.cm-focused {
     outline: 0;
+    font: var(--text-source);
 }
 
 .block__content .cm-scroller {
@@ -1201,6 +1298,10 @@ button.block__label:disabled {
 .block__content .cm-content {
     padding: 4px 12px 6px;
     caret-color: var(--ink-1);
+}
+
+.block:not(.block--readonly) .block__content .cm-scroller {
+    cursor: text;
 }
 
 .block__content .cm-line {
@@ -1234,34 +1335,84 @@ button.block__label:disabled {
     height: 14px;
 }
 
-/* Typst, highlighted: the markup is quieter than the words. */
-.tt-hash,
-.tt-call,
-.tt-keyword,
-.tt-marker {
-    color: var(--link-fg);
+/* Typst, highlighted, with the colours of the Typst web app and their
+ * counterparts in dark. Punctuation stays quieter than the words. */
+:root {
+    --text-source: 400 15px/1.7 var(--font-mono);
+    --syntax-comment: #74747c;
+    --syntax-keyword: #d73948;
+    --syntax-number: #b60157;
+    --syntax-string: #198810;
+    --syntax-call: #4b69c6;
+    --syntax-hash: #8b41b1;
+    --syntax-escape: #1d6c76;
+    --syntax-math: #4a3fc0;
+    --syntax-raw: #6b6b6f;
 }
 
-.tt-argument,
-.tt-punctuation,
-.tt-dollar {
-    color: var(--ink-3);
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --syntax-comment: #9a9aa6;
+        --syntax-keyword: #ff7b86;
+        --syntax-number: #ff79b6;
+        --syntax-string: #7fd67a;
+        --syntax-call: #8cb0ff;
+        --syntax-hash: #cf9bf0;
+        --syntax-escape: #5cc9d1;
+        --syntax-math: #bdb6ff;
+        --syntax-raw: #b4b4be;
+    }
 }
 
-.tt-value {
-    color: var(--success-fg);
-}
-
-.tt-math {
-    color: var(--block-definition-fg);
-}
-
-.tt-escape {
-    color: var(--warning-fg);
+:root[data-theme="dark"] {
+    --syntax-comment: #9a9aa6;
+    --syntax-keyword: #ff7b86;
+    --syntax-number: #ff79b6;
+    --syntax-string: #7fd67a;
+    --syntax-call: #8cb0ff;
+    --syntax-hash: #cf9bf0;
+    --syntax-escape: #5cc9d1;
+    --syntax-math: #bdb6ff;
+    --syntax-raw: #b4b4be;
 }
 
 .tt-comment {
     font-style: italic;
+    color: var(--syntax-comment);
+}
+
+.tt-keyword {
+    color: var(--syntax-keyword);
+}
+
+.tt-number {
+    color: var(--syntax-number);
+}
+
+.tt-string,
+.tt-dollar {
+    color: var(--syntax-string);
+}
+
+.tt-call {
+    color: var(--syntax-call);
+}
+
+.tt-hash,
+.tt-argument,
+.tt-marker {
+    color: var(--syntax-hash);
+}
+
+.tt-escape {
+    color: var(--syntax-escape);
+}
+
+.tt-math {
+    color: var(--syntax-math);
+}
+
+.tt-punctuation {
     color: var(--ink-3);
 }
 
@@ -1274,9 +1425,23 @@ button.block__label:disabled {
     font-style: italic;
 }
 
+.tt-link {
+    color: var(--link-fg);
+    text-decoration: underline;
+}
+
 .tt-raw {
     font-family: var(--font-mono);
     font-size: 0.85em;
+    color: var(--syntax-raw);
+}
+
+.cm-focused .tt-raw {
+    font-size: inherit;
+}
+
+.tt-invalid {
+    text-decoration: underline wavy var(--danger-fg);
 }
 
 .uses__pop {
@@ -1452,17 +1617,32 @@ button.block__label:disabled {
     transform: translateX(-50%);
 }
 
+.preview__fit {
+    margin-left: 4px;
+}
+
+.preview__fit[aria-pressed="true"] {
+    color: var(--accent-soft-fg);
+    background: var(--accent-soft-bg);
+}
+
 .preview__scroll {
     flex: 1;
+    min-height: 0;
     overflow: auto;
     padding: 76px 24px 48px;
 }
 
+/* At least as wide as the view, so narrower pages sit in its middle, and
+ * as wide as the widest page, so a wider one scrolls to both its edges
+ * rather than spilling out of reach on the left. */
 .preview__sheet {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 24px;
+    width: max-content;
+    min-width: 100%;
     transition: opacity var(--dur-ui) var(--ease-out);
 }
 
@@ -1679,6 +1859,12 @@ button.block__label:disabled {
     border-radius: 11px;
 }
 
+/* A job waiting for this machine's owner is drawn as a warning. */
+.job--attention {
+    background: var(--warning-bg);
+    border-color: color-mix(in srgb, var(--warning-fg) 25%, transparent);
+}
+
 .job__head {
     display: flex;
     align-items: flex-start;
@@ -1703,6 +1889,32 @@ button.block__label:disabled {
     color: var(--ink-3);
 }
 
+.job__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+    font-size: 12px;
+}
+
+.job__actions .button--link {
+    font-size: 12px;
+}
+
+.job__more {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border);
+}
+
+.job__workspace {
+    font-size: 11px;
+    color: var(--ink-3);
+    overflow-wrap: anywhere;
+}
+
 .job__id {
     font-size: 11px;
     color: var(--ink-4);
@@ -1711,6 +1923,25 @@ button.block__label:disabled {
 .job__output {
     align-self: flex-start;
     font-size: 12px;
+}
+
+.job-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.job-list__finished {
+    --disclosure-inset: 0px;
+}
+
+.job-list__finished > summary {
+    font-size: 13px;
+    color: var(--ink-2);
+}
+
+.job-list__failed {
+    color: var(--danger-fg);
 }
 
 .job__raw {

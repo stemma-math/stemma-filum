@@ -172,7 +172,15 @@ export type Agent = {
 
 export type Job = {
   id: string;
+  group: string;
+  side: string;
+  line: string;
   state: string;
+  /** How it ended, once it has: `produced`, `nothing_found`,
+   * `could_not_try` or `broke`. */
+  outcome: string | null;
+  /** Whether it ended in something this machine's owner has to fix. */
+  owed: boolean;
   task: string;
   agent: string;
   said: string;
