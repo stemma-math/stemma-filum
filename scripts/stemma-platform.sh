@@ -222,7 +222,7 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-ExecStart=/opt/stemma/%i/stemma-server --config /etc/stemma/%i/server.toml serve
+ExecStart=/opt/stemma/%i/stemma-server --config /etc/stemma/%i/server.toml serve --user $USER_NAME
 User=$USER_NAME
 Group=$USER_NAME
 EnvironmentFile=-/etc/stemma/%i/server.env

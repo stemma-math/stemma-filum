@@ -68,7 +68,7 @@ impl UnitSettings {
              \n\
              [Service]\n\
              Type=exec\n\
-             ExecStart={executable} --config {config_path} serve\n\
+             ExecStart={executable} --config {config_path} serve --user {user}\n\
              User={user}\n\
              Group={user}\n\
              EnvironmentFile=-{env_path}\n\
@@ -172,11 +172,21 @@ mod tests {
         let unit = settings(MANAGED_STATE_DIR).render();
 
         assert!(unit.contains(
-            "ExecStart=/usr/local/bin/stemma-server --config /etc/stemma/server.toml serve"
+            "ExecStart=/usr/local/bin/stemma-server --config /etc/stemma/server.toml serve --user stemma"
         ));
         assert!(unit.contains("Type=exec"));
         assert!(unit.contains("User=stemma"));
         assert!(unit.contains("Restart=on-failure"));
+    }
+
+    #[test]
+    fn the_server_checks_its_files_against_the_account_the_unit_runs_it_as() {
+        let mut other = settings("/srv/stemma");
+        other.user = "stemma-dev".to_owned();
+        let unit = other.render();
+
+        assert!(unit.contains("serve --user stemma-dev\n"));
+        assert!(unit.contains("User=stemma-dev"));
     }
 
     #[test]
