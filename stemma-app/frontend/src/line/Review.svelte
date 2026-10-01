@@ -1,11 +1,13 @@
 <script lang="ts">
   import Message from "../components/Message.svelte";
   import { onMount } from "svelte";
-  import { api, said } from "../lib/api";
+  import { api } from "../lib/api";
   import { app } from "../lib/app.svelte";
   import type { LineSession } from "../lib/line.svelte";
-  import { reviewedBlocks } from "../lib/review";
+  import { blockName, changeLabel, reviewedBlocks, wordDiff, type ReviewedBlock } from "../lib/review";
+  import { reviewPage } from "../lib/reviewpage";
   import { fail, succeed } from "../lib/status.svelte";
+  import { LABELS } from "../lib/tasks";
   import type { LineDocument, Review as ReviewData, Verdict } from "../lib/types";
 
   let { line, review }: { line: LineSession; review: ReviewData } = $props();
@@ -27,24 +29,41 @@
   const offered = $derived(parse(review.source));
   const rows = $derived(current && offered && review.merged
     ? reviewedBlocks(current, offered, review.merged, review.outdated) : []);
+  const changed = $derived(rows.filter((row) => row.change !== "kept" || row.outdated));
+  const counts = $derived(
+    (["edited", "added", "removed", "outdated"] as const)
+      .map((kind) => ({
+        kind,
+        count: rows.filter((row) => (kind === "outdated" ? row.outdated : !row.outdated && row.change === kind)).length,
+      }))
+      .filter((one) => one.count > 0),
+  );
+  /** Any block of the line before or after the proposal, by identifier. */
+  const find = (id: string) =>
+    review.merged?.blocks.find((block) => block.id === id) ?? current?.blocks.find((block) => block.id === id);
+  const named = (row: ReviewedBlock) => blockName(row.after ?? row.before, find);
+  const asked = $derived.by(() => {
+    const [verb, about] = review.task.split("@");
+    const anchored = about ? find(about) : undefined;
+    return { words: LABELS[verb] ?? verb, about: anchored ? blockName(anchored, find) : about ?? null };
+  });
+  const page = $derived(beforePage && afterPage
+    ? reviewPage(beforePage, afterPage, rows, document.documentElement.dataset.theme) : null);
 
-  function markedPage(page: string, side: "before" | "after") {
-    const styles = rows.flatMap((row) => {
-      if (!/^blk:[0-9A-Z]+$/.test(row.id)) return [];
-      const label = row.outdated ? "Outdated" : row.change === "added" ? "Proposed" : row.change === "removed" ? "Removed" : "Edited";
-      const visible = side === "before" ? row.before : row.after;
-      if (!visible || (row.change === "kept" && !row.outdated)) return [];
-      const color = row.outdated ? "#aa6b10" : row.change === "added" ? "#168452" : row.change === "removed" ? "#9b4242" : "#376db1";
-      const selector = `section[id="${row.id}"]`;
-      return [`${selector} { outline: 2px solid ${color}; outline-offset: 5px; position: relative; }`,
-        `${selector}::before { content: "${label}"; display: block; color: ${color}; font: 600 12px sans-serif; margin-bottom: 4px; }`,
-        row.change === "removed" && side === "before" ? `${selector} { text-decoration: line-through; opacity: 0.7; }` : ""];
-    }).join("\n");
-    // The page follows the window's appearance, not only the system's.
-    const theme = document.documentElement.dataset.theme;
-    const themed = theme ? page.replace(/<html(?=[\s>])/, `<html data-theme="${theme}"`) : page;
-    return themed.replace("</head>", `<style>${styles}</style></head>`);
-  }
+  /** The rows of the source view: each change, and the unchanged blocks
+   * between changes counted rather than shown. */
+  const sourceRows = $derived.by(() => {
+    const shown: ({ row: ReviewedBlock } | { unchanged: number })[] = [];
+    let unchanged = 0;
+    for (const row of rows) {
+      if (row.change === "kept" && !row.outdated) { unchanged += 1; continue; }
+      if (unchanged) shown.push({ unchanged });
+      unchanged = 0;
+      shown.push({ row });
+    }
+    if (unchanged) shown.push({ unchanged });
+    return shown;
+  });
 
   onMount(() => {
     let alive = true;
@@ -98,37 +117,66 @@
   }
 </script>
 
+{#snippet diff(before: string, after: string)}
+  <pre class="review-diff">{#each wordDiff(before, after) as run, index (index)}{#if run.change === "added"}<ins>{run.text}</ins>{:else if run.change === "removed"}<del>{run.text}</del>{:else}{run.text}{/if}{/each}</pre>
+{/snippet}
+
 <div class="review-line">
-  <div class="review-line__head">
+  <header class="review-line__head">
     <button type="button" class="button button--small" onclick={() => (app.review = null)}>Back to line</button>
-    <div>
-      <h2>Review proposal · {review.task}</h2>
-      <p class="quiet identifier">{review.agent} · {review.vendor} · {review.model}{review.effort ? ` · ${review.effort}` : ""} · instructions {review.prompt_revision}</p>
+    <div class="review-line__title">
+      <h2>{asked.words}{#if asked.about}<span class="review-line__about">{asked.about}</span>{/if}</h2>
+      <p class="review-line__summary">
+        {#each counts as one (one.kind)}
+          <span class="review-count review-count--{one.kind}">{one.count} {one.kind}</span>
+        {:else}
+          <span class="quiet">No block changes</span>
+        {/each}
+      </p>
     </div>
     <div class="segmented" role="group" aria-label="Proposal view">
       <button type="button" aria-pressed={view === "typeset"} onclick={() => (view = "typeset")}>Typeset</button>
       <button type="button" aria-pressed={view === "source"} onclick={() => (view = "source")}>Source</button>
     </div>
-  </div>
+  </header>
 
   {#if review.outdated.length}
     <Message kind="warning" text="This proposal is outdated in {review.outdated.length} block{review.outdated.length === 1 ? '' : 's'}. Ask again on the current line." />
   {/if}
 
   {#if view === "typeset"}
-    <div class="review-line__pages">
-      <section><h3>Before</h3>{#if beforePage}<iframe class="review-line__sheet" sandbox="" title="The current typeset line" srcdoc={markedPage(beforePage, "before")}></iframe>{:else if rendering}<p>Typesetting…</p>{:else}<p class="quiet">No typeset version is available.</p>{/if}</section>
-      <section><h3>With proposal</h3>{#if afterPage}<iframe class="review-line__sheet" sandbox="" title="The line with the proposal" srcdoc={markedPage(afterPage, "after")}></iframe>{:else if rendering}<p>Typesetting…</p>{:else}<p class="quiet">No typeset version is available.</p>{/if}</section>
-    </div>
+    {#if page}
+      <iframe class="review-line__sheet" sandbox="" title="The line with the proposal, its changes marked" srcdoc={page}></iframe>
+    {:else if rendering}
+      <div class="review-line__waiting"><span class="spinner" aria-hidden="true"></span>Typesetting…</div>
+    {:else}
+      <p class="quiet">No typeset version is available. The source view shows every change.</p>
+    {/if}
   {:else}
     <div class="review-line__blocks">
-      {#each rows as row (row.id)}
-        <article class:review-line__block--added={row.change === "added"} class:review-line__block--removed={row.change === "removed"} class:review-line__block--edited={row.change === "edited"} class:review-line__block--outdated={row.outdated}>
-          <p class="identifier review-line__block-label">{row.before?.kind ?? row.after?.kind} · {row.id} · {row.outdated ? "outdated" : row.change === "added" ? "proposed" : row.change}</p>
-          {#if row.before && row.change !== "kept"}<div><span class="quiet">Before</span><pre>{row.before.content}</pre></div>{/if}
-          {#if row.after}<div><span class="quiet">{row.change === "edited" ? "After" : row.change === "added" ? "Proposed" : "Current"}</span><pre>{row.after.content}</pre></div>{/if}
-          {#if row.outdated && row.offered}<div><span class="quiet">Agent proposed</span><pre>{row.offered.content}</pre></div>{/if}
-        </article>
+      {#each sourceRows as shown, index (index)}
+        {#if "unchanged" in shown}
+          <p class="review-line__unchanged">{shown.unchanged} unchanged block{shown.unchanged === 1 ? "" : "s"}</p>
+        {:else}
+          {@const row = shown.row}
+          <article class="review-block review-block--{row.outdated ? 'outdated' : row.change}">
+            <header class="review-block__head">
+              <span class="review-block__tag">{changeLabel(row)}</span>
+              <span class="review-block__name">{named(row)}</span>
+            </header>
+            {#if row.change === "added" && row.after}
+              {@render diff("", row.after.content)}
+            {:else if row.change === "removed" && row.before}
+              {@render diff(row.before.content, "")}
+            {:else if row.change === "edited" && row.before && row.after}
+              {@render diff(row.before.content, row.after.content)}
+            {/if}
+            {#if row.outdated && row.offered && row.before}
+              <p class="review-block__note">The agent proposed this, and the block changed since:</p>
+              {@render diff(row.before.content, row.offered.content)}
+            {/if}
+          </article>
+        {/if}
       {:else}
         <pre class="source">{review.source}</pre>
       {/each}
@@ -140,10 +188,18 @@
   <section class="panel__section">
     <h2 class="panel__title">Agent explanation</h2>
     <p>{review.explanation || "No explanation supplied."}</p>
-    <p class="quiet">{review.extent}</p>
+    {#if review.extent}<p class="quiet">{review.extent}</p>{/if}
+    <p class="quiet identifier review-panel__meta">{review.agent} · {review.vendor} · {review.model}{review.effort ? ` · ${review.effort}` : ""} · instructions {review.prompt_revision}</p>
   </section>
-  {#if review.operations.length}
-    <section class="panel__section"><h2 class="panel__title">Operations</h2><pre class="diff">{JSON.stringify(review.operations, null, 2)}</pre></section>
+  {#if changed.length}
+    <section class="panel__section">
+      <h2 class="panel__title">Changes</h2>
+      <ul class="review-changes">
+        {#each changed as row (row.id)}
+          <li><span class="review-count review-count--{row.outdated ? 'outdated' : row.change}">{changeLabel(row)}</span>{named(row)}</li>
+        {/each}
+      </ul>
+    </section>
   {/if}
   {#if review.findings.length}
     <section class="panel__section"><h2 class="panel__title">Checks</h2><ul class="findings">{#each review.findings as finding}<li>{finding}</li>{/each}</ul></section>
@@ -164,6 +220,14 @@
   {/if}
   {#if review.lean_source}<section class="panel__section"><h2 class="panel__title">Lean module</h2><pre class="diff">{review.lean_source}</pre></section>{/if}
   {#if review.library_files.length}<section class="panel__section"><h2 class="panel__title">Library changes</h2>{#each review.library_files as file (file.path)}<p class="identifier">{file.path}</p><pre class="diff">{file.rows.map((row) => `${row.change === "added" ? "+" : row.change === "removed" ? "−" : " "} ${row.text}`).join("\n")}</pre>{/each}</section>{/if}
+  {#if review.operations.length}
+    <section class="panel__section">
+      <details class="disclosure">
+        <summary>Operations · {review.operations.length}</summary>
+        <pre class="diff">{JSON.stringify(review.operations, null, 2)}</pre>
+      </details>
+    </section>
+  {/if}
   <section class="panel__section panel__section--foot">
     {#if review.state === "awaiting_review"}
       {#if review.members.length > 1}
