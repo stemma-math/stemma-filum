@@ -270,7 +270,6 @@
       {@const partner = partners.get(block.id)}
       <div
         class="blocks__slot"
-        class:blocks__slot--proposed={app.proposalBlocks.includes(block.id)}
         class:blocks__slot--landing={drag?.id === block.id}
         data-slot={block.id}
         animate:flip={{ duration: 180 }}

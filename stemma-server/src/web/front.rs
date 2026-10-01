@@ -121,7 +121,7 @@ fn inside(name: &str, policy: &Policy) -> Markup {
             footer class="foot" {
                 span { (name) }
                 span { "stemma " (stemma_core::VERSION) }
-                (super::appearance::switch("appearance--foot"))
+                (super::appearance::switch("appearance--foot", super::appearance::chosen()))
             }
         }
     }

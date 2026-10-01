@@ -263,8 +263,12 @@ async fn a_central_result_without_a_current_formal_audit_blocks_publication() {
         .post("/g/algebra/releases", &[("form_token", &form_token(&form))])
         .await;
 
-    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+    assert_eq!(refused.status, StatusCode::OK);
     assert!(refused.says("Every central result must have a current"));
+    assert!(refused.says("The release was not published."));
+    assert!(refused.says("/g/algebra/releases"));
+    assert!(refused.says("/g/algebra"));
+    assert!(refused.says("Publish release"));
     assert_eq!(
         harness.get("/releases/algebra").await.status,
         StatusCode::NOT_FOUND
@@ -288,6 +292,7 @@ async fn an_audit_of_different_prose_cannot_document_the_released_source() {
         .post("/g/algebra/releases", &[("form_token", &form_token(&form))])
         .await;
 
-    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+    assert_eq!(refused.status, StatusCode::OK);
     assert!(refused.says("Every central result must have a current"));
+    assert!(refused.says("The release was not published."));
 }

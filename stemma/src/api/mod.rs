@@ -227,6 +227,15 @@ impl Server {
         }
     }
 
+    /// Sets the appearance shared by this account's web and desktop clients.
+    pub fn set_appearance(&self, token: &str, appearance: &str) -> Result<()> {
+        self.tell(
+            token,
+            "/api/appearance",
+            &serde_json::json!({ "appearance": appearance }),
+        )
+    }
+
     /// Gives a credential back.
     pub fn sign_out(&self, token: &str) -> Result<()> {
         let mut response = self.post_empty(token, "/api/logout")?;
@@ -774,7 +783,7 @@ impl Server {
         let mut response = self.get(token, path)?;
 
         if response.status() != 200 {
-            return Err(self.unexpected(response.status().as_u16()));
+            return Err(self.refusal(&mut response));
         }
 
         understood(&mut response)
@@ -798,12 +807,7 @@ impl Server {
         )?;
 
         if response.status() != 200 {
-            let status = response.status();
-            bail!(
-                "{} refused ({status}): {}",
-                self.address,
-                summarise(&words(&mut response))
-            );
+            return Err(self.refusal(&mut response));
         }
 
         understood(&mut response)
@@ -851,6 +855,18 @@ impl Server {
     /// An answer this build did not expect.
     fn unexpected(&self, status: u16) -> anyhow::Error {
         anyhow!("{} answered with {status}", self.address)
+    }
+
+    /// Preserve the server's reason and offer setup when this credential
+    /// belongs to a signed-in machine that has not been registered.
+    fn refusal(&self, response: &mut Response<Body>) -> anyhow::Error {
+        let status = response.status().as_u16();
+        let reason = summarise(&words(response));
+        let message = format!("{} refused ({status}): {reason}", self.address);
+        if status == 403 && reason.starts_with("This machine is not registered here.") {
+            return anyhow::Error::new(Remedy::SetUpMachine).context(message);
+        }
+        anyhow!(message)
     }
 
     fn url(&self, path: &str) -> String {
@@ -1026,6 +1042,47 @@ mod tests {
         let error = server.sign_out("token").unwrap_err();
         worker.join().unwrap();
         assert!(error.to_string().contains("revocation failed"));
+    }
+
+    #[test]
+    fn an_unregistered_machine_can_open_setup_from_read_and_write_refusals() {
+        let refusal =
+            r#"{"error":"This machine is not registered here. Run `stemma node init` on it."}"#;
+        for writing in [false, true] {
+            let (server, worker) = reply_once(
+                "403 Forbidden",
+                Some(&PROTOCOL_VERSION.to_string()),
+                refusal,
+            );
+            let error = if writing {
+                server.ask::<serde_json::Value>("token", "/api/claims", &serde_json::json!({}))
+            } else {
+                server.read::<serde_json::Value>("token", "/api/claims")
+            }
+            .unwrap_err();
+            worker.join().unwrap();
+            assert_eq!(Remedy::of(&error), Some(Remedy::SetUpMachine));
+            assert!(
+                error
+                    .to_string()
+                    .contains("This machine is not registered here")
+            );
+        }
+    }
+
+    #[test]
+    fn an_unrelated_forbidden_response_keeps_its_reason_without_setup() {
+        let (server, worker) = reply_once(
+            "403 Forbidden",
+            Some(&PROTOCOL_VERSION.to_string()),
+            r#"{"error":"You cannot edit this line."}"#,
+        );
+        let error = server
+            .read::<serde_json::Value>("token", "/api/claims")
+            .unwrap_err();
+        worker.join().unwrap();
+        assert_eq!(Remedy::of(&error), None);
+        assert!(error.to_string().contains("You cannot edit this line."));
     }
 
     #[test]

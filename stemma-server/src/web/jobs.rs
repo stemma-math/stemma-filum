@@ -3,7 +3,7 @@
 //! Machines ask for work at `/api/jobs`; people launch it from beside the
 //! mathematics it is about. Both ends meet in one check: whoever is
 //! asking must be in the group, the repository must be one they can
-//! reach, and the machine named must be one that serves it.
+//! reach, and the machine named must belong to them or be shared with them.
 //!
 //! Nothing here interprets an answer. A job comes back with a typed
 //! outcome and one line, and that is all the group is ever shown; the
@@ -65,12 +65,17 @@ pub struct Offer {
 }
 
 /// The machines serving a group, with what each of them can run.
-pub async fn offers(instance: &Instance, group: &GroupId) -> Result<Vec<Offer>, WebError> {
+pub async fn offers(
+    instance: &Instance,
+    group: &GroupId,
+    member: &UserId,
+) -> Result<Vec<Offer>, WebError> {
     let group = group.clone();
+    let member = member.clone();
 
     instance
         .read(move |connection| {
-            let serving = machines::for_group(connection, &group)?;
+            let serving = machines::available_to(connection, &group, &member)?;
             let mut offers = Vec::new();
 
             for machine in serving {
@@ -90,7 +95,7 @@ pub async fn machine_choices(
     Path(group): Path<String>,
 ) -> Result<Response, WebError> {
     let group = super::membership::group_of(&instance, &group, &credential.user.id).await?;
-    let offers = offers(&instance, &group.id).await?;
+    let offers = offers(&instance, &group.id, &credential.user.id).await?;
     Ok(
         Json(json!({ "machines": offers.into_iter().map(|offer| json!({
         "machine": offer.machine.id.to_string(), "label": offer.machine.label,
@@ -515,12 +520,14 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
             }
 
             if let Some(machine) = &chosen {
-                let serves = machines::for_group(connection, &group)?
+                let serves = machines::available_to(connection, &group, &asker)?
                     .iter()
                     .any(|serving| &serving.id == machine);
 
                 if !serves {
-                    anyhow::bail!(refuse("That machine does not work for this group."));
+                    anyhow::bail!(refuse(
+                        "That machine is not available to you in this group."
+                    ));
                 }
                 // A private line exists only on its author's machines,
                 // so choosing anybody else's would be choosing a machine
@@ -535,6 +542,11 @@ async fn admit(instance: &Instance, by: &UserId, asking: &Asking) -> Result<Job,
                         ));
                     }
                 }
+            } else if !machines::available_to(connection, &group, &asker)?
+                .iter()
+                .any(|machine| side == Side::Shared || machine.owner == asker)
+            {
+                anyhow::bail!(refuse("No machine available to you can take this job."));
             }
 
             jobs::launch(
@@ -664,8 +676,8 @@ pub fn machine_list(offers: &[Offer]) -> Markup {
 
             @if offers.is_empty() {
                 p class="empty" {
-                    "No machines are available for this group. Run " code { "stemma node init" }
-                    " on a connected machine to make it available."
+                    "No machines are available to you in this group. Run " code { "stemma node init" }
+                    " on your machine, or ask an owner to share theirs."
                 }
             } @else {
                 ul class="register" {
@@ -720,7 +732,7 @@ pub fn launcher(
                 p class="launcher__request" { "Ask an agent to " strong { (task.asked_for()) } "." }
                 @if offers.is_empty() {
                     p class="empty" {
-                        "No machines are available for this group."
+                        "No machines are available to you in this group."
                     }
                 } @else {
                     form method="post"

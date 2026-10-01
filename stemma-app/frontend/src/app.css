@@ -1522,6 +1522,21 @@ button.block__label:disabled {
     font-size: 13px;
 }
 
+.statement-name {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.statement-name__siglum {
+    padding: 2px 6px;
+    color: var(--ink-2);
+    background: var(--fill-muted);
+    border-radius: var(--radius-xs);
+}
+
 .uses__note {
     font-size: 12px;
     color: var(--ink-3);
@@ -2300,7 +2315,6 @@ body:has(.app-shell) .dialog {
 .review-panel__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .history__proposal { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; padding: 8px 0; color: var(--ink-1); background: none; border: 0; border-top: 1px solid var(--divider); cursor: pointer; }
 .history__proposal:hover { color: var(--accent); }
-.blocks__slot--proposed { box-shadow: inset 3px 0 var(--accent); }
 @media (max-width: 980px) { .review-line__pages { grid-template-columns: 1fr; } }
 
 .review {
@@ -2524,21 +2538,28 @@ body:has(.app-shell) .dialog {
 
 /* ── The entrance ──────────────────────────────────────────────────────
  *
- * Before anybody is signed in: the pale page and one card, as on the
- * web. */
+ * Before anybody is signed in: the shared brand light behind one card. */
 
 .entrance {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100%;
     padding: 32px 16px;
-    background:
-        radial-gradient(110% 95% at -8% 112%, var(--accent-soft-bg) 0%, transparent 70%),
-        var(--surface-page);
+    background: radial-gradient(120% 90% at 50% 30%, #051740 55%, #1a4f9e 74%, #8fb6e8 90%, #eef4fc 100%);
+}
+
+.entrance__light {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
 }
 
 .entrance__card {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 16px;

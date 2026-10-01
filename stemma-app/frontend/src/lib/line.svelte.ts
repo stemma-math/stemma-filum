@@ -3,7 +3,7 @@
 // window does; the engine sends what is saved.
 
 import { SvelteSet } from "svelte/reactivity";
-import { api, said } from "./api";
+import { api, remedyOf, said } from "./api";
 import { History } from "./history";
 import { latestRequest, serially } from "./lifecycle";
 import { fail, succeed, warn } from "./status.svelte";
@@ -39,6 +39,7 @@ export class LineSession {
   /** Whether the last attempt to reach the claim failed; what went wrong
    * was raised as a message. */
   claimFailed = $state(false);
+  claimRemedy = $state<string | null>(null);
   releasing = $state(false);
   preview = $state<Preview | null>(null);
   previewError = $state<string | null>(null);
@@ -81,7 +82,7 @@ export class LineSession {
     this.choose(this.#usable());
   }
 
-  /** Every agent on every machine that works for this group. */
+  /** Every agent on a machine available to this group member. */
   get agents(): AgentChoice[] {
     return this.offers.flatMap((machine) =>
       machine.agents.map((agent) => ({
@@ -376,6 +377,7 @@ export class LineSession {
     } catch (error) {
       if (active() && this.claim === null) {
         this.claimFailed = true;
+        this.claimRemedy = remedyOf(error).remedy;
         fail(error);
       }
     }
@@ -396,6 +398,7 @@ export class LineSession {
       if (!active()) return;
       this.claim = null;
       this.claimFailed = true;
+      this.claimRemedy = remedyOf(error).remedy;
       this.writing = false;
       fail(error);
     }
@@ -404,6 +407,7 @@ export class LineSession {
   #showClaim(claim: Claim) {
     this.claim = claim;
     this.claimFailed = false;
+    this.claimRemedy = null;
     this.writing = claim.standing === "writing";
   }
 

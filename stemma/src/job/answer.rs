@@ -299,10 +299,14 @@ fn library(state: &mut State, path: String, after: Option<String>) -> Result<()>
     if let Some(parent) = absolute.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    let present = after.is_some();
     match after {
         Some(contents) => std::fs::write(&absolute, contents)?,
         None if absolute.exists() => std::fs::remove_file(&absolute)?,
         None => {}
+    }
+    if path.ends_with(".lean") {
+        crate::lean::update_root_import(&state.workspace, &path, present)?;
     }
     state.operations.retain(
         |existing| !matches!(existing, Operation::WriteLibraryFile { path: old, .. } if old == &path),
@@ -344,6 +348,55 @@ mod tests {
     use super::*;
     use stemma_core::document::Document;
     use stemma_core::proposal::LineGrant;
+    use stemma_core::repository::{Manifest, Side};
+
+    #[test]
+    fn writing_a_module_updates_the_staged_root_without_granting_root_edits() {
+        let root = std::env::temp_dir().join(format!("stemma-answer-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let manifest = Manifest::new("grp:algebra".parse().unwrap(), Side::Shared, "Algebra");
+        std::fs::write(
+            root.join(stemma_core::repository::MANIFEST),
+            manifest.to_text(),
+        )
+        .unwrap();
+        std::fs::write(root.join("GroupLibrary.lean"), "import Stemma\n").unwrap();
+        let mut state = State {
+            line: "rings".to_owned(),
+            base_source: Document::new("Rings", None).to_text(),
+            operations: Vec::new(),
+            grants: Grants {
+                library: true,
+                ..Grants::default()
+            },
+            explanation: String::new(),
+            nothing: None,
+            done: false,
+            workspace: root.clone(),
+            library_before: BTreeMap::new(),
+            readings: BTreeMap::new(),
+        };
+
+        library(
+            &mut state,
+            "GroupLibrary/Rings.lean".to_owned(),
+            Some("def ring := 1\n".to_owned()),
+        )
+        .unwrap();
+        let imports = std::fs::read_to_string(root.join("GroupLibrary.lean")).unwrap();
+        assert!(imports.contains("import GroupLibrary.Rings\n"));
+        assert!(
+            library(
+                &mut state,
+                "GroupLibrary.lean".to_owned(),
+                Some("-- bad".to_owned())
+            )
+            .is_err()
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn an_edit_is_rejected_before_it_enters_state_when_it_is_not_granted() {

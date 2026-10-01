@@ -2,6 +2,7 @@
   // Who is writing the line, and the one thing to do about it.
   import Glyph from "../components/Glyph.svelte";
   import type { LineSession } from "../lib/line.svelte";
+  import { setup } from "../lib/setup.svelte";
 
   let { line }: { line: LineSession } = $props();
 
@@ -12,7 +13,11 @@
   {#if line.claimFailed}
     <Glyph name="alert" small />
     <span class="claim__words claim__words--failed">Sync failed</span>
-    <button type="button" class="button button--small" onclick={() => line.lookAtClaim()}>Retry</button>
+    {#if line.claimRemedy === "set-up"}
+      <button type="button" class="button button--small" onclick={() => (setup.open = true)}>Set Up This Machine</button>
+    {:else}
+      <button type="button" class="button button--small" onclick={() => line.lookAtClaim()}>Retry</button>
+    {/if}
   {:else if line.claim}
     {@const claim = line.claim}
     {#if claim.standing === "open"}

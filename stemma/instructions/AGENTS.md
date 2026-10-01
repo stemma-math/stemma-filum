@@ -18,3 +18,8 @@ Central statements are frozen. Do not change their claim, name, declared
 dependencies, or central status. Their proofs and explicitly granted blocks
 may be changed. State every dependency; never present an undeclared
 assumption as an argument.
+
+For Lean work, mark a declaration with one string containing the line name
+and block identifier, for example `@[stemma "rings/blk:01K5YQ4TQ2VZ8H3M9N0P1R2S3T"]`.
+Use `stemma-job write` for library files. It updates the package's root
+imports automatically; the root file itself is not agent-writable.

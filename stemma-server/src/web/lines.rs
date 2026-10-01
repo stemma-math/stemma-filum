@@ -69,7 +69,7 @@ pub async fn view(
         None => Nodes::new(group.id.clone(), side, String::new()),
     };
 
-    let offers = super::jobs::offers(&instance, &group.id).await?;
+    let offers = super::jobs::offers(&instance, &group.id, &signed.user.id).await?;
     let audits = match &written {
         Some(written) => {
             let line = written.line;
@@ -119,12 +119,12 @@ pub async fn view(
 }
 
 /// Every line one repository holds, as its sources declare them.
-pub async fn unbuilt_in(
+pub async fn current_in(
     instance: &Instance,
     group: &GroupId,
     side: Side,
     signed: &SignedIn,
-) -> Result<Vec<LineDigest>, WebError> {
+) -> Result<Vec<(u64, LineDigest)>, WebError> {
     let (id, reader) = (group.clone(), signed.user.id.clone());
     let names: Vec<Name> = instance
         .read(move |connection| crate::store::lines::in_group(connection, &id, &reader))
@@ -137,8 +137,8 @@ pub async fn unbuilt_in(
     let mut found = Vec::new();
 
     for name in names {
-        if let Some(digest) = unbuilt(instance, group, side, signed, &name).await? {
-            found.push(digest);
+        if let Some((revision, digest)) = unbuilt(instance, group, side, signed, &name).await? {
+            found.push((revision, digest));
         }
     }
 
@@ -152,10 +152,10 @@ async fn unbuilt(
     side: Side,
     signed: &SignedIn,
     name: &Name,
-) -> Result<Option<LineDigest>, WebError> {
+) -> Result<Option<(u64, LineDigest)>, WebError> {
     Ok(written(instance, group, side, signed, name)
         .await?
-        .map(|written| declared(name, &written.source)))
+        .map(|written| (written.revision, declared(name, &written.source))))
 }
 
 /// A line's source, exactly as it stands at its current revision.

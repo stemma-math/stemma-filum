@@ -78,7 +78,7 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
     let space = harness.get("/g/algebra").await;
     let asking = harness.get("/g/algebra/invitations/new").await;
     assert!(space.says(r#"Members<span class="count">1</span>"#));
-    assert!(space.says("There are no active invitations."));
+    assert!(!space.says("Invitations<span"));
 
     let made = harness
         .post(
@@ -92,6 +92,12 @@ async fn a_link_creates_the_account_and_the_membership_in_one_step() {
         .await;
 
     assert!(made.says("It will not be shown again."));
+    let pending = harness.get("/g/algebra").await;
+    assert!(pending.says(r#"Members<span class="count">2</span>"#));
+    assert!(pending.says("enric@example.org"));
+    assert!(pending.says("Pending"));
+    assert!(pending.says("Withdraw"));
+    assert!(!pending.says("Invitations<span"));
     let invitation = path_of(&link(&made));
     assert!(invitation.starts_with("/invite/"));
 

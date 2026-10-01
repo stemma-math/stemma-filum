@@ -46,21 +46,3 @@ export function reviewedBlocks(current: LineDocument, offered: LineDocument, mer
     };
   });
 }
-
-/** Blocks in the open line touched by an offer. A new block marks its nearest
- * preceding standing block because it has no editor card of its own yet. */
-export function touchedBlocks(base: LineDocument, offered: LineDocument, current: LineDocument): string[] {
-  const was = new Map(base.blocks.map((block) => [block.id, block]));
-  const now = new Map(offered.blocks.map((block) => [block.id, block]));
-  const here = new Set(current.blocks.map((block) => block.id));
-  const touched = new Set<string>();
-  for (const id of new Set([...was.keys(), ...now.keys()])) {
-    if (JSON.stringify(was.get(id)) === JSON.stringify(now.get(id))) continue;
-    if (here.has(id)) { touched.add(id); continue; }
-    const at = offered.blocks.findIndex((block) => block.id === id);
-    const anchor = offered.blocks.slice(0, at).reverse().find((block) => here.has(block.id))
-      ?? offered.blocks.slice(at + 1).find((block) => here.has(block.id));
-    if (anchor) touched.add(anchor.id);
-  }
-  return current.blocks.map((block) => block.id).filter((id) => touched.has(id));
-}

@@ -113,9 +113,13 @@ async fn shared_lines(
         .map(|nodes| nodes.lines)
         .unwrap_or_default();
 
-    for digest in super::lines::unbuilt_in(instance, group, Side::Shared, signed).await? {
-        if !lines.iter().any(|line| line.name == digest.name) {
-            lines.push(digest);
+    for (revision, digest) in
+        super::lines::current_in(instance, group, Side::Shared, signed).await?
+    {
+        match lines.iter().position(|built| built.name == digest.name) {
+            Some(at) if lines[at].revision != Some(revision) => lines[at] = digest,
+            None => lines.push(digest),
+            _ => {}
         }
     }
 

@@ -45,7 +45,7 @@ pub async fn around(
     let name = super::front::instance_name(instance, &policy);
 
     let user = signed.user.id.clone();
-    let (groups, face, badges) = instance
+    let (groups, face, badges, appearance) = instance
         .read(move |connection| {
             let groups = crate::store::groups::for_user(connection, &user)?;
             let face = crate::store::pictures::user_changed(connection, &user)?;
@@ -58,7 +58,8 @@ pub async fn around(
                 }
             }
 
-            Ok((groups, face, badges))
+            let appearance = crate::store::users::appearance(connection, &user)?;
+            Ok((groups, face, badges, appearance))
         })
         .await?;
 
@@ -74,6 +75,12 @@ pub async fn around(
 
     Ok(Chrome::anonymous(title, name)
         .signed_in(signed.user.clone(), signed.maintainer)
+        .appearance(
+            appearance
+                .as_deref()
+                .map(super::appearance::Appearance::parse)
+                .unwrap_or_else(super::appearance::chosen),
+        )
         .holding(Workspace {
             groups,
             machines,
@@ -98,6 +105,8 @@ pub struct Chrome {
     pub visitor: Option<User>,
     /// Whether they operate this instance.
     pub maintainer: bool,
+    /// The colour choice used for this page.
+    pub appearance: super::appearance::Appearance,
     /// Whether anybody may create an account right now.
     pub registration_open: bool,
     /// Whether the bar offers a way in at all.
@@ -119,6 +128,7 @@ impl Chrome {
             workspace: Workspace::default(),
             visitor: None,
             maintainer: false,
+            appearance: super::appearance::chosen(),
             registration_open: false,
             offer_ways_in: true,
             landing: false,
@@ -156,6 +166,12 @@ impl Chrome {
         self
     }
 
+    /// Uses the saved account appearance on signed-in pages.
+    pub fn appearance(mut self, choice: super::appearance::Appearance) -> Self {
+        self.appearance = choice;
+        self
+    }
+
     /// Says whether an account can be created.
     pub fn registration(mut self, open: bool) -> Self {
         self.registration_open = open;
@@ -175,7 +191,7 @@ pub fn page(chrome: &Chrome, content: Markup) -> Markup {
 
     html! {
         (DOCTYPE)
-        html lang="en" data-theme=[super::appearance::chosen().theme()] {
+        html lang="en" data-theme=[chrome.appearance.theme()] {
             head {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
@@ -317,7 +333,7 @@ fn sidebar(chrome: &Chrome) -> Markup {
                 }
             }
 
-            (super::appearance::switch("appearance--sidebar"))
+            (super::appearance::switch("appearance--sidebar", chrome.appearance))
 
             @if let Some(user) = &chrome.visitor {
                 div class="user-card" {
@@ -394,7 +410,7 @@ fn foot(chrome: &Chrome) -> Markup {
         footer class="foot" {
             span { (chrome.instance) }
             span { "stemma " (stemma_core::VERSION) }
-            (super::appearance::switch("appearance--foot"))
+            (super::appearance::switch("appearance--foot", chrome.appearance))
         }
     }
 }

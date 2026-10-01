@@ -365,7 +365,12 @@ fn safe_library_path(written: &str) -> Result<PathBuf> {
         || path
             .components()
             .any(|part| !matches!(part, Component::Normal(_)))
-        || path.components().any(|part| part.as_os_str() == ".git")
+        || path.components().any(|part| {
+            matches!(
+                part.as_os_str().to_str(),
+                Some(".git" | ".lake" | ".stemma" | "lines")
+            )
+        })
         || reserved
     {
         anyhow::bail!("`{written}` is not an agent-writable Lean library path");
@@ -374,6 +379,25 @@ fn safe_library_path(written: &str) -> Result<PathBuf> {
 }
 
 fn update_root_imports(worktree: &Path, change: &LibraryChange) -> Result<()> {
+    update_root_imports_from(
+        worktree,
+        change
+            .files
+            .iter()
+            .map(|file| (file.path.as_str(), file.after.is_some())),
+    )
+}
+
+/// Keeps a staged module reachable from Lake's root target. The root is
+/// generated here because an agent has no grant to edit it.
+pub(crate) fn update_root_import(worktree: &Path, path: &str, present: bool) -> Result<()> {
+    update_root_imports_from(worktree, std::iter::once((path, present)))
+}
+
+fn update_root_imports_from<'a>(
+    worktree: &Path,
+    files: impl Iterator<Item = (&'a str, bool)>,
+) -> Result<()> {
     let manifest = crate::repository::read_manifest(worktree)?;
     let root = match manifest.side {
         repository::Side::Shared => "GroupLibrary.lean",
@@ -389,16 +413,9 @@ fn update_root_imports(worktree: &Path, change: &LibraryChange) -> Result<()> {
         repository::Side::Shared => "Stemma".to_owned(),
         repository::Side::Private => "GroupLibrary".to_owned(),
     });
-    for file in change
-        .files
-        .iter()
-        .filter(|file| file.path.ends_with(".lean"))
-    {
-        let module = file
-            .path
-            .trim_end_matches(".lean")
-            .replace(['/', '\\'], ".");
-        if file.after.is_some() {
+    for (path, present) in files.filter(|(path, _)| path.ends_with(".lean")) {
+        let module = path.trim_end_matches(".lean").replace(['/', '\\'], ".");
+        if present {
             imports.insert(module);
         } else {
             imports.remove(&module);
@@ -635,7 +652,7 @@ pub(crate) fn tool(program: &str) -> Command {
     command
 }
 
-fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Result<(), String> {
+pub(crate) fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Result<(), String> {
     set_toolchain(clone, lean).map_err(|error| format!("{error:#}"))?;
     let directory = clone.join(".stemma/check");
     std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
@@ -676,6 +693,32 @@ fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Result<(), St
     }
     std::fs::write(stamp, mathlib).map_err(|error| error.to_string())?;
     Ok(())
+}
+
+/// Resolves and caches the pinned packages before a sandboxed agent gets a
+/// copy of this repository. The agent cannot update the shared Lake cache.
+pub(crate) fn prepare_for_job(clone: &Path) -> Result<()> {
+    if !clone.join(repository::MANIFEST).exists() || !has_lean_sources(clone) {
+        return Ok(());
+    }
+    let manifest = crate::repository::read_manifest(clone)?;
+    if manifest.side == repository::Side::Private {
+        let shared = clone
+            .parent()
+            .context("the private library has no group directory")?
+            .join("shared");
+        prepare_for_job(&shared)?;
+    }
+    let pins = crate::repository::group_pins(clone, &manifest);
+    let lean = pins
+        .lean
+        .as_deref()
+        .context("Lean is not pinned for this group")?;
+    let mathlib = pins
+        .mathlib
+        .as_deref()
+        .context("Mathlib is not pinned for this group")?;
+    prepare_environment(clone, lean, mathlib).map_err(anyhow::Error::msg)
 }
 
 /// What `lake update` resolves the packages from: the toolchain and the

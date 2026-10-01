@@ -38,8 +38,11 @@ pub const DEFAULT_LEAN: &str = "4.34.1";
 /// Mathlib used by newly created groups.
 pub const DEFAULT_MATHLIB: &str = "v4.34.0";
 
-/// The Stemma Lean package used by newly created groups.
-pub const DEFAULT_STEMMA: &str = "v0.1.0";
+/// The Stemma Lean package used by newly created groups. This commit is
+/// present in the published `main-build`; no `v0.1.0` Git tag exists.
+pub const DEFAULT_STEMMA: &str = "cf378e8954b36c1fea6093032692f45cf734ed72";
+/// An earlier default that named a release tag which was never published.
+pub const UNPUBLISHED_STEMMA: &str = "v0.1.0";
 
 /// The shape of a repository this build understands.
 pub const FORMAT: u32 = 1;

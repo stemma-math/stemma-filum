@@ -1051,6 +1051,30 @@ pub fn write_pins(
     Ok(commit)
 }
 
+/// Repairs the unpublished default Stemma pin in an existing group. The
+/// replacement is a commit already present in the published main build.
+pub fn upgrade_unpublished_stemma_pin(
+    repositories: &Repositories,
+    group: &GroupId,
+) -> Result<Option<String>> {
+    let shared = repositories.shared(group);
+    if !exists(&shared) {
+        return Ok(None);
+    }
+    let head = head_commit(&shared).context("the shared library has no branch")?;
+    let written = show(&shared, &head, repository::MANIFEST)?;
+    let mut pins = Manifest::parse(&written)?.pins;
+    if pins.stemma.as_deref() != Some(repository::UNPUBLISHED_STEMMA) {
+        return Ok(None);
+    }
+    pins.stemma = Some(repository::DEFAULT_STEMMA.to_owned());
+    let author = Author {
+        name: COMMITTER.0,
+        email: COMMITTER.1,
+    };
+    write_pins(repositories, group, pins, &author).map(Some)
+}
+
 /// Whether `name` is spelled like a full object name, in SHA-1 or SHA-256.
 fn is_object_name(name: &str) -> bool {
     matches!(name.len(), 40 | 64) && name.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -1560,6 +1584,36 @@ mod tests {
             stemma_core::repository::Side::Shared,
             "Algebra, shared",
         )
+    }
+
+    #[test]
+    fn an_existing_group_with_the_unpublished_default_gets_a_real_pin() {
+        let root = somewhere("old-stemma-pin");
+        let repositories = Repositories::new(&root);
+        let mut old = manifest();
+        old.pins.stemma = Some(repository::UNPUBLISHED_STEMMA.to_owned());
+        let path = repositories.shared(&group());
+        ensure(&path, &old).unwrap();
+
+        let commit = upgrade_unpublished_stemma_pin(&repositories, &group()).unwrap();
+        assert!(commit.is_some());
+        assert!(
+            upgrade_unpublished_stemma_pin(&repositories, &group())
+                .unwrap()
+                .is_none()
+        );
+        let head = head_commit(&path).unwrap();
+        let current = Manifest::parse(&show(&path, &head, repository::MANIFEST).unwrap()).unwrap();
+        assert_eq!(
+            current.pins.stemma.as_deref(),
+            Some(repository::DEFAULT_STEMMA)
+        );
+        assert!(
+            show(&path, &head, repository::LAKEFILE)
+                .unwrap()
+                .contains(repository::DEFAULT_STEMMA)
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -4,6 +4,7 @@
   import { cited, isStatement, nameOf } from "../lib/blocks";
   import type { LineSession } from "../lib/line.svelte";
   import type { Statement } from "../lib/types";
+  import StatementName from "./StatementName.svelte";
 
   let { line, statement }: { line: LineSession; statement: Statement } = $props();
 
@@ -14,7 +15,7 @@
     (line.document?.blocks ?? []).filter((block): block is Statement => isStatement(block) && block.id !== statement.id),
   );
   const shown = $derived(
-    others.filter((other) => nameOf(other).toLowerCase().includes(filter.trim().toLowerCase())),
+    others.filter((other) => `${nameOf(other)} ${other.siglum ?? ""}`.toLowerCase().includes(filter.trim().toLowerCase())),
   );
   const citing = $derived(line.document ? cited(line.document, statement.id) : []);
   const declared = $derived(statement.uses ?? []);
@@ -50,7 +51,7 @@
                   disabled={!line.editable || isCited}
                   onchange={(event) => toggle(other.id, event.currentTarget.checked)}
                 />
-                <span>{nameOf(other)}</span>
+                <StatementName statement={other} />
                 {#if isCited}<span class="chip">Cited in the text</span>{/if}
               </label>
             </li>

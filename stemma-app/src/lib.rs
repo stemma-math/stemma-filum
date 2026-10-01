@@ -45,6 +45,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             account::whoami,
+            account::appearance,
+            account::set_appearance,
             account::sign_in_start,
             account::sign_in_poll,
             account::sign_out,

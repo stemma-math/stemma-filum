@@ -21,6 +21,10 @@
       "types": "./js/descent.d.ts",
       "default": "./js/descent.js"
     },
+    "./light.js": {
+      "types": "./js/light.d.ts",
+      "default": "./js/light.js"
+    },
     "./icons/*": "./icons/*"
   },
   "files": [

@@ -43,6 +43,28 @@ impl User {
 /// The columns every read of an account asks for.
 const COLUMNS: &str = "id, slug, email, display_name, created_at, suspended_at";
 
+/// The user's saved appearance, if a browser or desktop has chosen one.
+pub fn appearance(connection: &Connection, id: &UserId) -> Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT appearance FROM users WHERE id = ?1",
+            [id.to_string()],
+            |row| row.get(0),
+        )
+        .context("cannot read the account appearance")
+}
+
+/// Saves the appearance shared by the web and desktop clients.
+pub fn set_appearance(connection: &Connection, id: &UserId, choice: &str) -> Result<()> {
+    connection
+        .execute(
+            "UPDATE users SET appearance = ?2 WHERE id = ?1",
+            params![id.to_string(), choice],
+        )
+        .context("cannot save the account appearance")?;
+    Ok(())
+}
+
 /// Why an account could not be created.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NotCreated {
