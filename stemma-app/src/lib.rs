@@ -54,6 +54,7 @@ pub fn run() {
             workspace::standing,
             workspace::send_now,
             workspace::groups,
+            workspace::group_names,
             workspace::managed_groups,
             workspace::lines,
             workspace::new_line,

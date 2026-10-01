@@ -103,6 +103,7 @@ export const api = {
   standing: () => call<Mirrored>("standing"),
   sendNow: () => call<void>("send_now"),
   groups: () => call<string[]>("groups"),
+  groupNames: () => call<Record<string, string>>("group_names"),
   managedGroups: () => call<string[]>("managed_groups"),
   lines: () => call<Known[]>("lines"),
 

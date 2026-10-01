@@ -238,14 +238,35 @@
     border-radius: var(--radius-xs);
 }
 
+.group-switch__text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.group-switch__name,
+.group-switch__slug {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .group-switch__name {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    font-family: var(--font-mono);
-    font-size: 13px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.group-switch__slug {
+    font-size: 11px;
+    color: var(--on-dark-3);
+}
+
+.sidebar__group .menu__item {
+    padding-block: 6px;
 }
 
 .group-switch__name--none {

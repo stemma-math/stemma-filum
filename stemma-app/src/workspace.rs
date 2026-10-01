@@ -184,6 +184,25 @@ pub async fn groups() -> Result<Vec<String>, String> {
     .await
 }
 
+/// What each group calls itself, by its short name, as the instance says;
+/// nothing when it cannot be reached, and the short names stand in.
+#[tauri::command]
+pub async fn group_names() -> std::collections::BTreeMap<String, String> {
+    crate::blocking(move || {
+        Session::open()
+            .and_then(|session| session.server.workspace(&session.token).map_err(failed))
+            .map(|workspace| {
+                workspace
+                    .groups
+                    .into_iter()
+                    .map(|group| (group.slug, group.name))
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+    .await
+}
+
 /// The groups whose details this person may change, as the instance says.
 ///
 /// Asked of the server rather than read from the machine, because a role
