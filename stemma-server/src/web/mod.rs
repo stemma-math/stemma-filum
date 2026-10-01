@@ -329,7 +329,6 @@ fn pages() -> Router<Instance> {
             get(machines::retire_form).post(machines::retire),
         )
         .route("/machines/{id}/jobs/{job}/clear", post(machines::clear))
-        .route("/machines/{id}/share", post(machines::share))
         .route("/admin", get(admin::area))
         .route(
             "/admin/authenticate",

@@ -582,13 +582,13 @@ async fn another_members_machine_requires_its_owners_explicit_sharing() {
         .post("/login", &[("login", "ana"), ("password", PASSWORD)])
         .await;
     let panel = harness.get(&format!("/machines/{her_machine}")).await;
-    assert!(panel.says("Owner only"));
+    assert!(panel.says("Runs the agent jobs you launch in this group."));
     harness
         .post(
-            &format!("/machines/{her_machine}/share"),
+            &format!("/machines/{her_machine}/serve"),
             &[
                 ("group", "algebra"),
-                ("share", "yes"),
+                ("mode", "group"),
                 ("form_token", &form_token(&panel)),
             ],
         )

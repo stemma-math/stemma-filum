@@ -1533,68 +1533,39 @@ a.machine-row:hover {
 
 /* ── A machine's page ──────────────────────────────────────────────────
  *
- * Each group with the switch that says whether this machine takes its
- * jobs. The switch is a submit button, so it works without JavaScript. */
+ * Each group with a three-way choice of whose agent jobs this machine
+ * runs there. Every choice is a submit button, so it works without
+ * JavaScript. */
 
 .register li.serving {
     align-items: center;
+    gap: 10px 24px;
 }
 
 .serving__group {
     display: flex;
-    flex: 1;
+    flex: 1 1 240px;
     flex-wrap: wrap;
     align-items: baseline;
     gap: 4px 12px;
     min-width: 0;
 }
 
-.register form.serving__form {
-    align-items: center;
-    gap: 12px;
-}
-
-.serving__state {
+.serving__note {
+    flex-basis: 100%;
     font-size: 14px;
     color: var(--ink-3);
 }
 
-.switch {
-    position: relative;
+.register form.serving__form {
+    display: flex;
     flex-shrink: 0;
-    width: 40px;
-    height: 24px;
-    padding: 0;
-    background: var(--border-strong);
-    border: 0;
-    border-radius: var(--radius-pill);
-    cursor: pointer;
-    transition: background var(--dur-ui) var(--ease-out);
 }
 
-.switch__thumb {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 18px;
-    height: 18px;
-    background: #fff;
-    border-radius: 50%;
-    box-shadow: 0 1px 3px rgb(3 14 41 / 30%);
-    transition: translate var(--dur-ui) var(--ease-out);
-}
-
-.switch[aria-checked="true"] {
-    background: var(--accent);
-}
-
-.switch[aria-checked="true"] .switch__thumb {
-    translate: 16px 0;
-}
-
-.switch:focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
+.serving__form .segmented > button {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 13px;
 }
 
 /* ── A group's page ────────────────────────────────────────────────── */
