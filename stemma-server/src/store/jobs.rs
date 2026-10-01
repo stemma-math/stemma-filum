@@ -16,6 +16,7 @@ use stemma_core::event::Event;
 use stemma_core::id::{GroupId, JobId, LineId, MachineId, Slug, UserId};
 use stemma_core::job::{Choice, JobState, Outcome, Task};
 use stemma_core::line::Name;
+use stemma_core::machine::ASLEEP_AFTER_SECONDS;
 use stemma_core::proposal::Grants;
 use stemma_core::repository::Side;
 
@@ -397,8 +398,12 @@ pub fn withdraw(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool
 }
 
 /// Asks a running job to stop, or withdraws it before it starts.
+///
+/// A machine that is away never hears the request, so a running job
+/// whose machine is away ends here and now, as cancelled. Asking again
+/// later ends it the same way once its machine has gone away.
 pub fn cancel(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool> {
-    let changed = connection.execute(
+    let requested = connection.execute(
         "UPDATE jobs
             SET state = CASE WHEN state = 'queued' THEN 'withdrawn' ELSE state END,
                 finished_at = CASE WHEN state = 'queued' THEN datetime('now') ELSE finished_at END,
@@ -407,10 +412,25 @@ pub fn cancel(connection: &Connection, id: &JobId, by: &UserId) -> Result<bool> 
             AND cancel_requested_at IS NULL",
         params![id.to_string(), by.to_string()],
     )? > 0;
-    if changed {
+    let ended = connection.execute(
+        &format!(
+            "UPDATE jobs
+                SET state = 'done', finished_at = datetime('now'),
+                    outcome = 'broke', code = 'cancelled',
+                    reason = 'the job was cancelled while the machine running it was away'
+              WHERE id = ?1 AND launched_by = ?2 AND state = 'running'
+                AND cancel_requested_at IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM machines
+                     WHERE machines.id = jobs.taken_by
+                       AND last_seen_at > datetime('now', '-{ASLEEP_AFTER_SECONDS} seconds'))"
+        ),
+        params![id.to_string(), by.to_string()],
+    )? > 0;
+    if requested || ended {
         tell(connection, id)?;
     }
-    Ok(changed)
+    Ok(requested || ended)
 }
 
 /// Records an inspectable workspace and progress from the machine holding the job.
@@ -712,6 +732,36 @@ mod tests {
         let running = by_id(database.connection(), &running.id).unwrap().unwrap();
         assert_eq!(running.state, JobState::Running);
         assert!(running.cancel_requested_at.is_some());
+    }
+
+    #[test]
+    fn cancelling_work_whose_machine_is_away_ends_it_at_once() {
+        let mut database = test_database();
+        let (algebra, ana) = ready(database.connection_mut());
+
+        let running = launch(
+            database.connection(),
+            &asked(&algebra, &ana.user, Choice::Anyone),
+        )
+        .unwrap();
+        take_next(database.connection_mut(), &ana.machine, &[claude()]).unwrap();
+        assert!(cancel(database.connection(), &running.id, &ana.user).unwrap());
+        assert!(!cancel(database.connection(), &running.id, &ana.user).unwrap());
+
+        database
+            .connection()
+            .execute(
+                "UPDATE machines SET last_seen_at = datetime('now', '-1 hour')",
+                [],
+            )
+            .unwrap();
+        assert!(cancel(database.connection(), &running.id, &ana.user).unwrap());
+        let ended = by_id(database.connection(), &running.id).unwrap().unwrap();
+        assert_eq!(ended.state, JobState::Done);
+        assert_eq!(
+            ended.outcome.as_ref().and_then(Outcome::code),
+            Some("cancelled")
+        );
     }
 
     #[test]
