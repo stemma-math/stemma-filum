@@ -353,6 +353,12 @@ pub enum NodeCommand {
 
     /// Shows this machine as the server sees it.
     Status,
+
+    /// Renames this machine. The name is kept when it registers again.
+    Rename {
+        /// The new name.
+        name: String,
+    },
 }
 
 /// What can be done with the daemon.

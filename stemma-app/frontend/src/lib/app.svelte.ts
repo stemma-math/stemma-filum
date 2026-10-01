@@ -28,6 +28,8 @@ class App {
   stage = $state<Stage>("welcome");
   panel = $state<Panel | null>(null);
   groups = $state<string[]>([]);
+  /** What each group calls itself, by short name, when the server said. */
+  groupNames = $state<Record<string, string>>({});
   /** The groups whose details this person may change on the web. */
   managed = $state<string[]>([]);
   /** The group the rail shows; one at a time. */
@@ -112,16 +114,23 @@ class App {
     await this.boot();
   }
 
+  /** What a group calls itself, or its short name when that is not known. */
+  nameOf(group: string): string {
+    return this.groupNames[group] ?? group;
+  }
+
   async #loadGroups() {
     const active = this.#groupsRequest();
     // Offline, nothing is offered: the page it opens is on the server.
-    const [groups, managed] = await Promise.all([
+    const [groups, managed, names] = await Promise.all([
       api.groups().catch((): string[] => []),
       api.managedGroups().catch((): string[] => []),
+      api.groupNames().catch((): Record<string, string> => ({})),
     ]);
     if (!active()) return;
     this.groups = groups;
     this.managed = managed;
+    this.groupNames = { ...this.groupNames, ...names };
     if (this.group && !groups.includes(this.group)) this.group = null;
     this.group ??= groups[0] ?? null;
   }

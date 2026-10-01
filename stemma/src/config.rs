@@ -51,6 +51,10 @@ pub struct JobConfig {
     /// How many gigabytes the workspaces of finished jobs may take
     /// together before the oldest are removed.
     pub workspaces_gigabytes: u64,
+    /// Whether the background service keeps running jobs, and lines in
+    /// step, while the application is closed. When not, it stops with the
+    /// application and starts again when it opens.
+    pub while_closed: bool,
 }
 
 impl Default for JobConfig {
@@ -58,6 +62,7 @@ impl Default for JobConfig {
         Self {
             timeout_minutes: 20,
             workspaces_gigabytes: 10,
+            while_closed: true,
         }
     }
 }

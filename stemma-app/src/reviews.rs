@@ -118,92 +118,98 @@ impl Moved {
 
 /// The proposals waiting for this person's decision, and the last ones
 /// they decided.
-#[tauri::command(async)]
-pub fn proposals() -> Result<Reviews, String> {
-    let session = Session::open()?;
-    let reviews = session.server.reviews(&session.token).map_err(failed)?;
-    Ok(Reviews {
-        waiting: reviews.proposals.into_iter().map(Waiting::from).collect(),
-        recent: reviews.recent.into_iter().map(Waiting::from).collect(),
+#[tauri::command]
+pub async fn proposals() -> Result<Reviews, String> {
+    crate::blocking(move || -> Result<Reviews, String> {
+        let session = Session::open()?;
+        let reviews = session.server.reviews(&session.token).map_err(failed)?;
+        Ok(Reviews {
+            waiting: reviews.proposals.into_iter().map(Waiting::from).collect(),
+            recent: reviews.recent.into_iter().map(Waiting::from).collect(),
+        })
     })
+    .await
 }
 
 /// One proposal, compared row by row against the source that stands.
 ///
 /// `current` is the line as the editor has it, when the proposal is
 /// reviewed in its line; otherwise the instance's latest revision is used.
-#[tauri::command(async)]
-pub fn proposal(proposal: String, current: Option<String>) -> Result<Review, String> {
-    let session = Session::open()?;
-    let offered = session
-        .server
-        .proposal(&session.token, &proposal)
-        .map_err(failed)?;
+#[tauri::command]
+pub async fn proposal(proposal: String, current: Option<String>) -> Result<Review, String> {
+    crate::blocking(move || -> Result<Review, String> {
+        let session = Session::open()?;
+        let offered = session
+            .server
+            .proposal(&session.token, &proposal)
+            .map_err(failed)?;
 
-    let stands = offered.stands.clone().unwrap_or_default();
-    let current = current.or(offered.current.clone());
-    let (merged, outdated) = merged(&stands, current.as_deref(), &offered.source)?;
-    let rows = diff::between(&stands, &offered.source);
-    let frozen = diff::frozen(&stands);
-    let extent = diff::extent(&rows).said();
-    let library_files = offered
-        .library_change
-        .as_ref()
-        .map(|change| {
-            change
-                .files
-                .iter()
-                .map(|file| LibraryFileReview {
-                    path: file.path.clone(),
-                    rows: diff::between(
-                        file.before.as_deref().unwrap_or(""),
-                        file.after.as_deref().unwrap_or(""),
-                    )
-                    .into_iter()
-                    .map(|row| Moved::of(row, false))
-                    .collect(),
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(Review {
-        proposal: offered.proposal,
-        group: offered.group,
-        side: offered.side,
-        line: offered.line,
-        task: offered.task,
-        agent: offered.agent,
-        vendor: offered.vendor,
-        model: offered.model,
-        prompt_revision: offered.prompt_revision,
-        operations: offered.operations,
-        explanation: offered.explanation,
-        effort: offered.effort,
-        state: offered.state,
-        extent,
-        rows: rows
-            .into_iter()
-            .map(|row| {
-                let frozen = row.before.is_some_and(|at| frozen.contains(&at));
-                Moved::of(row, frozen)
+        let stands = offered.stands.clone().unwrap_or_default();
+        let current = current.or(offered.current.clone());
+        let (merged, outdated) = merged(&stands, current.as_deref(), &offered.source)?;
+        let rows = diff::between(&stands, &offered.source);
+        let frozen = diff::frozen(&stands);
+        let extent = diff::extent(&rows).said();
+        let library_files = offered
+            .library_change
+            .as_ref()
+            .map(|change| {
+                change
+                    .files
+                    .iter()
+                    .map(|file| LibraryFileReview {
+                        path: file.path.clone(),
+                        rows: diff::between(
+                            file.before.as_deref().unwrap_or(""),
+                            file.after.as_deref().unwrap_or(""),
+                        )
+                        .into_iter()
+                        .map(|row| Moved::of(row, false))
+                        .collect(),
+                    })
+                    .collect()
             })
-            .collect(),
-        source: offered.source,
-        stands: offered.stands,
-        current,
-        merged,
-        outdated,
-        decision: offered.decision,
-        note: offered.note,
-        reviewer: offered.reviewer,
-        decided_by: offered.decided_by,
-        members: offered.members,
-        lean_source: offered.lean_source,
-        formal_review: offered.formal_review,
-        library_files,
-        findings: offered.findings,
+            .unwrap_or_default();
+
+        Ok(Review {
+            proposal: offered.proposal,
+            group: offered.group,
+            side: offered.side,
+            line: offered.line,
+            task: offered.task,
+            agent: offered.agent,
+            vendor: offered.vendor,
+            model: offered.model,
+            prompt_revision: offered.prompt_revision,
+            operations: offered.operations,
+            explanation: offered.explanation,
+            effort: offered.effort,
+            state: offered.state,
+            extent,
+            rows: rows
+                .into_iter()
+                .map(|row| {
+                    let frozen = row.before.is_some_and(|at| frozen.contains(&at));
+                    Moved::of(row, frozen)
+                })
+                .collect(),
+            source: offered.source,
+            stands: offered.stands,
+            current,
+            merged,
+            outdated,
+            decision: offered.decision,
+            note: offered.note,
+            reviewer: offered.reviewer,
+            decided_by: offered.decided_by,
+            members: offered.members,
+            lean_source: offered.lean_source,
+            formal_review: offered.formal_review,
+            library_files,
+            findings: offered.findings,
+        })
     })
+    .await
 }
 
 /// The line as it would be with the proposal, and the blocks on which the
@@ -235,42 +241,45 @@ fn merged(
 }
 
 /// Records the reviewer's decision about a proposal.
-#[tauri::command(async)]
-pub fn decide_proposal(
+#[tauri::command]
+pub async fn decide_proposal(
     proposal: String,
     decision: Verdict,
     note: Option<String>,
 ) -> Result<String, String> {
-    carried_out(|home, out| {
-        stemma::proposals::decide_with_note(home, &proposal, decision, note.as_deref(), out)
+    crate::blocking(move || -> Result<String, String> {
+        carried_out(|home, out| {
+            stemma::proposals::decide_with_note(home, &proposal, decision, note.as_deref(), out)
+        })
     })
-}
-
-/// Writes an accepted proposal into this machine's clone.
-#[tauri::command(async)]
-pub fn apply_proposal(proposal: String) -> Result<String, String> {
-    carried_out(|home, out| stemma::proposals::apply(home, &proposal, out))
+    .await
 }
 
 /// Hands the review of a proposal to another member of the group.
-#[tauri::command(async)]
-pub fn handoff_proposal(proposal: String, reviewer: String) -> Result<(), String> {
-    let session = Session::open()?;
-    session
-        .server
-        .handoff_proposal(&session.token, &proposal, &reviewer)
-        .map_err(failed)
+#[tauri::command]
+pub async fn handoff_proposal(proposal: String, reviewer: String) -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        let session = Session::open()?;
+        session
+            .server
+            .handoff_proposal(&session.token, &proposal, &reviewer)
+            .map_err(failed)
+    })
+    .await
 }
 
 /// Every proposal made for a line, decided or not.
-#[tauri::command(async)]
-pub fn line_history(path: String) -> Result<Vec<stemma::api::LineProposal>, String> {
-    let line = LineAt::admit(&path)?;
-    let session = Session::open()?;
-    session
-        .server
-        .line_proposals(&session.token, &line.group, &line.side, &line.name)
-        .map_err(failed)
+#[tauri::command]
+pub async fn line_history(path: String) -> Result<Vec<stemma::api::LineProposal>, String> {
+    crate::blocking(move || -> Result<Vec<stemma::api::LineProposal>, String> {
+        let line = LineAt::admit(&path)?;
+        let session = Session::open()?;
+        session
+            .server
+            .line_proposals(&session.token, &line.group, &line.side, &line.name)
+            .map_err(failed)
+    })
+    .await
 }
 
 #[cfg(test)]

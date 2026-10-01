@@ -88,6 +88,9 @@ pub async fn view(
             .read(move |connection| claims::holder(connection, &id, side, name.as_str(), &owner))
             .await?
     };
+    let editable = editable(&instance, &signed, &group.id, side, &name)
+        .await
+        .is_ok();
     let chrome = super::layout::around(&instance, &signed, digest.shown_as().to_owned())
         .await?
         .at(format!("/g/{}", group.slug()));
@@ -113,9 +116,157 @@ pub async fn view(
             signed: &signed,
             written: written.as_ref(),
             audits: &audits,
+            editable,
         }),
     )
     .into_response())
+}
+
+/// The line, when the reader may change its title and description: a
+/// line they may write, as a machine of theirs would be let write it.
+async fn editable(
+    instance: &Instance,
+    signed: &SignedIn,
+    group: &GroupId,
+    side: Side,
+    name: &Name,
+) -> Result<crate::store::lines::Started, WebError> {
+    let (group, name, reader) = (group.clone(), name.clone(), signed.user.id.clone());
+
+    instance
+        .read(move |connection| {
+            crate::store::lines::by_name(connection, &group, side, &name, &reader)
+        })
+        .await?
+        .filter(|line| line.admits(&signed.user.id))
+        .ok_or(WebError::NotFound)
+}
+
+/// What the form to change a line's title and description sends.
+#[derive(Debug, serde::Deserialize)]
+pub struct Details {
+    /// The form's signature.
+    pub form_token: String,
+    /// The title.
+    pub title: String,
+    /// The description; empty for none.
+    #[serde(default)]
+    pub description: String,
+}
+
+/// Asks for a line's new title and description.
+pub async fn edit_form(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path((group, side, line)): Path<(String, String, String)>,
+) -> Result<Response, WebError> {
+    let (group, _, side) = admit(&instance, &signed, &group, &side).await?;
+    let name = Name::parse(&line).map_err(|_| WebError::NotFound)?;
+    editable(&instance, &signed, &group.id, side, &name).await?;
+    let written = written(&instance, &group.id, side, &signed, &name)
+        .await?
+        .ok_or(WebError::NotFound)?;
+    let declared = declared(&name, &written.source);
+    edit_dialog(&instance, &signed, &group, side, &declared, None).await
+}
+
+/// The dialog that changes a line's title and description.
+async fn edit_dialog(
+    instance: &Instance,
+    signed: &SignedIn,
+    group: &Group,
+    side: Side,
+    line: &LineDigest,
+    problem: Option<&str>,
+) -> Result<Response, WebError> {
+    let back = format!("/g/{}/{}/{}", group.slug(), side, line.name);
+    let chrome = super::layout::around(instance, signed, format!("Edit {}", line.shown_as()))
+        .await?
+        .at(format!("/g/{}", group.slug()));
+
+    Ok(page(
+        &chrome,
+        super::layout::dialog(
+            "Edit the line",
+            &back,
+            html! {
+                @if let Some(problem) = problem {
+                    (super::layout::message(super::layout::Kind::Error, problem))
+                }
+                form method="post" action={ (back) "/edit" } {
+                    (signature(signed))
+                    div class="field" {
+                        label class="field__label" for="title" { "Title" }
+                        input class="input" type="text" id="title" name="title"
+                              value=(line.title.as_deref().unwrap_or_default()) autofocus required;
+                    }
+                    div class="field" {
+                        label class="field__label" for="description" { "Description" }
+                        textarea class="input" id="description" name="description" rows="3" {
+                            (line.description.as_deref().unwrap_or_default())
+                        }
+                        span class="field__hint" {
+                            "Shown under the line's title. Leave it empty to show nothing."
+                        }
+                    }
+                    (super::layout::dialog_actions(&back, "Save", false))
+                }
+            },
+        ),
+    )
+    .into_response())
+}
+
+/// Changes a line's title and description.
+pub async fn edit(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path((group, side, line)): Path<(String, String, String)>,
+    axum::Form(details): axum::Form<Details>,
+) -> Result<Response, WebError> {
+    signed.check_form(&details.form_token)?;
+    let (group, _, side) = admit(&instance, &signed, &group, &side).await?;
+    let name = Name::parse(&line).map_err(|_| WebError::NotFound)?;
+    let started = editable(&instance, &signed, &group.id, side, &name).await?;
+    let back = format!("/g/{}/{}/{}", group.slug(), side, name);
+
+    if details.title.trim().is_empty() {
+        let line = LineDigest {
+            title: None,
+            description: Some(details.description.clone()),
+            ..declared(&name, "")
+        };
+        return edit_dialog(
+            &instance,
+            &signed,
+            &group,
+            side,
+            &line,
+            Some("The line needs a title."),
+        )
+        .await;
+    }
+
+    let (line, writer) = (started.id, signed.user.id.clone());
+    let refused = instance
+        .write(move |connection| {
+            crate::store::revisions::retitle(
+                connection,
+                &line,
+                &writer,
+                &details.title,
+                Some(&details.description),
+            )
+        })
+        .await?
+        .err();
+    if let Some(refused) = refused {
+        return Err(WebError::BadRequest(format!(
+            "The line was not changed: {refused}."
+        )));
+    }
+
+    Ok(axum::response::Redirect::to(&back).into_response())
 }
 
 /// Every line one repository holds, as its sources declare them.
@@ -328,6 +479,8 @@ struct Viewing<'a> {
     written: Option<&'a Written>,
     /// Human correspondence records for its central formal statements.
     audits: &'a [crate::store::formal_audits::FormalAudit],
+    /// Whether the reader may change its title and description.
+    editable: bool,
 }
 
 /// The line itself: its typeset page, then its statements in order beside
@@ -343,6 +496,7 @@ fn body(viewing: &Viewing<'_>) -> Markup {
         signed,
         written,
         audits,
+        editable,
     } = *viewing;
     let boxes = digest.line.boxes();
     let central = digest.line.central();
@@ -360,7 +514,14 @@ fn body(viewing: &Viewing<'_>) -> Markup {
                 span aria-current="page" { (digest.shown_as()) }
             }
             div class="page-head__text" {
-                h1 class="page-title" { (digest.shown_as()) }
+                div class="page-title-row" {
+                    h1 class="page-title" { (digest.shown_as()) }
+                    @if editable {
+                        a class="button button--small" href={ (at) "/edit" } data-dialog-link {
+                            (super::layout::glyph("edit")) "Edit"
+                        }
+                    }
+                }
                 div class="page-meta" {
                     span class="identifier" { "lines/" (digest.name) }
                     @match side {

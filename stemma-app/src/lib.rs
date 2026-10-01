@@ -54,6 +54,7 @@ pub fn run() {
             workspace::standing,
             workspace::send_now,
             workspace::groups,
+            workspace::group_names,
             workspace::managed_groups,
             workspace::lines,
             workspace::new_line,
@@ -72,6 +73,8 @@ pub fn run() {
             claims::parted,
             claims::settle,
             machine::machine,
+            machine::rename_machine,
+            machine::set_while_closed,
             machine::job_output,
             machine::cancel_job,
             machine::clear_job,
@@ -93,7 +96,6 @@ pub fn run() {
             reviews::proposals,
             reviews::proposal,
             reviews::decide_proposal,
-            reviews::apply_proposal,
             reviews::handoff_proposal,
             reviews::line_history,
             links::take_open_review,
@@ -102,8 +104,28 @@ pub fn run() {
             vault::vault_bridge,
             vault::vault_audit,
         ])
-        .run(tauri::generate_context!())
-        .expect("the Stemma application could not start");
+        .build(tauri::generate_context!())
+        .expect("the Stemma application could not start")
+        .run(|_, event| {
+            // Lake and git, started for a check, would otherwise go on
+            // fetching after the window is gone, and keep the application
+            // listed as running.
+            if let tauri::RunEvent::Exit = event {
+                stemma::job::agents::stop_everything_started();
+            }
+        });
+}
+
+/// Runs a command's work on a thread set aside for blocking work.
+///
+/// Commands reach the network, run git, typeset and run Lake, and some of
+/// that takes minutes. Run on the async runtime's own threads, a few slow
+/// commands would hold every one of them, and no other command would be
+/// answered until they finished.
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .unwrap_or_else(|error| panic!("a command stopped before it finished: {error}"))
 }
 
 /// The client's home, as the command line would locate it.

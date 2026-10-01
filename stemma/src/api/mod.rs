@@ -310,6 +310,7 @@ impl Server {
         &self,
         token: &str,
         label: &str,
+        device: &str,
         agents: &[stemma_core::machine::Detected],
         groups: Option<&[String]>,
     ) -> Result<Node> {
@@ -318,9 +319,19 @@ impl Server {
             "/api/machines",
             &serde_json::json!({
                 "label": label,
+                "device": device,
                 "agents": agents,
                 "groups": groups,
             }),
+        )
+    }
+
+    /// Gives this machine the name its owner chose.
+    pub fn rename_node(&self, token: &str, label: &str) -> Result<Node> {
+        self.ask(
+            token,
+            "/api/machines/rename",
+            &serde_json::json!({ "label": label }),
         )
     }
 

@@ -322,7 +322,9 @@ pub async fn cancel(
         .await?;
     if !cancelled {
         return Err(WebError::BadRequest(
-            "This job cannot be cancelled.".to_owned(),
+            "This job cannot be cancelled. If it is running, its machine was asked to stop \
+             it and is still connected; it stops at the next point it can."
+                .to_owned(),
         ));
     }
     Ok(Json(json!({ "cancelled": true })).into_response())

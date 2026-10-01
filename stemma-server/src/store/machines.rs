@@ -83,25 +83,108 @@ pub fn register(
     token_id: &str,
     label: &str,
 ) -> Result<Machine> {
-    connection
-        .execute(
-            "INSERT INTO machines (id, user_id, token_id, label, last_seen_at)
-             VALUES (?1, ?2, ?3, ?4, datetime('now'))
-             ON CONFLICT (token_id) DO UPDATE
-                SET label = ?4, last_seen_at = datetime('now'), retired_at = NULL",
-            params![
-                MachineId::generate().to_string(),
-                owner.to_string(),
-                token_id,
-                label.trim()
-            ],
-        )
-        .context("cannot register the machine")?;
+    register_device(connection, owner, token_id, label, None)
+}
+
+/// Registers a machine like [`register`], also knowing the computer it is
+/// by the key that computer keeps.
+///
+/// A computer that signed in again carries a new credential and the same
+/// key, and is the machine it was before: the credential moves to it. The
+/// label it sends is the computer's own name, and replaces the one kept
+/// unless the owner chose one.
+pub fn register_device(
+    connection: &Connection,
+    owner: &UserId,
+    token_id: &str,
+    label: &str,
+    device: Option<&str>,
+) -> Result<Machine> {
+    let label = label.trim();
+    let known = match device {
+        Some(device) => read(
+            connection,
+            "user_id = ?1 AND device = ?2",
+            params![owner.to_string(), device],
+        )?,
+        None => None,
+    };
+
+    match (by_token(connection, token_id)?, known) {
+        (Some(machine), known) => {
+            // A key already kept by another of the owner's machines stays
+            // with that one.
+            let device = match known {
+                Some(other) if other.id != machine.id => None,
+                _ => device,
+            };
+            connection
+                .execute(
+                    "UPDATE machines
+                        SET label = CASE WHEN named_by_owner = 1 THEN label ELSE ?2 END,
+                            device = COALESCE(?3, device),
+                            last_seen_at = datetime('now'), retired_at = NULL
+                      WHERE id = ?1",
+                    params![machine.id.to_string(), label, device],
+                )
+                .context("cannot register the machine")?;
+        }
+        (None, Some(machine)) => {
+            connection
+                .execute(
+                    "UPDATE machines
+                        SET token_id = ?2,
+                            label = CASE WHEN named_by_owner = 1 THEN label ELSE ?3 END,
+                            last_seen_at = datetime('now'), retired_at = NULL
+                      WHERE id = ?1",
+                    params![machine.id.to_string(), token_id, label],
+                )
+                .context("cannot register the machine")?;
+        }
+        (None, None) => {
+            connection
+                .execute(
+                    "INSERT INTO machines (id, user_id, token_id, label, device, last_seen_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
+                    params![
+                        MachineId::generate().to_string(),
+                        owner.to_string(),
+                        token_id,
+                        label,
+                        device,
+                    ],
+                )
+                .context("cannot register the machine")?;
+        }
+    }
 
     let machine = by_token(connection, token_id)?.context("the machine cannot be read back")?;
     tell(connection, &machine.id, None)?;
 
     Ok(machine)
+}
+
+/// Gives one of the owner's machines the name they chose, which later
+/// registrations keep. Says whether there was such a machine.
+pub fn rename(
+    connection: &Connection,
+    machine: &MachineId,
+    owner: &UserId,
+    label: &str,
+) -> Result<bool> {
+    let renamed = connection
+        .execute(
+            "UPDATE machines SET label = ?3, named_by_owner = 1
+              WHERE id = ?1 AND user_id = ?2 AND retired_at IS NULL",
+            params![machine.to_string(), owner.to_string(), label.trim()],
+        )
+        .context("cannot rename the machine")?
+        > 0;
+    if renamed {
+        tell(connection, machine, None)?;
+    }
+
+    Ok(renamed)
 }
 
 /// Says a machine changed, to its owner and to the groups it serves, who
@@ -481,6 +564,47 @@ mod tests {
         assert_eq!(again.label, "the laptop");
 
         assert_eq!(for_user(connection, &ana).unwrap(), vec![again]);
+    }
+
+    #[test]
+    fn a_name_the_owner_chose_outlives_registering_again() {
+        let database = test_database();
+        let connection = database.connection();
+        let (ana, token) = account(connection, "ana");
+        let machine = register(connection, &ana, &token, "MacBook Air").unwrap();
+
+        assert!(rename(connection, &machine.id, &ana, "  Office laptop ").unwrap());
+        let again = register(connection, &ana, &token, "MacBook Air").unwrap();
+        assert_eq!(again.label, "Office laptop");
+
+        let (enric, _) = account(connection, "enric");
+        assert!(!rename(connection, &machine.id, &enric, "Mine now").unwrap());
+    }
+
+    #[test]
+    fn signing_in_again_from_the_same_computer_finds_the_same_machine() {
+        let database = test_database();
+        let connection = database.connection();
+        let (ana, first_token) = account(connection, "ana");
+        let first =
+            register_device(connection, &ana, &first_token, "MacBook Air", Some("key")).unwrap();
+
+        let second_token = "ses:ana-again";
+        connection
+            .execute(
+                "INSERT INTO client_tokens (id, user_id, label, token_hash)
+                 VALUES (?1, ?2, 'a machine', ?1)",
+                params![second_token, ana.to_string()],
+            )
+            .unwrap();
+        let again =
+            register_device(connection, &ana, second_token, "MacBook Air", Some("key")).unwrap();
+        assert_eq!(again.id, first.id, "signing in again made a second machine");
+        assert_eq!(for_user(connection, &ana).unwrap().len(), 1);
+
+        let elsewhere =
+            register_device(connection, &ana, &first_token, "Desktop", Some("other")).unwrap();
+        assert_ne!(elsewhere.id, first.id);
     }
 
     #[test]

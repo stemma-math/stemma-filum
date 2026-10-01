@@ -52,7 +52,7 @@ pub fn carry_out_controlled(
     };
 
     if task == Task::Build {
-        return build(home, instance, handed);
+        return build(home, instance, handed, cancelled);
     }
 
     let source = match read_at(instance, handed, handed.revision) {
@@ -539,30 +539,48 @@ fn repository_of(home: &Home, handed: &Handed) -> Option<PathBuf> {
 
 /// Builds the repository a line is in and publishes it, as the instance
 /// asked: the machine that wrote the line did not.
-fn build(home: &Home, instance: &Instance, handed: &Handed) -> Completed {
-    let built = (|| -> anyhow::Result<crate::build::Published> {
+fn build(
+    home: &Home,
+    instance: &Instance,
+    handed: &Handed,
+    cancelled: &std::sync::atomic::AtomicBool,
+) -> Completed {
+    // Each step of a build runs to its end, so a cancellation is heard
+    // between them, and nothing is published after one.
+    let is_cancelled = || cancelled.load(std::sync::atomic::Ordering::Relaxed);
+    let built = (|| -> anyhow::Result<Option<crate::build::Published>> {
         let mirror = Mirror::at(home)?;
         let round = mirror.step(instance, true, &Which::All);
         if let Some(stopped) = round.stopped {
             anyhow::bail!("{stopped}");
         }
+        if is_cancelled() {
+            return Ok(None);
+        }
 
         let side: Side = handed.side.parse()?;
         let built = crate::build::read(&mirror, &handed.group, side)?;
+        if is_cancelled() {
+            return Ok(None);
+        }
         let credentials = crate::account::credentials::Credentials::read(&home.credentials_file())?;
         let published = crate::build::publish(&built, credentials.as_ref());
         if published == crate::build::Published::Kept {
             mirror.built(&built.nodes)?;
         }
 
-        Ok(published)
+        Ok(Some(published))
     })();
 
     Completed::only(match built {
-        Ok(crate::build::Published::Kept) => Outcome::Produced {
+        Ok(None) => Outcome::Broke {
+            code: "cancelled".to_owned(),
+            said: "the job was cancelled by its launcher".to_owned(),
+        },
+        Ok(Some(crate::build::Published::Kept)) => Outcome::Produced {
             said: "its pages were built and published".to_owned(),
         },
-        Ok(other) => Outcome::out_of_reach(other.to_string()),
+        Ok(Some(other)) => Outcome::out_of_reach(other.to_string()),
         Err(error) => Outcome::out_of_reach(format!("{error:#}")),
     })
 }

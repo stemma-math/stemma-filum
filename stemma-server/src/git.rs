@@ -1051,12 +1051,12 @@ pub fn write_pins(
     Ok(commit)
 }
 
-/// Repairs the unpublished default Stemma pin in an existing group. The
-/// replacement is a commit already present in the published main build.
-pub fn upgrade_unpublished_stemma_pin(
-    repositories: &Repositories,
-    group: &GroupId,
-) -> Result<Option<String>> {
+/// Repairs pins an earlier default left in an existing group: the
+/// Stemma tag that was never published, which becomes a commit already
+/// in the published main build, and a Mathlib built with another Lean
+/// than the default one pinned beside it, which becomes the release
+/// built with that Lean.
+pub fn upgrade_legacy_pins(repositories: &Repositories, group: &GroupId) -> Result<Option<String>> {
     let shared = repositories.shared(group);
     if !exists(&shared) {
         return Ok(None);
@@ -1064,10 +1064,18 @@ pub fn upgrade_unpublished_stemma_pin(
     let head = head_commit(&shared).context("the shared library has no branch")?;
     let written = show(&shared, &head, repository::MANIFEST)?;
     let mut pins = Manifest::parse(&written)?.pins;
-    if pins.stemma.as_deref() != Some(repository::UNPUBLISHED_STEMMA) {
+    let unpublished = pins.stemma.as_deref() == Some(repository::UNPUBLISHED_STEMMA);
+    let mismatched = pins.lean.as_deref() == Some(repository::DEFAULT_LEAN)
+        && pins.mathlib.as_deref() == Some(repository::MISMATCHED_MATHLIB);
+    if !unpublished && !mismatched {
         return Ok(None);
     }
-    pins.stemma = Some(repository::DEFAULT_STEMMA.to_owned());
+    if unpublished {
+        pins.stemma = Some(repository::DEFAULT_STEMMA.to_owned());
+    }
+    if mismatched {
+        pins.mathlib = Some(repository::DEFAULT_MATHLIB.to_owned());
+    }
     let author = Author {
         name: COMMITTER.0,
         email: COMMITTER.1,
@@ -1595,10 +1603,10 @@ mod tests {
         let path = repositories.shared(&group());
         ensure(&path, &old).unwrap();
 
-        let commit = upgrade_unpublished_stemma_pin(&repositories, &group()).unwrap();
+        let commit = upgrade_legacy_pins(&repositories, &group()).unwrap();
         assert!(commit.is_some());
         assert!(
-            upgrade_unpublished_stemma_pin(&repositories, &group())
+            upgrade_legacy_pins(&repositories, &group())
                 .unwrap()
                 .is_none()
         );
@@ -1612,6 +1620,34 @@ mod tests {
             show(&path, &head, repository::LAKEFILE)
                 .unwrap()
                 .contains(repository::DEFAULT_STEMMA)
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_existing_group_with_a_mismatched_mathlib_gets_the_one_built_with_its_lean() {
+        let root = somewhere("old-mathlib-pin");
+        let repositories = Repositories::new(&root);
+        let mut old = manifest();
+        old.pins.mathlib = Some(repository::MISMATCHED_MATHLIB.to_owned());
+        let path = repositories.shared(&group());
+        ensure(&path, &old).unwrap();
+
+        assert!(
+            upgrade_legacy_pins(&repositories, &group())
+                .unwrap()
+                .is_some()
+        );
+        let head = head_commit(&path).unwrap();
+        let current = Manifest::parse(&show(&path, &head, repository::MANIFEST).unwrap()).unwrap();
+        assert_eq!(
+            current.pins.mathlib.as_deref(),
+            Some(repository::DEFAULT_MATHLIB)
+        );
+        assert!(
+            show(&path, &head, repository::LAKEFILE)
+                .unwrap()
+                .contains(&format!("rev = \"{}\"", repository::DEFAULT_MATHLIB))
         );
         std::fs::remove_dir_all(root).unwrap();
     }

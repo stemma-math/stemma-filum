@@ -143,6 +143,9 @@ fn run(cli: Cli) -> Result<bool> {
                 node::init(home, &groups, out)?;
             }
             NodeCommand::Status => return node::status(home, out),
+            NodeCommand::Rename { name } => {
+                node::rename(home, &name, out)?;
+            }
         },
 
         Command::Daemon { command } => match command {

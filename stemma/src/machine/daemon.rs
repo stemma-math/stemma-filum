@@ -35,6 +35,10 @@ use crate::mirror::{self, Instance, Mirror, Store, Which};
 /// should find out without being restarted.
 const LOOK_EVERY: Duration = Duration::from_secs(10 * 60);
 
+/// How long a daemon that works only while the application is open waits,
+/// when it starts, for the application that started it to open its window.
+const WINDOW_GRACE: Duration = Duration::from_secs(20);
+
 /// How long to wait after failing to reach the instance.
 const AFTER_TROUBLE: Duration = Duration::from_secs(30);
 
@@ -59,6 +63,10 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
         if let Err(error) = Started::record(home) {
             writeln!(out, "{error:#}")?;
         }
+    }
+
+    if !once && paused(home, WINDOW_GRACE) {
+        return say_paused(out);
     }
 
     let (credentials, server) = session::connect(home)?;
@@ -108,6 +116,11 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
     out.flush()?;
 
     loop {
+        // A job already running finishes first; the next is not taken.
+        if !once && paused(home, Duration::ZERO) {
+            return say_paused(out);
+        }
+
         if looked.elapsed() >= LOOK_EVERY {
             agents = crate::job::agents::look(home, &config);
             looked = Instant::now();
@@ -167,6 +180,39 @@ pub fn run(home: &Home, once: bool, out: &mut impl Write) -> Result<()> {
             return Ok(());
         }
     }
+}
+
+/// Whether this machine works only while the application is open and
+/// the application is closed, after waiting up to `grace` for it to open.
+///
+/// The setting is read each time, so changing it needs no restart.
+fn paused(home: &Home, grace: Duration) -> bool {
+    let only_while_open =
+        || Config::read(&home.config_file()).is_ok_and(|config| !config.jobs.while_closed);
+    let store = Store::at(home.state_dir());
+    let deadline = Instant::now() + grace;
+
+    loop {
+        if !only_while_open() || store.window_open() {
+            return false;
+        }
+        if Instant::now() >= deadline {
+            return true;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+/// Says why the daemon is stopping, and stops it cleanly, which its
+/// supervisor leaves alone until the application starts it again.
+fn say_paused(out: &mut impl Write) -> Result<()> {
+    writeln!(
+        out,
+        "The application is closed, and this machine runs jobs only while it is open."
+    )?;
+    out.flush()?;
+
+    Ok(())
 }
 
 fn wait_for_registration(woken: &Receiver<()>, mut registered: impl FnMut() -> Result<bool>) {
@@ -509,6 +555,33 @@ mod tests {
     use stemma_core::machine::Availability;
 
     use super::*;
+
+    #[test]
+    fn a_machine_that_works_only_while_the_app_is_open_stops_when_it_is_closed() {
+        let root = std::env::temp_dir().join(format!("stemma-paused-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = Home::locate(&crate::home::Environment::from_pairs([(
+            crate::home::HOME_VARIABLE,
+            root.to_str().unwrap(),
+        )]));
+
+        assert!(
+            !paused(&home, Duration::ZERO),
+            "by default it keeps working"
+        );
+
+        let mut config = Config::default();
+        config.jobs.while_closed = false;
+        config.write(&home.config_file()).unwrap();
+        assert!(paused(&home, Duration::ZERO));
+
+        let window = Store::at(home.state_dir()).hold_window().unwrap();
+        assert!(!paused(&home, Duration::ZERO), "the app is open");
+        drop(window);
+        assert!(paused(&home, Duration::ZERO));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn registration_after_start_wakes_the_daemon() {

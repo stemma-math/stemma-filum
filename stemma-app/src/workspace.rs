@@ -133,66 +133,94 @@ pub struct Known {
 
 /// Where every line that is not simply sent stands, and whether the
 /// instance could be reached the last time it was tried.
-#[tauri::command(async)]
-pub fn standing() -> engine::Said {
-    engine::last()
+#[tauri::command]
+pub async fn standing() -> engine::Said {
+    crate::blocking(move || -> engine::Said { engine::last() }).await
 }
 
 /// Sends every line with something new, now, rather than after the
 /// pause: for when the window is about to close.
-#[tauri::command(async)]
-pub fn send_now() -> Result<(), String> {
-    let home = home();
-    let mirror = Mirror::at(&home).map_err(failed)?;
-    let instance = Instance::connect(&home).map_err(failed)?;
-    let report = mirror.send(&instance, &Which::All);
-    engine::nudge(Nudge::Now);
+#[tauri::command]
+pub async fn send_now() -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        let home = home();
+        let mirror = Mirror::at(&home).map_err(failed)?;
+        let instance = Instance::connect(&home).map_err(failed)?;
+        let report = mirror.send(&instance, &Which::All);
+        engine::nudge(Nudge::Now);
 
-    match report.stopped {
-        Some(stopped) => Err(stopped),
-        None => Ok(()),
-    }
+        match report.stopped {
+            Some(stopped) => Err(stopped),
+            None => Ok(()),
+        }
+    })
+    .await
 }
 
 /// The groups this person belongs to, sorted: as the instance says, or,
 /// when it cannot be reached, as it last said. Nothing on this machine
 /// makes a group appear.
-#[tauri::command(async)]
-pub fn groups() -> Result<Vec<String>, String> {
-    let listed = Session::open()
-        .and_then(|session| session.server.workspace(&session.token).map_err(failed));
+#[tauri::command]
+pub async fn groups() -> Result<Vec<String>, String> {
+    crate::blocking(move || -> Result<Vec<String>, String> {
+        let listed = Session::open()
+            .and_then(|session| session.server.workspace(&session.token).map_err(failed));
 
-    match listed {
-        Ok(workspace) => {
-            let mut groups: Vec<String> = workspace
-                .groups
-                .into_iter()
-                .map(|group| group.slug)
-                .collect();
-            groups.sort();
-            Ok(groups)
+        match listed {
+            Ok(workspace) => {
+                let mut groups: Vec<String> = workspace
+                    .groups
+                    .into_iter()
+                    .map(|group| group.slug)
+                    .collect();
+                groups.sort();
+                Ok(groups)
+            }
+            Err(_) => Mirror::at(&home())
+                .and_then(|mirror| mirror.groups())
+                .map_err(failed),
         }
-        Err(_) => Mirror::at(&home())
-            .and_then(|mirror| mirror.groups())
-            .map_err(failed),
-    }
+    })
+    .await
+}
+
+/// What each group calls itself, by its short name, as the instance says;
+/// nothing when it cannot be reached, and the short names stand in.
+#[tauri::command]
+pub async fn group_names() -> std::collections::BTreeMap<String, String> {
+    crate::blocking(move || {
+        Session::open()
+            .and_then(|session| session.server.workspace(&session.token).map_err(failed))
+            .map(|workspace| {
+                workspace
+                    .groups
+                    .into_iter()
+                    .map(|group| (group.slug, group.name))
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+    .await
 }
 
 /// The groups whose details this person may change, as the instance says.
 ///
 /// Asked of the server rather than read from the machine, because a role
 /// changes there and nowhere else.
-#[tauri::command(async)]
-pub fn managed_groups() -> Result<Vec<String>, String> {
-    let session = Session::open()?;
-    let workspace = session.server.workspace(&session.token).map_err(failed)?;
+#[tauri::command]
+pub async fn managed_groups() -> Result<Vec<String>, String> {
+    crate::blocking(move || -> Result<Vec<String>, String> {
+        let session = Session::open()?;
+        let workspace = session.server.workspace(&session.token).map_err(failed)?;
 
-    Ok(workspace
-        .groups
-        .into_iter()
-        .filter(|group| manages(&group.role))
-        .map(|group| group.slug)
-        .collect())
+        Ok(workspace
+            .groups
+            .into_iter()
+            .filter(|group| manages(&group.role))
+            .map(|group| group.slug)
+            .collect())
+    })
+    .await
 }
 
 /// Whether a role, as the instance spells it, may change a group's details.
@@ -203,64 +231,80 @@ fn manages(role: &str) -> bool {
 
 /// Every line on this machine, with the title and description its source
 /// declares and where it stands.
-#[tauri::command(async)]
-pub fn lines() -> Result<Vec<Known>, String> {
-    let mirror = Mirror::at(&home()).map_err(failed)?;
-    let records = mirror.records().map_err(failed)?;
-    let standing = mirror.standing().map_err(failed)?;
+#[tauri::command]
+pub async fn lines() -> Result<Vec<Known>, String> {
+    crate::blocking(move || -> Result<Vec<Known>, String> {
+        let mirror = Mirror::at(&home()).map_err(failed)?;
+        let records = mirror.records().map_err(failed)?;
+        let standing = mirror.standing().map_err(failed)?;
 
-    let mut found: Vec<Known> = records
-        .iter()
-        .map(|record| {
-            let document = Document::parse(&record.source).ok();
-            Known {
-                group: record.group.clone(),
-                side: record.side.as_str().to_owned(),
-                name: record.name.clone(),
-                title: document
-                    .as_ref()
-                    .map(|document| document.title.clone())
-                    .filter(|title| !title.trim().is_empty()),
-                description: document.and_then(|document| document.description),
-                path: mirror.entry(record).display().to_string(),
-                state: standing
-                    .iter()
-                    .find(|line| line.id == record.id)
-                    .map_or(State::Sent, |line| line.state),
-            }
-        })
-        .collect();
+        let mut found: Vec<Known> = records
+            .iter()
+            .map(|record| {
+                let document = Document::parse(&record.source).ok();
+                Known {
+                    group: record.group.clone(),
+                    side: record.side.as_str().to_owned(),
+                    name: record.name.clone(),
+                    title: document
+                        .as_ref()
+                        .map(|document| document.title.clone())
+                        .filter(|title| !title.trim().is_empty()),
+                    description: document.and_then(|document| document.description),
+                    path: mirror.entry(record).display().to_string(),
+                    state: standing
+                        .iter()
+                        .find(|line| line.id == record.id)
+                        .map_or(State::Sent, |line| line.state),
+                }
+            })
+            .collect();
 
-    found.sort_by(|a, b| (&a.group, &a.side, &a.name).cmp(&(&b.group, &b.side, &b.name)));
-    Ok(found)
+        found.sort_by(|a, b| (&a.group, &a.side, &a.name).cmp(&(&b.group, &b.side, &b.name)));
+        Ok(found)
+    })
+    .await
 }
 
-#[tauri::command(async)]
-pub fn new_line(
+#[tauri::command]
+pub async fn new_line(
     group: String,
     title: String,
     description: Option<String>,
     shared: bool,
 ) -> Result<String, String> {
-    carried_out(|home, out| {
-        stemma::lines::start(home, &group, &title, description.as_deref(), shared, out)
+    crate::blocking(move || -> Result<String, String> {
+        carried_out(|home, out| {
+            stemma::lines::start(home, &group, &title, description.as_deref(), shared, out)
+        })
     })
+    .await
 }
 
 /// Removes one of this person's private lines; its history is kept.
-#[tauri::command(async)]
-pub fn delete_line(path: String) -> Result<String, String> {
-    let line = LineAt::admit(&path)?;
-    carried_out(|home, out| stemma::lines::delete(home, line.directory(), None, out))
+#[tauri::command]
+pub async fn delete_line(path: String) -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        let line = LineAt::admit(&path)?;
+        carried_out(|home, out| stemma::lines::delete(home, line.directory(), None, out))
+    })
+    .await
 }
 
 /// Moves a private line into the group's shared repository.
-#[tauri::command(async)]
-pub fn share_line(path: String, history: bool, mine_to_write: bool) -> Result<String, String> {
-    let line = LineAt::admit(&path)?;
-    carried_out(|home, out| {
-        stemma::lines::share(home, line.directory(), None, history, mine_to_write, out)
+#[tauri::command]
+pub async fn share_line(
+    path: String,
+    history: bool,
+    mine_to_write: bool,
+) -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        let line = LineAt::admit(&path)?;
+        carried_out(|home, out| {
+            stemma::lines::share(home, line.directory(), None, history, mine_to_write, out)
+        })
     })
+    .await
 }
 
 #[cfg(test)]

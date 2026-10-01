@@ -314,6 +314,10 @@ fn pages() -> Router<Instance> {
         .route("/g/{slug}/vault/obligations", post(vault::assign))
         .route("/audit-obligations/{id}/decide", post(vault::decide))
         .route("/g/{slug}/{side}/{line}", get(lines::view))
+        .route(
+            "/g/{slug}/{side}/{line}/edit",
+            get(lines::edit_form).post(lines::edit),
+        )
         .route("/g/{slug}/{side}/{line}/page", get(revisions::page))
         .route("/g/{slug}/{side}/{line}/line.json", get(revisions::source))
         .route("/g/{slug}/{side}/{line}/jobs", post(jobs::launch))
@@ -325,11 +329,14 @@ fn pages() -> Router<Instance> {
         .route("/machines/{id}", get(machines::panel))
         .route("/machines/{id}/serve", post(machines::serve))
         .route(
+            "/machines/{id}/rename",
+            get(machines::rename_form).post(machines::rename),
+        )
+        .route(
             "/machines/{id}/retire",
             get(machines::retire_form).post(machines::retire),
         )
         .route("/machines/{id}/jobs/{job}/clear", post(machines::clear))
-        .route("/machines/{id}/share", post(machines::share))
         .route("/admin", get(admin::area))
         .route(
             "/admin/authenticate",
@@ -378,6 +385,7 @@ fn api() -> Router<Instance> {
         )
         .route("/api/machines/beat", post(machines::beat))
         .route("/api/machines/retire", post(machines::api_retire))
+        .route("/api/machines/rename", post(machines::api_rename))
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/jobs/{id}/finish", post(jobs::finish))

@@ -359,6 +359,81 @@ pub fn write(
     Ok(Ok(written))
 }
 
+/// Gives a line a new title and description, as a revision of its own,
+/// from somebody who is not at a machine.
+///
+/// Nothing else in the line changes. Whatever stretch of writing the line
+/// is in ends here, and the change is a stretch of its own, so git and the
+/// machines building the line hear of it like any other writing; a machine
+/// still writing the line brings its writing up to it as it would to any
+/// revision it missed.
+pub fn retitle(
+    connection: &mut Connection,
+    line: &LineId,
+    writer: &UserId,
+    title: &str,
+    description: Option<&str>,
+) -> Result<Result<Started, Refused>> {
+    let transaction = connection.transaction()?;
+    let Some(found) = lines::by_id(&transaction, line)? else {
+        return Ok(Err(Refused::Gone));
+    };
+    if found.is_deleted() {
+        return Ok(Err(Refused::Gone));
+    }
+    let current = current(&transaction, &found)?.context("the line has no revision")?;
+    let Ok(mut document) = stemma_core::document::Document::parse(&current.source) else {
+        return Ok(Err(Refused::Unreadable(
+            "the line cannot be read, so it can only be changed where it is written".to_owned(),
+        )));
+    };
+
+    let title = title.trim();
+    let description = description
+        .map(str::trim)
+        .filter(|description| !description.is_empty());
+    if document.title == title && document.description.as_deref() == description {
+        return Ok(Ok(found));
+    }
+    document.title = title.to_owned();
+    document.description = description.map(str::to_owned);
+    let content = Content {
+        source: document.to_text(),
+        ..current.content()
+    };
+    if let Err(refused) = check(&content) {
+        return Ok(Err(refused));
+    }
+
+    end_writing(&transaction, &found.id)?;
+    let session = format!(
+        "wrt:{}",
+        LineId::generate().to_string().trim_start_matches("lin:")
+    );
+    transaction
+        .execute(
+            "INSERT INTO writing_sessions (id, line_id, user_id, closed_at)
+             VALUES (?1, ?2, ?3, datetime('now'))",
+            params![session, found.id.to_string(), writer.to_string()],
+        )
+        .context("cannot record the change")?;
+    add(
+        &transaction,
+        &found.id,
+        Kind::Written,
+        &content,
+        writer,
+        None,
+        Some(&session),
+    )?;
+
+    let written = lines::by_id(&transaction, &found.id)?.context("the line cannot be read back")?;
+    lines::tell(&transaction, &written, LineChange::Written)?;
+    transaction.commit()?;
+
+    Ok(Ok(written))
+}
+
 /// The stretch this machine is writing the line in, or a new one.
 ///
 /// Another machine's stretch on the same line is over: its writing ends
@@ -744,6 +819,40 @@ mod tests {
         assert_eq!(kept.kind, Kind::Written);
         assert_eq!(kept.machine, Some(laptop));
         assert_eq!(kept.content(), page("Quotient groups"));
+    }
+
+    #[test]
+    fn a_new_title_is_a_revision_of_its_own_that_git_will_be_told_of() {
+        let mut world = world();
+        let (line, ana) = (world.line, world.ana.clone());
+
+        let renamed = retitle(
+            world.database.connection_mut(),
+            &line,
+            &ana,
+            " Quotient groups ",
+            Some("Why they split."),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(renamed.revision, 2);
+        let kept = at(world.database.connection(), &line, 2).unwrap().unwrap();
+        let document = Document::parse(&kept.source).unwrap();
+        assert_eq!(document.title, "Quotient groups");
+        assert_eq!(document.description.as_deref(), Some("Why they split."));
+        assert_eq!(kept.machine, None);
+        assert_eq!(uncommitted(world.database.connection()).unwrap().len(), 1);
+
+        let unchanged = retitle(
+            world.database.connection_mut(),
+            &line,
+            &ana,
+            "Quotient groups",
+            Some("Why they split."),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(unchanged.revision, 2);
     }
 
     #[test]

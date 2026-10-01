@@ -217,7 +217,32 @@ pub async fn page(
     Path((slug, side, name)): Path<(String, String, String)>,
 ) -> Result<Response, WebError> {
     let revision = current(&instance, &signed, &slug, &side, &name).await?;
-    Ok((framed_page_headers(), styled_page(&revision.page)).into_response())
+    let reader = signed.user.id.clone();
+    let saved = instance
+        .read(move |connection| crate::store::users::appearance(connection, &reader))
+        .await?;
+    let theme = saved
+        .as_deref()
+        .map(super::appearance::Appearance::parse)
+        .unwrap_or_else(super::appearance::chosen)
+        .theme();
+    Ok((
+        framed_page_headers(),
+        themed(&styled_page(&revision.page), theme),
+    )
+        .into_response())
+}
+
+/// A page in the appearance its reader chose, where they chose one;
+/// otherwise it follows their system, as the page around it does.
+fn themed(page: &str, theme: Option<&str>) -> String {
+    match (theme, page.find("<html")) {
+        (Some(theme), Some(at)) => {
+            let at = at + "<html".len();
+            format!("{} data-theme=\"{theme}\"{}", &page[..at], &page[at..])
+        }
+        _ => page.to_owned(),
+    }
 }
 
 /// Reads exactly the current revision after checking the reader's membership.

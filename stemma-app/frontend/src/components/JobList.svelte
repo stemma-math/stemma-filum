@@ -76,8 +76,8 @@
       {#if job.owed}
         <button type="button" class="button button--small" onclick={() => resolve(job)}>Mark as resolved</button>
       {/if}
-      {#if (job.state === "queued" || job.state === "running") && !job.cancel_requested}
-        <button type="button" class="button button--link" onclick={() => cancel(job)}>Cancel</button>
+      {#if job.state === "queued" || job.state === "running"}
+        <button type="button" class="button button--link" onclick={() => cancel(job)}>{job.cancel_requested ? "Cancel again" : "Cancel"}</button>
       {/if}
       <button type="button" class="button button--link job__details" aria-expanded={!!opened[job.id]}
         onclick={() => (opened[job.id] = !opened[job.id])}>{opened[job.id] ? "Hide details" : "Details"}</button>

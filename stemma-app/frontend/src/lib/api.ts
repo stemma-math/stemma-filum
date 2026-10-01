@@ -103,6 +103,7 @@ export const api = {
   standing: () => call<Mirrored>("standing"),
   sendNow: () => call<void>("send_now"),
   groups: () => call<string[]>("groups"),
+  groupNames: () => call<Record<string, string>>("group_names"),
   managedGroups: () => call<string[]>("managed_groups"),
   lines: () => call<Known[]>("lines"),
 
@@ -146,6 +147,8 @@ export const api = {
     grantLibrary: custom?.library ?? false,
   }),
   machine: () => call<Machine | null>("machine"),
+  renameMachine: (label: string) => call<string>("rename_machine", { label }),
+  setWhileClosed: (whileClosed: boolean) => call<void>("set_while_closed", { whileClosed }),
   jobOutput: (job: string) => call<string>("job_output", { job }),
   cancelJob: (job: string) => call<void>("cancel_job", { job }),
   clearJob: (job: string) => call<void>("clear_job", { job }),
@@ -168,7 +171,6 @@ export const api = {
   proposal: (proposal: string, current: string | null = null) => call<Review>("proposal", { proposal, current }),
   decideProposal: (proposal: string, decision: Verdict, note: string | null = null) =>
     call<string>("decide_proposal", { proposal, decision, note }),
-  applyProposal: (proposal: string) => call<string>("apply_proposal", { proposal }),
   takeOpenReview: () => call<string | null>("take_open_review"),
   handoffProposal: (proposal: string, reviewer: string) => call<void>("handoff_proposal", { proposal, reviewer }),
   lineHistory: (path: string) => call<LineProposal[]>("line_history", { path }),

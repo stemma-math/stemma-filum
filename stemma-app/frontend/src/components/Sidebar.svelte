@@ -55,8 +55,11 @@
       onclick={() => (choosing = !choosing)}
     >
       {#if app.group}
-        <span class="group-switch__badge" aria-hidden="true">{initials(app.group)}</span>
-        <span class="group-switch__name" title={app.group}>{app.group}</span>
+        <span class="group-switch__badge" aria-hidden="true">{initials(app.nameOf(app.group))}</span>
+        <span class="group-switch__text">
+          <span class="group-switch__name" title={app.nameOf(app.group)}>{app.nameOf(app.group)}</span>
+          <span class="group-switch__slug identifier">{app.group}</span>
+        </span>
       {:else}
         <span class="group-switch__name group-switch__name--none">No group</span>
       {/if}
@@ -65,8 +68,11 @@
     <Bubble bind:open={choosing} label="Groups" menu>
       {#each app.groups as group (group)}
         <button type="button" class="menu__item" role="menuitemcheckbox" aria-checked={group === app.group} onclick={() => choose(group)}>
-          <span class="group-switch__badge group-switch__badge--small" aria-hidden="true">{initials(group)}</span>
-          <span class="identifier">{group}</span>
+          <span class="group-switch__badge group-switch__badge--small" aria-hidden="true">{initials(app.nameOf(group))}</span>
+          <span class="group-switch__text">
+            <span class="group-switch__name">{app.nameOf(group)}</span>
+            <span class="group-switch__slug identifier">{group}</span>
+          </span>
           {#if group === app.group}<span class="menu__hint"><Glyph name="check" small /></span>{/if}
         </button>
       {:else}

@@ -66,6 +66,17 @@ pub fn check_reusing(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<Le
     type Checked = HashMap<PathBuf, (String, Arc<Library>)>;
     static CHECKED: LazyLock<Mutex<Checked>> = LazyLock::new(Mutex::default);
 
+    // Lines of one repository are often opened one after another, and
+    // each asks for the same check. The later ones wait for the first and
+    // read what it found, instead of each starting Lake over again.
+    static CHECKING: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> =
+        LazyLock::new(Mutex::default);
+    let turn = CHECKING
+        .lock()
+        .map(|mut checking| Arc::clone(checking.entry(clone.to_owned()).or_default()))
+        .unwrap_or_default();
+    let _turn = turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
     let fingerprint = library_fingerprint(clone, pins)?;
     let reused = CHECKED
         .lock()
@@ -657,6 +668,18 @@ pub(crate) fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Re
     let directory = clone.join(".stemma/check");
     std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
 
+    // The application and the daemon both prepare the same repository,
+    // and two `lake update`s at once fetch Mathlib twice into one place.
+    // Whoever comes second waits, then finds the work done.
+    let lock = directory.join("lock");
+    let _locked = std::fs::File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock)
+        .and_then(|file| file.lock().map(|()| file))
+        .map_err(|error| format!("cannot lock {}: {error}", lock.display()))?;
+
     // `lake update` resolves the packages again and may move any that are
     // not pinned, so it runs only when what it resolves from changed.
     let resolved_from = resolution_inputs(clone);
@@ -665,13 +688,21 @@ pub(crate) fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Re
     if !manifest.exists()
         || std::fs::read_to_string(&resolved).ok().as_deref() != Some(resolved_from.as_str())
     {
-        let update = tool("lake")
-            .current_dir(clone)
-            .arg("update")
-            .output()
-            .map_err(|error| format!("cannot prepare the pinned Lake packages: {error}"))?;
-        if !update.status.success() {
-            return Err(concise(&String::from_utf8_lossy(&update.stderr)));
+        let update = || {
+            tool("lake")
+                .current_dir(clone)
+                .arg("update")
+                .output()
+                .map_err(|error| format!("cannot prepare the pinned Lake packages: {error}"))
+        };
+        let mut updated = update()?;
+        // A fetch that was cut short leaves a package Lake cannot read
+        // and will not fetch again; it is removed, and fetched once more.
+        if !updated.status.success() && remove_broken_packages(clone) {
+            updated = update()?;
+        }
+        if !updated.status.success() {
+            return Err(concise(&String::from_utf8_lossy(&updated.stderr)));
         }
         std::fs::write(&resolved, &resolved_from).map_err(|error| error.to_string())?;
     }
@@ -693,6 +724,27 @@ pub(crate) fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Re
     }
     std::fs::write(stamp, mathlib).map_err(|error| error.to_string())?;
     Ok(())
+}
+
+/// Removes every Lake package whose checkout git cannot read, and says
+/// whether there was one.
+fn remove_broken_packages(clone: &Path) -> bool {
+    let Ok(packages) = std::fs::read_dir(clone.join(".lake/packages")) else {
+        return false;
+    };
+    let mut removed = false;
+    for package in packages.flatten().map(|entry| entry.path()) {
+        let readable = package.join(".git").exists()
+            && Command::new("git")
+                .current_dir(&package)
+                .args(["rev-parse", "--verify", "HEAD"])
+                .output()
+                .is_ok_and(|said| said.status.success());
+        if package.is_dir() && !readable && std::fs::remove_dir_all(&package).is_ok() {
+            removed = true;
+        }
+    }
+    removed
 }
 
 /// Resolves and caches the pinned packages before a sandboxed agent gets a
@@ -889,10 +941,10 @@ pub fn declared_statements(source: &str) -> Vec<Siglum> {
 }
 
 fn concise(output: &str) -> String {
-    output
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty() && !line.starts_with("info:"))
+    let said = || output.lines().map(str::trim);
+    said()
+        .find(|line| line.starts_with("error:"))
+        .or_else(|| said().find(|line| !line.is_empty() && !line.starts_with("info:")))
         .unwrap_or("Lean could not complete the check")
         .chars()
         .take(240)
@@ -910,6 +962,13 @@ mod tests {
                 "info: no previous manifest, creating one from scratch\nerror: package unavailable"
             ),
             "error: package unavailable"
+        );
+        assert_eq!(
+            concise(
+                "warning: toolchain not updated; multiple toolchain candidates:\n  \
+                 leanprover/lean4:v4.34.0\nerror: could not clone mathlib"
+            ),
+            "error: could not clone mathlib"
         );
         assert_eq!(
             concise("info: no previous manifest, creating one from scratch"),
