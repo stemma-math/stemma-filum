@@ -13,13 +13,34 @@
 // What every block leaves in the document besides what it shows.
 #let data(kind, ..fields) = metadata((stemma: "block", kind: kind, ..fields.named()))
 
+// How far below the baseline an inline equation's frame reaches in HTML.
+// The page's style lowers each frame by the same amount.
+#let math-depth = 0.3em
+
 // The whole line: its title, what it is about, and the rules that make
 // statements look like statements rather than figures.
 #let stemma(title: none, description: none, body) = {
   set document(title: title)
   // Typst 0.14 does not export equations as native HTML. Its HTML frame
-  // embeds the paged result as inline SVG and is a no-op for paged output.
-  show math.equation: html.frame
+  // embeds the paged result as SVG; boxed, it stays inside the sentence it
+  // was written in, and an equation set apart gets an element of its own.
+  // An SVG carries no baseline, so an inline one always reaches the same
+  // depth below it, `math-depth`, which the page's style lowers it by.
+  // On paper nothing changes.
+  show math.equation: it => context {
+    if target() == "html" {
+      if it.block {
+        html.elem("div", attrs: (class: "stemma-line__equation"), html.frame(it))
+      } else {
+        box(html.frame({
+          set text(top-edge: "ascender", bottom-edge: -math-depth)
+          it
+        }))
+      }
+    } else {
+      it
+    }
+  }
   show figure.where(kind: statement-kind): set block(breakable: true)
   show figure.where(kind: statement-kind): set align(start)
   show figure.where(kind: statement-kind): it => it.body
@@ -46,10 +67,23 @@
 
 // The HTML export gives each block an address in the line. On paper the
 // wrapper disappears, so the same source keeps its paged appearance.
-#let section(id, kind, body) = context {
+#let section(id, kind, body, central: false) = context {
   if target() == "html" {
-    html.elem("section", attrs: (id: id, class: "stemma-line__block stemma-line__block--" + kind), body)
+    let class = "stemma-line__block stemma-line__block--" + kind
+    if central { class += " stemma-line__block--central" }
+    html.elem("section", attrs: (id: id, class: class), body)
   } else {
+    body
+  }
+}
+
+// Something pushed to the end of its line: on paper by a flexible space,
+// in HTML by the page's style, which knows no such space.
+#let at-end(class, body) = context {
+  if target() == "html" {
+    html.elem("span", attrs: (class: class), body)
+  } else {
+    h(1fr)
     body
   }
 }
@@ -57,10 +91,7 @@
 // The siglum, small and out of the way. It is what a reference points
 // at, so it has to be readable, and it is not part of the mathematics,
 // so it does not compete with it.
-#let siglum-mark(siglum) = {
-  h(1fr)
-  text(size: 0.85em, fill: luma(45%), raw(siglum))
-}
+#let siglum-mark(siglum) = at-end("stemma-line__siglum", text(size: 0.85em, fill: luma(45%), raw(siglum)))
 
 // Prose between the mathematics. It is not numbered and declares nothing.
 #let prose(id: none, body) = {
@@ -86,7 +117,7 @@
       proof: proof,
       uses: uses,
     )
-    section(id, kind, block(
+    section(id, kind, central: central, block(
       width: 100%,
       above: 1.2em,
       below: 1.2em,
@@ -95,9 +126,16 @@
       {
         context {
           let number = counter(figure.where(kind: statement-kind)).get().first()
-          strong[#environment #number.]
-          if title != none [ #strong[(#title)]]
-          if siglum != none { siglum-mark(siglum) }
+          let head = {
+            strong[#environment #number.]
+            if title != none [ #strong[(#title)]]
+            if siglum != none { siglum-mark(siglum) }
+          }
+          if target() == "html" {
+            html.elem("p", attrs: (class: "stemma-line__head"), head)
+          } else {
+            head
+          }
         }
         parbreak()
         if slanted { emph(body) } else { body }
@@ -146,7 +184,6 @@
     } else {
       body
     }
-    h(1fr)
-    sym.square.stroked
+    at-end("stemma-line__qed", sym.square.stroked)
   }))
 }

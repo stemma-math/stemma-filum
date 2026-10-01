@@ -252,6 +252,13 @@ mod tests {
             );
         }
         assert!(page.contains("<svg"), "equations use inline SVG: {page}");
+        assert!(
+            page.contains("<span style=\"display: inline-block\"><svg"),
+            "an inline equation stays in its sentence: {page}"
+        );
+        assert!(page.contains("stemma-line__siglum"), "{page}");
+        assert!(page.contains("stemma-line__qed"), "{page}");
+        assert!(page.contains("stemma-line__block--central"), "{page}");
         assert!(!page.contains("does not typeset yet"), "{page}");
     }
 

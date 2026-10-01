@@ -15,6 +15,7 @@ body {
 .stemma-line {
     max-width: 820px;
     min-height: 100vh;
+    box-sizing: border-box;
     margin: 0 auto;
     padding: clamp(24px, 6vw, 64px);
     background: var(--surface-card);
@@ -44,8 +45,8 @@ body {
     margin: 0.8em 0;
 }
 
-.stemma-line__block--definition,
-.stemma-line__block--theorem {
+/* What the line rests on is marked by a rule beside it, as on paper. */
+.stemma-line__block--central {
     padding-left: 1em;
     border-left: 2px solid var(--ink-2);
 }
@@ -54,15 +55,64 @@ body {
     margin: 0 0 0.8em;
 }
 
+.stemma-line__block p:last-child {
+    margin-bottom: 0;
+}
+
+/* A statement's head: its number and title, and its siglum at the end. */
+.stemma-line__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 0.3em;
+}
+
+.stemma-line__siglum {
+    margin-left: auto;
+    padding-left: 1em;
+}
+
+.stemma-line__siglum code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-3);
+}
+
+.stemma-line__qed {
+    float: right;
+    margin-left: 1em;
+}
+
 .stemma-line a {
     color: var(--link-fg);
     text-underline-offset: 0.15em;
 }
 
-.stemma-line svg {
-    max-width: 100%;
-    height: auto;
-    vertical-align: middle;
+/* Equations come as SVG drawn in black; they take the text's colour
+ * instead, so they read in either appearance. */
+.stemma-line .typst-frame [fill="#000000"] {
+    fill: currentColor;
+}
+
+.stemma-line .typst-frame [stroke="#000000"] {
+    stroke: currentColor;
+}
+
+/* An inline equation's frame reaches 0.3em below the baseline, the
+ * package's `math-depth`, and is lowered by as much to sit on it. */
+.stemma-line .typst-frame {
+    vertical-align: -0.3em;
+}
+
+.stemma-line__equation {
+    margin: 0.8em 0;
+    overflow-x: auto;
+    text-align: center;
+}
+
+.stemma-line__equation .typst-frame {
+    max-width: none;
+    vertical-align: top;
 }
 
 @media print {

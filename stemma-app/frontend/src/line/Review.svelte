@@ -40,7 +40,10 @@
         `${selector}::before { content: "${label}"; display: block; color: ${color}; font: 600 12px sans-serif; margin-bottom: 4px; }`,
         row.change === "removed" && side === "before" ? `${selector} { text-decoration: line-through; opacity: 0.7; }` : ""];
     }).join("\n");
-    return page.replace("</head>", `<style>${styles}</style></head>`);
+    // The page follows the window's appearance, not only the system's.
+    const theme = document.documentElement.dataset.theme;
+    const themed = theme ? page.replace(/<html(?=[\s>])/, `<html data-theme="${theme}"`) : page;
+    return themed.replace("</head>", `<style>${styles}</style></head>`);
   }
 
   onMount(() => {
