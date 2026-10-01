@@ -45,7 +45,7 @@ pub async fn manage(
         .await?
         .at(format!("/g/{}/releases", group.slug()));
 
-    Ok(page(&chrome, manage_body(&signed, &group, role, &releases)).into_response())
+    Ok(page(&chrome, manage_body(&signed, &group, role, &releases, None)).into_response())
 }
 
 /// Publishes the shared repository's current commit.
@@ -86,8 +86,24 @@ pub async fn publish(
     let reader = signed.user.id.clone();
     let results = instance
         .read(move |connection| documented(connection, &group_id, &reader, documents))
-        .await?
-        .map_err(WebError::BadRequest)?;
+        .await?;
+    let results = match results {
+        Ok(results) => results,
+        Err(problem) => {
+            let group_id = group.id.clone();
+            let releases = instance
+                .read(move |connection| releases::for_group(connection, &group_id))
+                .await?;
+            let chrome = super::layout::around(&instance, &signed, "Library releases")
+                .await?
+                .at(format!("/g/{}/releases", group.slug()));
+            return Ok(page(
+                &chrome,
+                manage_body(&signed, &group, role, &releases, Some(&problem)),
+            )
+            .into_response());
+        }
+    };
 
     let group_id = group.id.clone();
     let (published_on, existing): (String, Vec<Release>) = instance
@@ -385,7 +401,13 @@ async fn public_chrome(instance: &Instance, title: &str) -> Result<Chrome, WebEr
     ))
 }
 
-fn manage_body(signed: &SignedIn, group: &Group, role: GroupRole, releases: &[Release]) -> Markup {
+fn manage_body(
+    signed: &SignedIn,
+    group: &Group,
+    role: GroupRole,
+    releases: &[Release],
+    problem: Option<&str>,
+) -> Markup {
     html! {
         nav class="crumbs" aria-label="Breadcrumb" {
             a href={ "/g/" (group.slug()) } { (group.name) }
@@ -402,6 +424,14 @@ fn manage_body(signed: &SignedIn, group: &Group, role: GroupRole, releases: &[Re
         @if role.is_at_least(GroupRole::Admin) {
             section class="block" {
                 h2 class="block__title" { "Publish the current shared library" }
+                @if let Some(problem) = problem {
+                    (super::layout::message(super::layout::Kind::Warning, problem))
+                    p class="quiet" {
+                        "The release was not published. Review the listed results in "
+                        a href={ "/g/" (group.slug()) } { "the shared library" }
+                        ", complete their formal audits, and try again."
+                    }
+                }
                 p {
                     "Every central result must have a current formal audit and a sorry-free Lean declaration."
                 }
