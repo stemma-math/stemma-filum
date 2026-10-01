@@ -88,48 +88,59 @@ fn words(standing: &str, label: Option<&str>, asked: bool) -> String {
 }
 
 /// Takes the line for this machine; renews the claim when already held.
-#[tauri::command(async)]
-pub fn claim(path: String) -> Result<Claim, String> {
-    with_claim(&path, Server::take_claim)
+#[tauri::command]
+pub async fn claim(path: String) -> Result<Claim, String> {
+    crate::blocking(move || -> Result<Claim, String> { with_claim(&path, Server::take_claim) })
+        .await
 }
 
 /// Extends an existing claim without taking an unclaimed line.
-#[tauri::command(async)]
-pub fn renew_claim(path: String) -> Result<Claim, String> {
-    with_claim(&path, Server::renew_claim)
+#[tauri::command]
+pub async fn renew_claim(path: String) -> Result<Claim, String> {
+    crate::blocking(move || -> Result<Claim, String> { with_claim(&path, Server::renew_claim) })
+        .await
 }
 
 /// Sends what was written, then releases the claim. The release goes
 /// ahead even if sending fails: a claim that cannot be released is worse
 /// than one released with writing that leaves on the next round.
-#[tauri::command(async)]
-pub fn release(path: String) -> Result<Claim, String> {
-    if let Ok(line) = LineAt::admit(&path) {
-        let _ = stemma::claims::send_before_release(&home(), &line.about());
-    }
-    with_claim(&path, Server::release_claim)
+#[tauri::command]
+pub async fn release(path: String) -> Result<Claim, String> {
+    crate::blocking(move || -> Result<Claim, String> {
+        if let Ok(line) = LineAt::admit(&path) {
+            let _ = stemma::claims::send_before_release(&home(), &line.about());
+        }
+        with_claim(&path, Server::release_claim)
+    })
+    .await
 }
 
 /// Who is writing the line, without taking or renewing anything: for
 /// looking again when the instance says the claim changed.
-#[tauri::command(async)]
-pub fn claim_status(path: String) -> Result<Claim, String> {
-    let line = LineAt::admit(&path)?;
-    let session = Session::open()?;
-    let held = session
-        .server
-        .claims(&session.token)
-        .map_err(failed)?
-        .into_iter()
-        .find(|held| held.group == line.group && held.side == line.side && held.line == line.name);
+#[tauri::command]
+pub async fn claim_status(path: String) -> Result<Claim, String> {
+    crate::blocking(move || -> Result<Claim, String> {
+        let line = LineAt::admit(&path)?;
+        let session = Session::open()?;
+        let held = session
+            .server
+            .claims(&session.token)
+            .map_err(failed)?
+            .into_iter()
+            .find(|held| {
+                held.group == line.group && held.side == line.side && held.line == line.name
+            });
 
-    Ok(Claim::from(held))
+        Ok(Claim::from(held))
+    })
+    .await
 }
 
 /// Asks the machine holding the claim to release it.
-#[tauri::command(async)]
-pub fn request_claim(path: String) -> Result<Claim, String> {
-    with_claim(&path, Server::ask_for_claim)
+#[tauri::command]
+pub async fn request_claim(path: String) -> Result<Claim, String> {
+    crate::blocking(move || -> Result<Claim, String> { with_claim(&path, Server::ask_for_claim) })
+        .await
 }
 
 fn with_claim(
@@ -162,41 +173,47 @@ pub struct Decision {
 
 /// The blocks this machine and the instance both changed in this line,
 /// when it needs a decision.
-#[tauri::command(async)]
-pub fn parted(path: String) -> Result<Vec<Conflict>, String> {
-    let line = LineAt::admit(&path)?;
-    let conflicts = Mirror::at(&home())
-        .and_then(|mirror| mirror.conflicts(&line.group, line.side()?, &line.name))
-        .map_err(failed)?;
+#[tauri::command]
+pub async fn parted(path: String) -> Result<Vec<Conflict>, String> {
+    crate::blocking(move || -> Result<Vec<Conflict>, String> {
+        let line = LineAt::admit(&path)?;
+        let conflicts = Mirror::at(&home())
+            .and_then(|mirror| mirror.conflicts(&line.group, line.side()?, &line.name))
+            .map_err(failed)?;
 
-    Ok(conflicts
-        .into_iter()
-        .map(|conflict| Conflict {
-            said: conflict.said().to_owned(),
-            block: conflict.block,
-            label: conflict.label,
-            here: conflict.here,
-            there: conflict.there,
-        })
-        .collect())
+        Ok(conflicts
+            .into_iter()
+            .map(|conflict| Conflict {
+                said: conflict.said().to_owned(),
+                block: conflict.block,
+                label: conflict.label,
+                here: conflict.here,
+                there: conflict.there,
+            })
+            .collect())
+    })
+    .await
 }
 
 /// Settles the line with the version chosen for each block; the engine
 /// sends it at once.
-#[tauri::command(async)]
-pub fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, String> {
-    let line = LineAt::admit(&path)?;
-    let decided: BTreeMap<BlockId, Keep> = decisions
-        .into_iter()
-        .map(|decision| (decision.block, decision.keep))
-        .collect();
+#[tauri::command]
+pub async fn settle(path: String, decisions: Vec<Decision>) -> Result<Vec<String>, String> {
+    crate::blocking(move || -> Result<Vec<String>, String> {
+        let line = LineAt::admit(&path)?;
+        let decided: BTreeMap<BlockId, Keep> = decisions
+            .into_iter()
+            .map(|decision| (decision.block, decision.keep))
+            .collect();
 
-    Mirror::at(&home())
-        .and_then(|mirror| mirror.decide(&line.group, line.side()?, &line.name, &decided))
-        .map_err(failed)?;
-    engine::nudge(Nudge::Now);
+        Mirror::at(&home())
+            .and_then(|mirror| mirror.decide(&line.group, line.side()?, &line.name, &decided))
+            .map_err(failed)?;
+        engine::nudge(Nudge::Now);
 
-    Ok(vec![line.name])
+        Ok(vec![line.name])
+    })
+    .await
 }
 
 #[cfg(test)]

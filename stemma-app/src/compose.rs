@@ -10,21 +10,27 @@ use crate::failed;
 use crate::workspace::LineAt;
 
 /// Typesets the editor's line, resolving files relative to the line.
-#[tauri::command(async)]
-pub fn preview(path: String, document: Document) -> Result<Preview, String> {
-    let line = LineAt::admit(&path)?;
-    stemma::typeset::render::preview(line.directory(), &document).map_err(failed)
+#[tauri::command]
+pub async fn preview(path: String, document: Document) -> Result<Preview, String> {
+    crate::blocking(move || -> Result<Preview, String> {
+        let line = LineAt::admit(&path)?;
+        stemma::typeset::render::preview(line.directory(), &document).map_err(failed)
+    })
+    .await
 }
 
 /// Typesets an HTML page with block addresses for the review overlay.
-#[tauri::command(async)]
-pub fn review_page(path: String, document: Document) -> Result<String, String> {
-    let line = LineAt::admit(&path)?;
-    let page = stemma::typeset::render::page(line.directory(), &document).map_err(failed)?;
-    let style = format!(
-        "<style>{}\n{}</style>",
-        stemma_identity::TOKENS_CSS,
-        include_str!("../../stemma-server/assets/line.css"),
-    );
-    Ok(page.replacen("</head>", &format!("{style}</head>"), 1))
+#[tauri::command]
+pub async fn review_page(path: String, document: Document) -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        let line = LineAt::admit(&path)?;
+        let page = stemma::typeset::render::page(line.directory(), &document).map_err(failed)?;
+        let style = format!(
+            "<style>{}\n{}</style>",
+            stemma_identity::TOKENS_CSS,
+            include_str!("../../stemma-server/assets/line.css"),
+        );
+        Ok(page.replacen("</head>", &format!("{style}</head>"), 1))
+    })
+    .await
 }

@@ -28,49 +28,61 @@ pub struct Beginning {
 pub struct SigningIn(Mutex<Option<stemma::account::session::Beginning>>);
 
 /// Who this machine acts for, when anybody signed it in.
-#[tauri::command(async)]
-pub fn whoami() -> Result<Option<Signed>, String> {
-    let credentials = stemma::account::credentials::Credentials::read(&home().credentials_file())
-        .map_err(failed)?;
+#[tauri::command]
+pub async fn whoami() -> Result<Option<Signed>, String> {
+    crate::blocking(move || -> Result<Option<Signed>, String> {
+        let credentials =
+            stemma::account::credentials::Credentials::read(&home().credentials_file())
+                .map_err(failed)?;
 
-    Ok(credentials.map(|credentials| Signed {
-        server: credentials.server,
-        user: credentials.user,
-    }))
+        Ok(credentials.map(|credentials| Signed {
+            server: credentials.server,
+            user: credentials.user,
+        }))
+    })
+    .await
 }
 
 /// Reads the account's appearance from the instance when reachable.
-#[tauri::command(async)]
-pub fn appearance() -> Result<Option<String>, String> {
-    let credentials = stemma::account::session::required(&home()).map_err(failed)?;
-    let server = stemma::api::Server::at(&credentials.server).map_err(failed)?;
-    let account = server
-        .whoami(&credentials.token)
-        .map_err(failed)?
-        .ok_or_else(|| "This machine is no longer signed in.".to_owned())?;
-    Ok(account.appearance)
+#[tauri::command]
+pub async fn appearance() -> Result<Option<String>, String> {
+    crate::blocking(move || -> Result<Option<String>, String> {
+        let credentials = stemma::account::session::required(&home()).map_err(failed)?;
+        let server = stemma::api::Server::at(&credentials.server).map_err(failed)?;
+        let account = server
+            .whoami(&credentials.token)
+            .map_err(failed)?
+            .ok_or_else(|| "This machine is no longer signed in.".to_owned())?;
+        Ok(account.appearance)
+    })
+    .await
 }
 
 /// Saves the account's appearance for the app and the web.
-#[tauri::command(async)]
-pub fn set_appearance(appearance: String) -> Result<(), String> {
-    if !matches!(appearance.as_str(), "system" | "light" | "dark") {
-        return Err("Choose System, Light or Dark.".to_owned());
-    }
-    let credentials = stemma::account::session::required(&home()).map_err(failed)?;
-    let server = stemma::api::Server::at(&credentials.server).map_err(failed)?;
-    server
-        .set_appearance(&credentials.token, &appearance)
-        .map_err(failed)
+#[tauri::command]
+pub async fn set_appearance(appearance: String) -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        if !matches!(appearance.as_str(), "system" | "light" | "dark") {
+            return Err("Choose System, Light or Dark.".to_owned());
+        }
+        let credentials = stemma::account::session::required(&home()).map_err(failed)?;
+        let server = stemma::api::Server::at(&credentials.server).map_err(failed)?;
+        server
+            .set_appearance(&credentials.token, &appearance)
+            .map_err(failed)
+    })
+    .await
 }
 
 /// Starts the device flow against an instance.
-#[tauri::command(async)]
-pub fn sign_in_start(
+#[tauri::command]
+pub async fn sign_in_start(
     server: String,
     signing_in: tauri::State<'_, SigningIn>,
 ) -> Result<Beginning, String> {
-    let beginning = stemma::account::session::begin(server.trim()).map_err(failed)?;
+    let beginning =
+        crate::blocking(move || stemma::account::session::begin(server.trim()).map_err(failed))
+            .await?;
     let answer = Beginning {
         code: beginning.sign_in.user_code.clone(),
         url: beginning.sign_in.verification_uri.clone(),
@@ -85,50 +97,59 @@ pub fn sign_in_start(
 
 /// Asks once whether the pending sign-in was approved. Answers `nothing`,
 /// `waiting`, `signed`, `refused` or `ran_out`.
-#[tauri::command(async)]
-pub fn sign_in_poll(signing_in: tauri::State<'_, SigningIn>) -> Result<&'static str, String> {
+#[tauri::command]
+pub async fn sign_in_poll(signing_in: tauri::State<'_, SigningIn>) -> Result<&'static str, String> {
     let Some(beginning) = signing_in.0.lock().map_err(said)?.clone() else {
         return Ok("nothing");
     };
 
-    Ok(
-        match stemma::account::session::collect(&home(), &beginning).map_err(failed)? {
-            Collected::Waiting => "waiting",
-            Collected::Signed(_) => {
-                *signing_in.0.lock().map_err(said)? = None;
-                "signed"
-            }
-            Collected::Refused => "refused",
-            Collected::RanOut => "ran_out",
-        },
-    )
+    let collected = crate::blocking(move || {
+        stemma::account::session::collect(&home(), &beginning).map_err(failed)
+    })
+    .await?;
+
+    Ok(match collected {
+        Collected::Waiting => "waiting",
+        Collected::Signed(_) => {
+            *signing_in.0.lock().map_err(said)? = None;
+            "signed"
+        }
+        Collected::Refused => "refused",
+        Collected::RanOut => "ran_out",
+    })
 }
 
 /// Revokes the credential and forgets it.
-#[tauri::command(async)]
-pub fn sign_out() -> Result<String, String> {
-    carried_out(stemma::account::session::log_out)
+#[tauri::command]
+pub async fn sign_out() -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        carried_out(stemma::account::session::log_out)
+    })
+    .await
 }
 
 /// Opens an HTTP(S) link in the system browser, where the person can see
 /// the address they are approving a sign-in at.
-#[tauri::command(async)]
-pub fn open_link(url: String) -> Result<(), String> {
-    let url = browser_url(&url)?;
-    let opener = match std::env::consts::OS {
-        "macos" => "open",
-        "windows" => "explorer",
-        _ => "xdg-open",
-    };
+#[tauri::command]
+pub async fn open_link(url: String) -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        let url = browser_url(&url)?;
+        let opener = match std::env::consts::OS {
+            "macos" => "open",
+            "windows" => "explorer",
+            _ => "xdg-open",
+        };
 
-    let status = std::process::Command::new(opener)
-        .arg(url.as_str())
-        .status()
-        .map_err(|error| format!("cannot open {url}: {error}"))?;
-    if !status.success() {
-        return Err(format!("cannot open {url}: {opener} exited with {status}"));
-    }
-    Ok(())
+        let status = std::process::Command::new(opener)
+            .arg(url.as_str())
+            .status()
+            .map_err(|error| format!("cannot open {url}: {error}"))?;
+        if !status.success() {
+            return Err(format!("cannot open {url}: {opener} exited with {status}"));
+        }
+        Ok(())
+    })
+    .await
 }
 
 /// Accepts only absolute HTTP(S) URLs, so the opener is never handed a

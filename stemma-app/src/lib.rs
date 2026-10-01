@@ -105,6 +105,18 @@ pub fn run() {
         .expect("the Stemma application could not start");
 }
 
+/// Runs a command's work on a thread set aside for blocking work.
+///
+/// Commands reach the network, run git, typeset and run Lake, and some of
+/// that takes minutes. Run on the async runtime's own threads, a few slow
+/// commands would hold every one of them, and no other command would be
+/// answered until they finished.
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> T {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .unwrap_or_else(|error| panic!("a command stopped before it finished: {error}"))
+}
+
 /// The client's home, as the command line would locate it.
 fn home() -> Home {
     Home::locate(&Environment::from_process())

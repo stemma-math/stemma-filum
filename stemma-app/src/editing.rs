@@ -48,30 +48,39 @@ impl OpenLine {
 }
 
 /// Reads a line from disk for the editor.
-#[tauri::command(async)]
-pub fn open_line(path: String) -> Result<OpenLine, String> {
-    let line = LineAt::admit(&path)?;
-    let source = std::fs::read_to_string(&line.path).map_err(said)?;
-    Ok(OpenLine::of(&line, source))
+#[tauri::command]
+pub async fn open_line(path: String) -> Result<OpenLine, String> {
+    crate::blocking(move || -> Result<OpenLine, String> {
+        let line = LineAt::admit(&path)?;
+        let source = std::fs::read_to_string(&line.path).map_err(said)?;
+        Ok(OpenLine::of(&line, source))
+    })
+    .await
 }
 
 /// Checks formal work separately so opening and saving never wait for Lake.
-#[tauri::command(async)]
-pub fn check_line_lean(path: String) -> Result<Option<LeanDigest>, String> {
-    let line = LineAt::admit(&path)?;
-    lean_status(&line).map_err(failed)
+#[tauri::command]
+pub async fn check_line_lean(path: String) -> Result<Option<LeanDigest>, String> {
+    crate::blocking(move || -> Result<Option<LeanDigest>, String> {
+        let line = LineAt::admit(&path)?;
+        lean_status(&line).map_err(failed)
+    })
+    .await
 }
 
 /// Saves the line through the engine, which sends it after a pause.
 /// Called whenever the writer pauses.
-#[tauri::command(async)]
-pub fn save_line(path: String, document: Document) -> Result<OpenLine, String> {
-    let line = LineAt::admit(&path)?;
-    Mirror::at(&home())
-        .and_then(|mirror| mirror.save(&line.group, line.side()?, &line.name, &document))
-        .map_err(failed)?;
-    engine::nudge(Nudge::Saved);
-    Ok(OpenLine::of(&line, document.to_text()))
+#[tauri::command]
+pub async fn save_line(path: String, document: Document) -> Result<OpenLine, String> {
+    crate::blocking(move || -> Result<OpenLine, String> {
+        let line = LineAt::admit(&path)?;
+        Mirror::at(&home())
+            .and_then(|mirror| mirror.save(&line.group, line.side()?, &line.name, &document))
+            .map_err(failed)?;
+        engine::nudge(Nudge::Saved);
+        Ok(OpenLine::of(&line, document.to_text()))
+    })
+    .await
 }
 
 /// Reads the line out of its source, collecting every fault.

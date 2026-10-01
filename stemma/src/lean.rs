@@ -66,6 +66,17 @@ pub fn check_reusing(clone: &Path, line: &Name, pins: &Pins) -> Result<Option<Le
     type Checked = HashMap<PathBuf, (String, Arc<Library>)>;
     static CHECKED: LazyLock<Mutex<Checked>> = LazyLock::new(Mutex::default);
 
+    // Lines of one repository are often opened one after another, and
+    // each asks for the same check. The later ones wait for the first and
+    // read what it found, instead of each starting Lake over again.
+    static CHECKING: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> =
+        LazyLock::new(Mutex::default);
+    let turn = CHECKING
+        .lock()
+        .map(|mut checking| Arc::clone(checking.entry(clone.to_owned()).or_default()))
+        .unwrap_or_default();
+    let _turn = turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
     let fingerprint = library_fingerprint(clone, pins)?;
     let reused = CHECKED
         .lock()
@@ -656,6 +667,18 @@ pub(crate) fn prepare_environment(clone: &Path, lean: &str, mathlib: &str) -> Re
     set_toolchain(clone, lean).map_err(|error| format!("{error:#}"))?;
     let directory = clone.join(".stemma/check");
     std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+
+    // The application and the daemon both prepare the same repository,
+    // and two `lake update`s at once fetch Mathlib twice into one place.
+    // Whoever comes second waits, then finds the work done.
+    let lock = directory.join("lock");
+    let _locked = std::fs::File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock)
+        .and_then(|file| file.lock().map(|()| file))
+        .map_err(|error| format!("cannot lock {}: {error}", lock.display()))?;
 
     // `lake update` resolves the packages again and may move any that are
     // not pinned, so it runs only when what it resolves from changed.

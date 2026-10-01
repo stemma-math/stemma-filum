@@ -80,103 +80,118 @@ pub struct Offer {
 
 /// This machine as the instance sees it, with the jobs it was given;
 /// nothing when it has not offered to run jobs.
-#[tauri::command(async)]
-pub fn machine() -> Result<Option<MachinePanel>, String> {
-    let home = home();
-    let session = Session::open()?;
-    let Some(node) = session.server.node(&session.token).map_err(failed)? else {
-        return Ok(None);
-    };
-    let jobs = session
-        .server
-        .jobs(&session.token)
-        .map_err(failed)?
-        .into_iter()
-        .map(|job| Job {
-            raw_output: stemma::job::work::output_exists(&home, &job.job),
-            id: job.job,
-            group: job.group,
-            side: job.side,
-            line: job.line,
-            state: job.state,
-            outcome: job.outcome,
-            owed: job.owed,
-            task: job.task,
-            agent: job.agent,
-            said: job.said,
-            workspace: job.workspace,
-            progress: job.progress,
-            cancel_requested: job.cancel_requested,
-        })
-        .collect();
+#[tauri::command]
+pub async fn machine() -> Result<Option<MachinePanel>, String> {
+    crate::blocking(move || -> Result<Option<MachinePanel>, String> {
+        let home = home();
+        let session = Session::open()?;
+        let Some(node) = session.server.node(&session.token).map_err(failed)? else {
+            return Ok(None);
+        };
+        let jobs = session
+            .server
+            .jobs(&session.token)
+            .map_err(failed)?
+            .into_iter()
+            .map(|job| Job {
+                raw_output: stemma::job::work::output_exists(&home, &job.job),
+                id: job.job,
+                group: job.group,
+                side: job.side,
+                line: job.line,
+                state: job.state,
+                outcome: job.outcome,
+                owed: job.owed,
+                task: job.task,
+                agent: job.agent,
+                said: job.said,
+                workspace: job.workspace,
+                progress: job.progress,
+                cancel_requested: job.cancel_requested,
+            })
+            .collect();
 
-    let used = stemma::job::workspace::used(&home);
-    let limit = stemma::config::Config::read(&home.config_file())
-        .unwrap_or_default()
-        .jobs
-        .workspace_limit();
+        let used = stemma::job::workspace::used(&home);
+        let limit = stemma::config::Config::read(&home.config_file())
+            .unwrap_or_default()
+            .jobs
+            .workspace_limit();
 
-    Ok(Some(MachinePanel {
-        label: node.label,
-        presence: node.presence.to_string(),
-        agents: node.agents.iter().map(Agent::of).collect(),
-        jobs,
-        workspaces: Workspaces {
-            count: used.count,
-            bytes: used.bytes,
-            limit,
-        },
-    }))
+        Ok(Some(MachinePanel {
+            label: node.label,
+            presence: node.presence.to_string(),
+            agents: node.agents.iter().map(Agent::of).collect(),
+            jobs,
+            workspaces: Workspaces {
+                count: used.count,
+                bytes: used.bytes,
+                limit,
+            },
+        }))
+    })
+    .await
 }
 
 /// The raw agent output kept on this machine for one job.
-#[tauri::command(async)]
-pub fn job_output(job: String) -> Result<String, String> {
-    carried_out(|home, out| stemma::job::launch::output(home, &job, out))
+#[tauri::command]
+pub async fn job_output(job: String) -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        carried_out(|home, out| stemma::job::launch::output(home, &job, out))
+    })
+    .await
 }
 
 /// Marks what stopped a job as resolved, once its owner has fixed it.
-#[tauri::command(async)]
-pub fn clear_job(job: String) -> Result<(), String> {
-    let session = Session::open()?;
-    session
-        .server
-        .clear_job(&session.token, &job)
-        .map_err(failed)
+#[tauri::command]
+pub async fn clear_job(job: String) -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        let session = Session::open()?;
+        session
+            .server
+            .clear_job(&session.token, &job)
+            .map_err(failed)
+    })
+    .await
 }
 
 /// Cancels a queued job or asks its running agent to stop.
-#[tauri::command(async)]
-pub fn cancel_job(job: String) -> Result<(), String> {
-    let session = Session::open()?;
-    session
-        .server
-        .cancel_job(&session.token, &job)
-        .map_err(failed)
+#[tauri::command]
+pub async fn cancel_job(job: String) -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        let session = Session::open()?;
+        session
+            .server
+            .cancel_job(&session.token, &job)
+            .map_err(failed)
+    })
+    .await
 }
 
 /// The machines that work for `group`, and what each can run.
-#[tauri::command(async)]
-pub fn offers(group: String) -> Result<Vec<Offer>, String> {
-    let session = Session::open()?;
-    Ok(session
-        .server
-        .machines(&session.token, &group)
-        .map_err(failed)?
-        .into_iter()
-        .map(|machine| Offer {
-            agents: machine.agents.iter().map(Agent::of).collect(),
-            machine: machine.machine,
-            label: machine.label,
-            presence: machine.presence,
-        })
-        .collect())
+#[tauri::command]
+pub async fn offers(group: String) -> Result<Vec<Offer>, String> {
+    crate::blocking(move || -> Result<Vec<Offer>, String> {
+        let session = Session::open()?;
+        Ok(session
+            .server
+            .machines(&session.token, &group)
+            .map_err(failed)?
+            .into_iter()
+            .map(|machine| Offer {
+                agents: machine.agents.iter().map(Agent::of).collect(),
+                machine: machine.machine,
+                label: machine.label,
+                presence: machine.presence,
+            })
+            .collect())
+    })
+    .await
 }
 
 /// Asks `machine` to run `task` with `agent` on the line.
-#[tauri::command(async)]
+#[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub fn launch(
+pub async fn launch(
     path: String,
     task: String,
     agent: String,
@@ -186,20 +201,24 @@ pub fn launch(
     grant_blocks: Vec<String>,
     grant_library: bool,
 ) -> Result<String, String> {
-    let line = LineAt::admit(&path)?;
-    let wanted = stemma::job::launch::Wanted {
-        line: None,
-        task,
-        agent,
-        machine,
-        here,
-        grants: request
-            .is_some()
-            .then(|| grants(grant_blocks, grant_library))
-            .transpose()?,
-        request,
-    };
-    stemma::job::launch::run(&home(), line.directory(), &wanted, &mut Vec::new()).map_err(failed)
+    crate::blocking(move || -> Result<String, String> {
+        let line = LineAt::admit(&path)?;
+        let wanted = stemma::job::launch::Wanted {
+            line: None,
+            task,
+            agent,
+            machine,
+            here,
+            grants: request
+                .is_some()
+                .then(|| grants(grant_blocks, grant_library))
+                .transpose()?,
+            request,
+        };
+        stemma::job::launch::run(&home(), line.directory(), &wanted, &mut Vec::new())
+            .map_err(failed)
+    })
+    .await
 }
 
 /// What a custom request may change: each block granted may be edited,
@@ -224,9 +243,12 @@ fn grants(blocks: Vec<String>, library: bool) -> Result<Grants, String> {
 }
 
 /// Offers this machine to the instance for work in `groups`.
-#[tauri::command(async)]
-pub fn node_init(groups: Vec<String>) -> Result<String, String> {
-    carried_out(|home, out| stemma::node::init(home, &groups, out).map(|_| ()))
+#[tauri::command]
+pub async fn node_init(groups: Vec<String>) -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        carried_out(|home, out| stemma::node::init(home, &groups, out).map(|_| ()))
+    })
+    .await
 }
 
 #[cfg(test)]

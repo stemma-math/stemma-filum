@@ -164,88 +164,92 @@ fn repaired() -> Repaired {
 }
 
 /// Where every item stands.
-#[tauri::command(async)]
-pub fn setup_survey() -> Result<Survey, String> {
-    let home = home();
-    let repaired = repaired();
-    let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
+#[tauri::command]
+pub async fn setup_survey() -> Result<Survey, String> {
+    crate::blocking(move || -> Result<Survey, String> {
+        let home = home();
+        let repaired = repaired();
+        let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
 
-    // What the server knows about this machine: which groups it works
-    // for, and what jobs taught it about its agents.
-    let node =
-        Session::open().and_then(|session| session.server.node(&session.token).map_err(failed));
+        // What the server knows about this machine: which groups it works
+        // for, and what jobs taught it about its agents.
+        let node =
+            Session::open().and_then(|session| session.server.node(&session.token).map_err(failed));
 
-    let groups = match &node {
-        Ok(Some(node)) if !node.groups.is_empty() => Groups {
-            item: Item::done(),
-            serving: node.groups.clone(),
-        },
-        Ok(_) => Groups {
-            item: Item::not_set_up(),
-            serving: Vec::new(),
-        },
-        Err(problem) => Groups {
-            item: Item::because(State::Unknown, problem.clone()),
-            serving: Vec::new(),
-        },
-    };
-
-    let learned: BTreeMap<String, Availability> = match &node {
-        Ok(Some(node)) => node
-            .agents
-            .iter()
-            .map(|agent| (agent.agent.as_str().to_owned(), agent.availability))
-            .collect(),
-        _ => BTreeMap::new(),
-    };
-    let tried = TRIED.lock().map(|tried| tried.clone()).unwrap_or_default();
-    let agents = stemma::job::agents::look(&home, &config)
-        .into_iter()
-        .map(|found| {
-            let name = found.agent.as_str().to_owned();
-            let known = stemma_core::machine::known(&name);
-            let availability = match (found.availability, tried.get(&name), learned.get(&name)) {
-                (Availability::NotInstalled, _, _) => Availability::NotInstalled,
-                (_, Some(tried), _) => tried.availability,
-                (_, None, Some(learned)) => *learned,
-                (found, None, None) => found,
-            };
-            let item = match availability {
-                Availability::Ready => Item::done(),
-                Availability::NotInstalled => Item::not_set_up(),
-                other => Item::because(
-                    State::Attention,
-                    tried
-                        .get(&name)
-                        .map(|tried| tried.said.clone())
-                        .or_else(|| other.reason().map(str::to_owned))
-                        .unwrap_or_default(),
-                ),
-            };
-
-            Agent {
-                called: known.map_or(name.as_str(), |known| known.called).to_owned(),
-                instructions: known.map_or("", |known| known.instructions).to_owned(),
-                version: found.version,
-                item,
-                name,
-            }
-        })
-        .collect();
-
-    Ok(Survey {
-        service: service(&home, &repaired),
-        command_line: command_line(&repaired),
-        groups,
-        agents,
-        lean: Lean {
-            item: match stemma::lean::elan() {
-                Some(_) => Item::done(),
-                None => Item::not_set_up(),
+        let groups = match &node {
+            Ok(Some(node)) if !node.groups.is_empty() => Groups {
+                item: Item::done(),
+                serving: node.groups.clone(),
             },
-            instructions: LEAN_INSTRUCTIONS.to_owned(),
-        },
+            Ok(_) => Groups {
+                item: Item::not_set_up(),
+                serving: Vec::new(),
+            },
+            Err(problem) => Groups {
+                item: Item::because(State::Unknown, problem.clone()),
+                serving: Vec::new(),
+            },
+        };
+
+        let learned: BTreeMap<String, Availability> = match &node {
+            Ok(Some(node)) => node
+                .agents
+                .iter()
+                .map(|agent| (agent.agent.as_str().to_owned(), agent.availability))
+                .collect(),
+            _ => BTreeMap::new(),
+        };
+        let tried = TRIED.lock().map(|tried| tried.clone()).unwrap_or_default();
+        let agents = stemma::job::agents::look(&home, &config)
+            .into_iter()
+            .map(|found| {
+                let name = found.agent.as_str().to_owned();
+                let known = stemma_core::machine::known(&name);
+                let availability = match (found.availability, tried.get(&name), learned.get(&name))
+                {
+                    (Availability::NotInstalled, _, _) => Availability::NotInstalled,
+                    (_, Some(tried), _) => tried.availability,
+                    (_, None, Some(learned)) => *learned,
+                    (found, None, None) => found,
+                };
+                let item = match availability {
+                    Availability::Ready => Item::done(),
+                    Availability::NotInstalled => Item::not_set_up(),
+                    other => Item::because(
+                        State::Attention,
+                        tried
+                            .get(&name)
+                            .map(|tried| tried.said.clone())
+                            .or_else(|| other.reason().map(str::to_owned))
+                            .unwrap_or_default(),
+                    ),
+                };
+
+                Agent {
+                    called: known.map_or(name.as_str(), |known| known.called).to_owned(),
+                    instructions: known.map_or("", |known| known.instructions).to_owned(),
+                    version: found.version,
+                    item,
+                    name,
+                }
+            })
+            .collect();
+
+        Ok(Survey {
+            service: service(&home, &repaired),
+            command_line: command_line(&repaired),
+            groups,
+            agents,
+            lean: Lean {
+                item: match stemma::lean::elan() {
+                    Some(_) => Item::done(),
+                    None => Item::not_set_up(),
+                },
+                instructions: LEAN_INSTRUCTIONS.to_owned(),
+            },
+        })
     })
+    .await
 }
 
 /// The background service's item.
@@ -339,73 +343,85 @@ fn command_line(repaired: &Repaired) -> CommandLine {
 }
 
 /// Installs the background service, and the command line's link it runs.
-#[tauri::command(async)]
-pub fn setup_service() -> Result<String, String> {
-    let home = home();
+#[tauri::command]
+pub async fn setup_service() -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        let home = home();
 
-    // The service runs the link rather than the bundle, which moves.
-    if let Some(carried) = stemma::machine::program::carried()
-        && stemma::machine::setup::link().map_err(failed)? == Link::Missing
-    {
-        stemma::machine::setup::link_to(&carried).map_err(failed)?;
-    }
-    let program = stemma::machine::setup::stable_program().map_err(failed)?;
-    stemma::machine::service::put_in_place(&home, &program).map_err(failed)?;
-    forget_repair(|repaired| repaired.service = None);
+        // The service runs the link rather than the bundle, which moves.
+        if let Some(carried) = stemma::machine::program::carried()
+            && stemma::machine::setup::link().map_err(failed)? == Link::Missing
+        {
+            stemma::machine::setup::link_to(&carried).map_err(failed)?;
+        }
+        let program = stemma::machine::setup::stable_program().map_err(failed)?;
+        stemma::machine::service::put_in_place(&home, &program).map_err(failed)?;
+        forget_repair(|repaired| repaired.service = None);
 
-    Ok("The background service is running and starts with this machine.".to_owned())
+        Ok("The background service is running and starts with this machine.".to_owned())
+    })
+    .await
 }
 
 /// Links the command line the application carries into `~/.local/bin`.
-#[tauri::command(async)]
-pub fn setup_link() -> Result<String, String> {
-    let carried = stemma::machine::program::carried().ok_or_else(|| {
-        "This build of the application does not carry the command line.".to_owned()
-    })?;
-    let placed = stemma::machine::setup::link_to(&carried).map_err(failed)?;
-    forget_repair(|repaired| repaired.link = None);
+#[tauri::command]
+pub async fn setup_link() -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        let carried = stemma::machine::program::carried().ok_or_else(|| {
+            "This build of the application does not carry the command line.".to_owned()
+        })?;
+        let placed = stemma::machine::setup::link_to(&carried).map_err(failed)?;
+        forget_repair(|repaired| repaired.link = None);
 
-    Ok(format!("The stemma command is at {}.", placed.display()))
+        Ok(format!("The stemma command is at {}.", placed.display()))
+    })
+    .await
 }
 
 /// Adds the line that puts `~/.local/bin` on the path to the profile of
 /// the shell this account logs in with.
-#[tauri::command(async)]
-pub fn setup_path() -> Result<String, String> {
-    let shell =
-        Shell::login().ok_or_else(|| "Your login shell is not one Stemma knows.".to_owned())?;
-    let profile = shell.add_line().map_err(failed)?;
+#[tauri::command]
+pub async fn setup_path() -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        let shell =
+            Shell::login().ok_or_else(|| "Your login shell is not one Stemma knows.".to_owned())?;
+        let profile = shell.add_line().map_err(failed)?;
 
-    Ok(format!(
-        "Added to {}. Terminals opened from now on find the stemma command.",
-        profile.display()
-    ))
+        Ok(format!(
+            "Added to {}. Terminals opened from now on find the stemma command.",
+            profile.display()
+        ))
+    })
+    .await
 }
 
 /// Asks an agent for one word, to find out whether it is installed and
 /// signed in.
-#[tauri::command(async)]
-pub fn try_agent(agent: String) -> Result<Tried, String> {
-    let home = home();
-    let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
-    let slug = stemma_core::id::Slug::parse(&agent).map_err(said)?;
-    let ran = stemma::job::agents::try_out(&home, &config, &agent).map_err(failed)?;
+#[tauri::command]
+pub async fn try_agent(agent: String) -> Result<Tried, String> {
+    crate::blocking(move || -> Result<Tried, String> {
+        let home = home();
+        let config = stemma::config::Config::read(&home.config_file()).map_err(failed)?;
+        let slug = stemma_core::id::Slug::parse(&agent).map_err(said)?;
+        let ran = stemma::job::agents::try_out(&home, &config, &agent).map_err(failed)?;
 
-    let tried = match stemma::job::agents::trouble(&slug, &ran) {
-        None => Tried {
-            availability: Availability::Ready,
-            said: "It answered.".to_owned(),
-        },
-        Some(failure) => Tried {
-            availability: Availability::learned_from(&failure).unwrap_or(Availability::Ready),
-            said: failure.to_string(),
-        },
-    };
-    if let Ok(mut all) = TRIED.lock() {
-        all.insert(agent, tried.clone());
-    }
+        let tried = match stemma::job::agents::trouble(&slug, &ran) {
+            None => Tried {
+                availability: Availability::Ready,
+                said: "It answered.".to_owned(),
+            },
+            Some(failure) => Tried {
+                availability: Availability::learned_from(&failure).unwrap_or(Availability::Ready),
+                said: failure.to_string(),
+            },
+        };
+        if let Ok(mut all) = TRIED.lock() {
+            all.insert(agent, tried.clone());
+        }
 
-    Ok(tried)
+        Ok(tried)
+    })
+    .await
 }
 
 /// Clears what repairing at launch reported, once the owner fixed it.
@@ -419,38 +435,50 @@ fn forget_repair(fixed: impl FnOnce(&mut Repaired)) {
 
 /// Sends what can be sent, and answers the lines still not on the
 /// server, as `group/side/name`.
-#[tauri::command(async)]
-pub fn removal_send() -> Vec<String> {
-    stemma::machine::uninstall::send(&home())
-        .into_iter()
-        .map(|line| format!("{}/{}/{}", line.group, line.side.as_str(), line.name))
-        .collect()
+#[tauri::command]
+pub async fn removal_send() -> Vec<String> {
+    crate::blocking(move || -> Vec<String> {
+        stemma::machine::uninstall::send(&home())
+            .into_iter()
+            .map(|line| format!("{}/{}/{}", line.group, line.side.as_str(), line.name))
+            .collect()
+    })
+    .await
 }
 
 /// Stops and removes the service, the link and the profile line, takes
 /// the machine back on the server and signs out.
-#[tauri::command(async)]
-pub fn removal_leave() -> Result<Vec<String>, String> {
-    let home = home();
-    let mut done = stemma::machine::uninstall::leave(&home).map_err(failed)?;
-    done.extend(stemma::machine::uninstall::take_down(&home).map_err(failed)?);
+#[tauri::command]
+pub async fn removal_leave() -> Result<Vec<String>, String> {
+    crate::blocking(move || -> Result<Vec<String>, String> {
+        let home = home();
+        let mut done = stemma::machine::uninstall::leave(&home).map_err(failed)?;
+        done.extend(stemma::machine::uninstall::take_down(&home).map_err(failed)?);
 
-    Ok(done)
+        Ok(done)
+    })
+    .await
 }
 
 /// What Stemma keeps on this machine.
-#[tauri::command(async)]
-pub fn removal_data() -> Vec<String> {
-    stemma::machine::uninstall::local_data(&home())
-        .into_iter()
-        .map(|path| path.display().to_string())
-        .collect()
+#[tauri::command]
+pub async fn removal_data() -> Vec<String> {
+    crate::blocking(move || -> Vec<String> {
+        stemma::machine::uninstall::local_data(&home())
+            .into_iter()
+            .map(|path| path.display().to_string())
+            .collect()
+    })
+    .await
 }
 
 /// Deletes what Stemma keeps on this machine.
-#[tauri::command(async)]
-pub fn removal_delete_data() -> Result<(), String> {
-    stemma::machine::uninstall::delete_data(&home()).map_err(failed)
+#[tauri::command]
+pub async fn removal_delete_data() -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        stemma::machine::uninstall::delete_data(&home()).map_err(failed)
+    })
+    .await
 }
 
 /// The application bundle, when the application runs from one.
@@ -459,9 +487,9 @@ fn bundle() -> Option<PathBuf> {
 }
 
 /// Whether the application can be moved to the Trash.
-#[tauri::command(async)]
-pub fn can_trash() -> bool {
-    cfg!(target_os = "macos") && bundle().is_some()
+#[tauri::command]
+pub async fn can_trash() -> bool {
+    crate::blocking(move || -> bool { cfg!(target_os = "macos") && bundle().is_some() }).await
 }
 
 /// Moves the application to the Trash, and quits.
