@@ -256,17 +256,81 @@ fn grants(blocks: Vec<String>, library: bool) -> Result<Grants, String> {
     })
 }
 
-/// Offers this machine to the instance for work in `groups`.
+/// Offers this machine to the instance for work in `groups`, and says in
+/// one sentence what came of it.
 #[tauri::command]
 pub async fn node_init(groups: Vec<String>) -> Result<String, String> {
     crate::blocking(move || -> Result<String, String> {
-        carried_out(|home, out| stemma::node::init(home, &groups, out).map(|_| ()))
+        let node = stemma::node::init(&home(), &groups, &mut std::io::sink()).map_err(failed)?;
+        Ok(registered(&node))
     })
     .await
 }
 
+/// What registering came to, as a person reads it in a notice: which
+/// groups the machine works for, and which agents it can run.
+fn registered(node: &stemma::api::Node) -> String {
+    let groups = match node.groups.as_slice() {
+        [] => format!("{} works for no group yet.", node.label),
+        groups => format!("{} works for {}.", node.label, listed(groups)),
+    };
+    let ready: Vec<String> = node
+        .agents
+        .iter()
+        .filter(|agent| agent.availability.is_usable())
+        .map(|agent| {
+            stemma_core::machine::known(agent.agent.as_str())
+                .map_or(agent.agent.as_str(), |known| known.called)
+                .to_owned()
+        })
+        .collect();
+
+    match ready.as_slice() {
+        [] => format!("{groups} No agent is ready on it."),
+        ready => format!("{groups} Ready: {}.", listed(ready)),
+    }
+}
+
+/// Names in a sentence: `a`, `a and b`, `a, b and c`.
+fn listed(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn registering_is_said_in_one_sentence() {
+        use stemma_core::machine::{Availability, Detected};
+
+        let node = stemma::api::Node {
+            machine: "mch:01M3VW1C32DP2Y3KAPA310B7B1".to_owned(),
+            label: "Marios-MBP".to_owned(),
+            presence: stemma_core::machine::Presence::Awake,
+            groups: vec!["prova".to_owned(), "sample".to_owned()],
+            agents: vec![
+                Detected {
+                    agent: "claude".parse().unwrap(),
+                    version: Some("2.1.283".to_owned()),
+                    availability: Availability::Ready,
+                },
+                Detected {
+                    agent: "gemini".parse().unwrap(),
+                    version: None,
+                    availability: Availability::NotInstalled,
+                },
+            ],
+        };
+
+        assert_eq!(
+            super::registered(&node),
+            "Marios-MBP works for prova and sample. Ready: Claude Code."
+        );
+    }
+
     use stemma_core::proposal::LineGrant;
 
     use super::grants;
