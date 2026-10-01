@@ -24,6 +24,18 @@
     loaded = true;
   }
 
+  async function keepRunning(event: Event) {
+    if (!machine) return;
+    const wanted = (event.currentTarget as HTMLInputElement).checked;
+    try {
+      await api.setWhileClosed(wanted);
+      machine.while_closed = wanted;
+    } catch (error) {
+      (event.currentTarget as HTMLInputElement).checked = machine.while_closed;
+      fail(error);
+    }
+  }
+
   async function rename(event: SubmitEvent) {
     event.preventDefault();
     if (!machine || !name.trim() || name.trim() === machine.label) return;
@@ -64,7 +76,17 @@
   {#if problem}
     <Message kind="error" text={problem} />
   {:else if machine}
-    <p class="setting__note">The background service keeps this machine online and running jobs while the app is closed. Removing Stemma, below, stops it.</p>
+    <label class="choice">
+      <input type="checkbox" checked={machine.while_closed} onchange={keepRunning} />
+      Keep running jobs while the app is closed
+    </label>
+    <p class="setting__note">
+      {#if machine.while_closed}
+        The background service keeps this machine online, running jobs and sending your lines while the app is closed.
+      {:else}
+        This machine goes offline when you quit the app: a job already running finishes first, and the service starts again when the app opens.
+      {/if}
+    </p>
     <JobList jobs={machine.jobs} empty="No jobs have been assigned to this machine." />
     <p class="setting__note">
       {#if machine.workspaces.count}

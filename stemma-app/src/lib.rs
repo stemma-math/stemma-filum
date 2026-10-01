@@ -74,6 +74,7 @@ pub fn run() {
             claims::settle,
             machine::machine,
             machine::rename_machine,
+            machine::set_while_closed,
             machine::job_output,
             machine::cancel_job,
             machine::clear_job,

@@ -414,7 +414,7 @@ fn plist(executable: &Path, home: &Home, moved: Option<&str>) -> String {
          <key>ProgramArguments</key>\n    \
          <array><string>{}</string><string>daemon</string><string>run</string></array>\n    \
          <key>RunAtLoad</key><true/>\n    \
-         <key>KeepAlive</key><true/>\n    \
+         <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n    \
          <key>StandardOutPath</key><string>{log}</string>\n    \
          <key>StandardErrorPath</key><string>{log}</string>\n\
          {environment}\
@@ -481,11 +481,11 @@ mod tests {
     }
 
     #[test]
-    fn the_launch_agent_names_the_program_and_keeps_it_running() {
+    fn the_launch_agent_names_the_program_and_brings_it_back_after_a_failure() {
         let written = plist(Path::new("/usr/local/bin/stemma"), &home(), None);
 
         assert!(written.contains("<string>/usr/local/bin/stemma</string>"));
-        assert!(written.contains("<key>KeepAlive</key><true/>"));
+        assert!(written.contains("<key>SuccessfulExit</key><false/>"));
         assert!(written.contains("daemon.log"));
     }
 

@@ -93,6 +93,8 @@ settings in the client configuration. For example:
 [jobs]
 timeout_minutes = 45
 workspaces_gigabytes = 20
+# Run jobs only while the application is open (the default is true).
+while_closed = false
 ```
 
 Queued and running jobs can be cancelled from the application or with

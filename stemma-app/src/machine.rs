@@ -58,6 +58,8 @@ pub struct MachinePanel {
     agents: Vec<Agent>,
     jobs: Vec<Job>,
     workspaces: Workspaces,
+    /// Whether the background service runs jobs while the app is closed.
+    while_closed: bool,
 }
 
 /// How much room the workspaces of this machine's jobs take.
@@ -112,10 +114,8 @@ pub async fn machine() -> Result<Option<MachinePanel>, String> {
             .collect();
 
         let used = stemma::job::workspace::used(&home);
-        let limit = stemma::config::Config::read(&home.config_file())
-            .unwrap_or_default()
-            .jobs
-            .workspace_limit();
+        let config = stemma::config::Config::read(&home.config_file()).unwrap_or_default();
+        let limit = config.jobs.workspace_limit();
 
         Ok(Some(MachinePanel {
             label: node.label,
@@ -127,6 +127,7 @@ pub async fn machine() -> Result<Option<MachinePanel>, String> {
                 bytes: used.bytes,
                 limit,
             },
+            while_closed: config.jobs.while_closed,
         }))
     })
     .await
@@ -142,6 +143,27 @@ pub async fn rename_machine(label: String) -> Result<String, String> {
             .rename_node(&session.token, label.trim())
             .map_err(failed)?;
         Ok(node.label)
+    })
+    .await
+}
+
+/// Says whether the background service keeps running jobs while the app
+/// is closed. Turned on, a service the app's quitting stopped starts again
+/// now rather than at the next launch.
+#[tauri::command]
+pub async fn set_while_closed(while_closed: bool) -> Result<(), String> {
+    crate::blocking(move || -> Result<(), String> {
+        let home = home();
+        let path = home.config_file();
+        let mut config = stemma::config::Config::read(&path).map_err(failed)?;
+        config.jobs.while_closed = while_closed;
+        config.write(&path).map_err(failed)?;
+
+        let service = stemma::machine::service::service(&home);
+        if while_closed && service == stemma::machine::service::Service::Stopped {
+            stemma::machine::service::start(&home).map_err(failed)?;
+        }
+        Ok(())
     })
     .await
 }

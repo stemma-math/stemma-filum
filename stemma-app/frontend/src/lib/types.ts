@@ -194,7 +194,15 @@ export type Presence = "awake" | "asleep";
 /** How much room the workspaces of this machine's jobs take, and may take. */
 export type Workspaces = { count: number; bytes: number; limit: number };
 
-export type Machine = { label: string; presence: Presence; agents: Agent[]; jobs: Job[]; workspaces: Workspaces };
+export type Machine = {
+  label: string;
+  presence: Presence;
+  agents: Agent[];
+  jobs: Job[];
+  workspaces: Workspaces;
+  /** Whether the background service runs jobs while the app is closed. */
+  while_closed: boolean;
+};
 
 /** Where one item of the machine checklist stands (`stemma-app/src/setup.rs`). */
 export type SetupState = "done" | "attention" | "not_set_up" | "unknown";

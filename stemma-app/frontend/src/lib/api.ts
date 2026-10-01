@@ -148,6 +148,7 @@ export const api = {
   }),
   machine: () => call<Machine | null>("machine"),
   renameMachine: (label: string) => call<string>("rename_machine", { label }),
+  setWhileClosed: (whileClosed: boolean) => call<void>("set_while_closed", { whileClosed }),
   jobOutput: (job: string) => call<string>("job_output", { job }),
   cancelJob: (job: string) => call<void>("cancel_job", { job }),
   clearJob: (job: string) => call<void>("clear_job", { job }),
