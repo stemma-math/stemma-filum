@@ -104,15 +104,13 @@ async fn run(instance: Instance) -> Result<()> {
     }
 }
 
-/// Replaces the never-published default tag before machines sync or run jobs.
+/// Repairs pins left by earlier defaults before machines sync or run jobs.
 async fn upgrade_legacy_pins(instance: &Instance) -> Result<()> {
     let groups = instance.read(crate::store::groups::all).await?;
     for group in groups {
         let id = group.id.clone();
         let commit = instance
-            .writing_git(move |repositories| {
-                crate::git::upgrade_unpublished_stemma_pin(repositories, &id)
-            })
+            .writing_git(move |repositories| crate::git::upgrade_legacy_pins(repositories, &id))
             .await?;
         if let Some(commit) = commit {
             let id = group.id.clone();

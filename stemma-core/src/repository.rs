@@ -35,8 +35,12 @@ pub const LEAN_TOOLCHAIN: &str = "lean-toolchain";
 /// Lean used by newly created groups.
 pub const DEFAULT_LEAN: &str = "4.34.1";
 
-/// Mathlib used by newly created groups.
-pub const DEFAULT_MATHLIB: &str = "v4.34.0";
+/// Mathlib used by newly created groups: the release built with
+/// [`DEFAULT_LEAN`], whose build cache that Lean can read.
+pub const DEFAULT_MATHLIB: &str = "v4.34.1";
+/// An earlier default Mathlib, built with a different Lean than the one
+/// pinned beside it.
+pub const MISMATCHED_MATHLIB: &str = "v4.34.0";
 
 /// The Stemma Lean package used by newly created groups. This commit is
 /// present in the published `main-build`; no `v0.1.0` Git tag exists.
