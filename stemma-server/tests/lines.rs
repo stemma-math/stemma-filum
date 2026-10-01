@@ -252,3 +252,63 @@ async fn a_line_nobody_has_written_is_not_there() {
         StatusCode::NOT_FOUND
     );
 }
+
+/// Reads the form token out of a page.
+fn form_token(page: &support::Page) -> String {
+    let marker = "name=\"form_token\" value=\"";
+    let start = page.body.find(marker).expect("a form token") + marker.len();
+    let rest = &page.body[start..];
+
+    rest[..rest.find('"').expect("the end of the token")].to_owned()
+}
+
+#[tokio::test]
+async fn a_line_can_be_given_a_new_title_from_the_web() {
+    let mut harness = Harness::new();
+    register(&mut harness, "ana").await;
+    own_a_group(&mut harness, "ana").await;
+    harness
+        .instance
+        .write(|connection| {
+            let user = users::by_login(connection, "ana")?.expect("the account");
+            let group =
+                groups::by_slug(connection, &Slug::parse("algebra").unwrap())?.expect("the group");
+            stemma_server::store::lines::start(
+                connection,
+                &group.id,
+                Side::Shared,
+                &stemma_core::line::Name::parse("quotient-groups").unwrap(),
+                &user.id,
+                &stemma_server::store::revisions::Content {
+                    source: source().to_text(),
+                    lean_source: None,
+                    page: "<p>The page.</p>".to_owned(),
+                },
+            )?;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    assert!(line.says("/g/algebra/shared/quotient-groups/edit"));
+
+    let form = harness.get("/g/algebra/shared/quotient-groups/edit").await;
+    assert_eq!(form.status, StatusCode::OK);
+    let saved = harness
+        .post(
+            "/g/algebra/shared/quotient-groups/edit",
+            &[
+                ("title", "Quotients and kernels"),
+                ("description", "Why groups split."),
+                ("form_token", &form_token(&form)),
+            ],
+        )
+        .await;
+    assert_eq!(saved.status, StatusCode::SEE_OTHER);
+
+    let line = harness.get("/g/algebra/shared/quotient-groups").await;
+    assert!(line.says("Quotients and kernels"));
+    assert!(line.says("Why groups split."));
+    assert!(line.says("Revision 2"));
+}

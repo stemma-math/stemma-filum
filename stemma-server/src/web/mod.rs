@@ -314,6 +314,10 @@ fn pages() -> Router<Instance> {
         .route("/g/{slug}/vault/obligations", post(vault::assign))
         .route("/audit-obligations/{id}/decide", post(vault::decide))
         .route("/g/{slug}/{side}/{line}", get(lines::view))
+        .route(
+            "/g/{slug}/{side}/{line}/edit",
+            get(lines::edit_form).post(lines::edit),
+        )
         .route("/g/{slug}/{side}/{line}/page", get(revisions::page))
         .route("/g/{slug}/{side}/{line}/line.json", get(revisions::source))
         .route("/g/{slug}/{side}/{line}/jobs", post(jobs::launch))
