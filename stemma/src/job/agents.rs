@@ -386,6 +386,23 @@ fn stop(child: &mut std::process::Child) {
     let _ = child.wait();
 }
 
+/// Stops every process this one started, and everything they started.
+///
+/// For a program on its way out: what it left running would go on in the
+/// background with nobody to read what it does.
+pub fn stop_everything_started() {
+    let family = descendants(std::process::id());
+    if family.is_empty() {
+        return;
+    }
+    let _ = Command::new("kill")
+        .arg("-KILL")
+        .args(family.iter().map(u32::to_string))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 /// Every process below `parent`, deepest first, as `pgrep` sees them.
 fn descendants(parent: u32) -> Vec<u32> {
     let Ok(listed) = Command::new("pgrep")

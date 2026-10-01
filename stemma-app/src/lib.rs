@@ -101,8 +101,16 @@ pub fn run() {
             vault::vault_bridge,
             vault::vault_audit,
         ])
-        .run(tauri::generate_context!())
-        .expect("the Stemma application could not start");
+        .build(tauri::generate_context!())
+        .expect("the Stemma application could not start")
+        .run(|_, event| {
+            // Lake and git, started for a check, would otherwise go on
+            // fetching after the window is gone, and keep the application
+            // listed as running.
+            if let tauri::RunEvent::Exit = event {
+                stemma::job::agents::stop_everything_started();
+            }
+        });
 }
 
 /// Runs a command's work on a thread set aside for blocking work.

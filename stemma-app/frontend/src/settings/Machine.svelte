@@ -32,6 +32,7 @@
   {#if problem}
     <Message kind="error" text={problem} />
   {:else if machine}
+    <p class="setting__note">The background service keeps this machine online and running jobs while the app is closed. Removing Stemma, below, stops it.</p>
     <JobList jobs={machine.jobs} empty="No jobs have been assigned to this machine." />
     <p class="setting__note">
       {#if machine.workspaces.count}
