@@ -572,6 +572,7 @@ fn accepted(document: &Document, revision: u64) -> AcceptedProposal {
         line: "quotients".to_owned(),
         line_id: Some("lin:one".to_owned()),
         revision,
+        applied_revision: None,
     }
 }
 

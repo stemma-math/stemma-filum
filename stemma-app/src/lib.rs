@@ -93,7 +93,6 @@ pub fn run() {
             reviews::proposals,
             reviews::proposal,
             reviews::decide_proposal,
-            reviews::apply_proposal,
             reviews::handoff_proposal,
             reviews::line_history,
             links::take_open_review,

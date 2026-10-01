@@ -847,6 +847,7 @@ pub async fn accepted(
         "line": proposal.job.line.as_str(),
         "line_id": proposal.job.line_id.map(|line| line.to_string()),
         "revision": proposal.job.revision,
+        "applied_revision": proposal.applied_revision,
     }))
     .into_response())
 }

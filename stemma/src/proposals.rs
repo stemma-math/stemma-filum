@@ -176,6 +176,15 @@ pub fn apply(home: &Home, proposal: &str, out: &mut impl Write) -> Result<()> {
         .server()
         .accepted_proposal(instance.token(), &proposal.to_string())?;
 
+    if let Some(revision) = accepted.applied_revision {
+        writeln!(
+            out,
+            "{proposal}  already applied to {}/{} as revision {revision}",
+            accepted.group, accepted.line
+        )?;
+        return Ok(());
+    }
+
     let said = applied(
         &Mirror::at(home)?,
         &instance,

@@ -103,6 +103,9 @@ pub struct AcceptedProposal {
     pub line_id: Option<String>,
     /// The revision the proposal was made against.
     pub revision: u64,
+    /// The revision a machine already wrote it as, once one has.
+    #[serde(default)]
+    pub applied_revision: Option<u64>,
 }
 
 /// An accepted proposal no machine has applied yet.

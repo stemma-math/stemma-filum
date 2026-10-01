@@ -168,7 +168,6 @@ export const api = {
   proposal: (proposal: string, current: string | null = null) => call<Review>("proposal", { proposal, current }),
   decideProposal: (proposal: string, decision: Verdict, note: string | null = null) =>
     call<string>("decide_proposal", { proposal, decision, note }),
-  applyProposal: (proposal: string) => call<string>("apply_proposal", { proposal }),
   takeOpenReview: () => call<string | null>("take_open_review"),
   handoffProposal: (proposal: string, reviewer: string) => call<void>("handoff_proposal", { proposal, reviewer }),
   lineHistory: (path: string) => call<LineProposal[]>("line_history", { path }),

@@ -70,7 +70,6 @@
       if (verdict === "ask_again") await api.sendNow();
       succeed(await api.decideProposal(review.proposal, verdict, note.trim() || null));
       if (verdict === "accept") {
-        succeed(await api.applyProposal(review.proposal));
         await line.reread();
         await app.lookAgain();
       }

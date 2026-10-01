@@ -246,12 +246,6 @@ pub fn decide_proposal(
     })
 }
 
-/// Writes an accepted proposal into this machine's clone.
-#[tauri::command(async)]
-pub fn apply_proposal(proposal: String) -> Result<String, String> {
-    carried_out(|home, out| stemma::proposals::apply(home, &proposal, out))
-}
-
 /// Hands the review of a proposal to another member of the group.
 #[tauri::command(async)]
 pub fn handoff_proposal(proposal: String, reviewer: String) -> Result<(), String> {
