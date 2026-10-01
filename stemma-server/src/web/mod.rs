@@ -325,6 +325,10 @@ fn pages() -> Router<Instance> {
         .route("/machines/{id}", get(machines::panel))
         .route("/machines/{id}/serve", post(machines::serve))
         .route(
+            "/machines/{id}/rename",
+            get(machines::rename_form).post(machines::rename),
+        )
+        .route(
             "/machines/{id}/retire",
             get(machines::retire_form).post(machines::retire),
         )
@@ -377,6 +381,7 @@ fn api() -> Router<Instance> {
         )
         .route("/api/machines/beat", post(machines::beat))
         .route("/api/machines/retire", post(machines::api_retire))
+        .route("/api/machines/rename", post(machines::api_rename))
         .route("/api/jobs", get(jobs::listing).post(jobs::start))
         .route("/api/jobs/take", post(jobs::take))
         .route("/api/jobs/{id}/finish", post(jobs::finish))

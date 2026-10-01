@@ -6,21 +6,53 @@
   import { api, said } from "../lib/api";
   import { space } from "../lib/joblist";
   import { setup } from "../lib/setup.svelte";
+  import { fail, succeed } from "../lib/status.svelte";
   import type { Machine } from "../lib/types";
 
   let machine = $state<Machine | null>(null);
   let loaded = $state(false);
   let problem = $state<string | null>(null);
+  let name = $state("");
+  let renaming = $state(false);
 
   async function load() {
-    try { machine = await api.machine(); problem = null; } catch (error) { problem = said(error); }
+    try {
+      machine = await api.machine();
+      name = machine?.label ?? "";
+      problem = null;
+    } catch (error) { problem = said(error); }
     loaded = true;
+  }
+
+  async function rename(event: SubmitEvent) {
+    event.preventDefault();
+    if (!machine || !name.trim() || name.trim() === machine.label) return;
+    renaming = true;
+    try {
+      machine.label = await api.renameMachine(name.trim());
+      name = machine.label;
+      succeed(`This machine is now called ${machine.label}.`);
+    } catch (error) {
+      fail(error);
+    } finally {
+      renaming = false;
+    }
   }
 
   onMount(load);
 </script>
 
 <h3 class="settings__title">This machine</h3>
+{#if machine}
+  <section class="setting">
+    <h4 class="setting__title">Name</h4>
+    <form class="machine-name" onsubmit={rename}>
+      <input class="input" bind:value={name} maxlength="80" aria-label="Machine name" required />
+      <button type="submit" class="button button--small" disabled={renaming || !name.trim() || name.trim() === machine.label}>Rename</button>
+    </form>
+    <p class="setting__note">How this machine appears to you and your groups.</p>
+  </section>
+{/if}
 <Checklist />
 <section class="setting">
   <h4 class="setting__title">

@@ -19,18 +19,60 @@ use crate::remedy::Remedy;
 /// The person approving is looking at a list of things asking for their
 /// account, so it has to be something they recognise.
 pub fn machine_label() -> String {
-    let name = std::process::Command::new("hostname")
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|name| name.trim().to_owned())
-        .filter(|name| !name.is_empty());
+    format!("stemma on {}", machine_name())
+}
 
-    match name {
-        Some(name) => format!("stemma on {name}"),
-        None => "stemma on an unnamed machine".to_owned(),
+/// The computer's own name, as its owner set it and reads it in their
+/// system's settings.
+///
+/// Not the network host name: a laptop is given another one by every
+/// network it joins, and one computer would be a new name each time.
+pub fn machine_name() -> String {
+    let said = |program: &str, arguments: &[&str]| {
+        std::process::Command::new(program)
+            .args(arguments)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|name| name.trim().to_owned())
+            .filter(|name| !name.is_empty())
+    };
+
+    let chosen = match cfg!(target_os = "macos") {
+        true => said("scutil", &["--get", "ComputerName"]),
+        false => said("hostnamectl", &["--pretty"]),
+    };
+
+    chosen
+        .or_else(|| said("hostname", &[]).map(|name| short_host_name(&name).to_owned()))
+        .unwrap_or_else(|| "an unnamed machine".to_owned())
+}
+
+/// A host name without the network's domain after it.
+fn short_host_name(name: &str) -> &str {
+    name.split('.').next().unwrap_or(name)
+}
+
+/// The key this computer keeps to be known again, made the first time it
+/// is asked for.
+///
+/// Signing in again makes a new credential; the key stays, so the
+/// instance finds the machine it already knows instead of a second one.
+pub fn machine_key(home: &Home) -> Result<String> {
+    let path = home.state_dir().join("machine-key");
+    if let Ok(kept) = std::fs::read_to_string(&path)
+        && !kept.trim().is_empty()
+    {
+        return Ok(kept.trim().to_owned());
     }
+
+    let key = stemma_core::id::MachineId::generate().ulid().to_string();
+    std::fs::create_dir_all(home.state_dir())
+        .with_context(|| format!("cannot create {}", home.state_dir().display()))?;
+    std::fs::write(&path, &key).with_context(|| format!("cannot write {}", path.display()))?;
+
+    Ok(key)
 }
 
 /// A sign-in somebody has to approve before it means anything.
@@ -228,6 +270,30 @@ mod tests {
 
         assert!(label.starts_with("stemma on "));
         assert!(!label.ends_with("on "));
+    }
+
+    #[test]
+    fn a_host_name_loses_the_network_it_was_given_by() {
+        assert_eq!(
+            short_host_name("eduroamnat60-149.eduroamnat.uv.es"),
+            "eduroamnat60-149"
+        );
+        assert_eq!(short_host_name("Marios-MBP"), "Marios-MBP");
+    }
+
+    #[test]
+    fn a_computer_keeps_the_key_it_was_given() {
+        let root = std::env::temp_dir().join(format!("stemma-key-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = crate::home::Home::locate(&crate::home::Environment::from_pairs([(
+            crate::home::HOME_VARIABLE,
+            root.to_str().unwrap(),
+        )]));
+
+        let first = machine_key(&home).unwrap();
+        assert_eq!(machine_key(&home).unwrap(), first);
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

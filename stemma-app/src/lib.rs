@@ -72,6 +72,7 @@ pub fn run() {
             claims::parted,
             claims::settle,
             machine::machine,
+            machine::rename_machine,
             machine::job_output,
             machine::cancel_job,
             machine::clear_job,

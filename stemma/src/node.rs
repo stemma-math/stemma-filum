@@ -44,7 +44,8 @@ pub fn init(home: &Home, groups: &[String], out: &mut impl Write) -> Result<Node
     let node = server
         .register_node(
             &credentials.token,
-            &session::machine_label(),
+            &session::machine_name(),
+            &session::machine_key(home)?,
             &agents,
             Some(&serving),
         )
@@ -52,6 +53,19 @@ pub fn init(home: &Home, groups: &[String], out: &mut impl Write) -> Result<Node
 
     writeln!(out)?;
     report(&node, &credentials.server, out)?;
+
+    Ok(node)
+}
+
+/// Gives this machine the name its owner chose.
+pub fn rename(home: &Home, name: &str, out: &mut impl Write) -> Result<Node> {
+    let name = name.trim();
+    anyhow::ensure!(!name.is_empty(), "a machine needs a name");
+    let (credentials, server) = session::connect(home)?;
+    let node = server
+        .rename_node(&credentials.token, name)
+        .context("this machine could not be renamed")?;
+    writeln!(out, "This machine is now called {}.", node.label)?;
 
     Ok(node)
 }

@@ -146,6 +146,7 @@ export const api = {
     grantLibrary: custom?.library ?? false,
   }),
   machine: () => call<Machine | null>("machine"),
+  renameMachine: (label: string) => call<string>("rename_machine", { label }),
   jobOutput: (job: string) => call<string>("job_output", { job }),
   cancelJob: (job: string) => call<void>("cancel_job", { job }),
   clearJob: (job: string) => call<void>("clear_job", { job }),

@@ -2178,6 +2178,19 @@ body:has(.app-shell) .dialog {
     font-weight: 500;
 }
 
+.machine-name {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+    max-width: 420px;
+}
+
+.machine-name .input {
+    flex: 1;
+    min-width: 0;
+}
+
 .setting__note {
     font-size: 13px;
     color: var(--ink-3);

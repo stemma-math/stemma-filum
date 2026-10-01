@@ -132,6 +132,20 @@ pub async fn machine() -> Result<Option<MachinePanel>, String> {
     .await
 }
 
+/// Gives this machine the name its owner chose, and says the name kept.
+#[tauri::command]
+pub async fn rename_machine(label: String) -> Result<String, String> {
+    crate::blocking(move || -> Result<String, String> {
+        let session = Session::open()?;
+        let node = session
+            .server
+            .rename_node(&session.token, label.trim())
+            .map_err(failed)?;
+        Ok(node.label)
+    })
+    .await
+}
+
 /// The raw agent output kept on this machine for one job.
 #[tauri::command]
 pub async fn job_output(job: String) -> Result<String, String> {

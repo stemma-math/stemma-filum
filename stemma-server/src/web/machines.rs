@@ -40,6 +40,10 @@ pub struct Registering {
     /// The groups it is to serve. Left out, whatever it served stands.
     #[serde(default)]
     pub groups: Option<Vec<String>>,
+    /// The key the computer keeps, which finds the machine again after
+    /// its owner signs in anew.
+    #[serde(default)]
+    pub device: Option<String>,
 }
 
 /// What a machine says to stay awake.
@@ -66,9 +70,20 @@ pub async fn register(
     };
     let wanted = said.groups.clone();
     let found = said.agents.clone();
+    let device = said
+        .device
+        .map(|device| device.trim().to_owned())
+        .filter(|device| !device.is_empty() && device.len() <= 64);
+
     let machine = instance
         .write(move |connection| {
-            let machine = machines::register(connection, &owner, &token_id, &label)?;
+            let machine = machines::register_device(
+                connection,
+                &owner,
+                &token_id,
+                &label,
+                device.as_deref(),
+            )?;
             machines::report(connection, &machine.id, &found)?;
 
             if let Some(wanted) = wanted {
@@ -167,6 +182,110 @@ pub async fn api_retire(
         .await?;
 
     Ok(Json(json!({ "retired": retired })).into_response())
+}
+
+/// A new name for a machine.
+#[derive(Debug, Deserialize)]
+pub struct Naming {
+    /// The name its owner chose.
+    pub label: String,
+}
+
+/// The longest name a machine may be given.
+const LONGEST_NAME: usize = 80;
+
+/// A name as it is kept, or why it cannot be.
+fn named(label: &str) -> Result<String, WebError> {
+    let label = label.trim();
+    if label.is_empty() {
+        return Err(WebError::BadRequest("A machine needs a name.".to_owned()));
+    }
+    if label.chars().count() > LONGEST_NAME {
+        return Err(WebError::BadRequest(format!(
+            "A machine's name is at most {LONGEST_NAME} characters."
+        )));
+    }
+    Ok(label.to_owned())
+}
+
+/// Renames the machine carrying this credential.
+pub async fn api_rename(
+    State(instance): State<Instance>,
+    credential: Credential,
+    Json(naming): Json<Naming>,
+) -> Result<Response, WebError> {
+    let machine = registered(&instance, &credential).await?;
+    let label = named(&naming.label)?;
+    let (of, owner) = (machine.id, credential.user.id.clone());
+    instance
+        .write(move |connection| machines::rename(connection, &of, &owner, &label))
+        .await?;
+    let machine = registered(&instance, &credential).await?;
+
+    Ok(described(&instance, &machine).await?.into_response())
+}
+
+/// What the rename form sends.
+#[derive(Debug, Deserialize)]
+pub struct RenameForm {
+    /// The form's signature.
+    pub form_token: String,
+    /// The name the owner typed.
+    pub label: String,
+}
+
+/// Asks for a machine's new name.
+pub async fn rename_form(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(id): Path<String>,
+) -> Result<Response, WebError> {
+    let machine = own(&instance, &signed, &id).await?;
+    let chrome = super::layout::around(&instance, &signed, format!("Rename {}", machine.label))
+        .await?
+        .at(format!("/machines/{}", machine.id));
+    let back = format!("/machines/{}", machine.id);
+
+    Ok(page(
+        &chrome,
+        super::layout::dialog(
+            "Rename this machine",
+            &back,
+            html! {
+                form method="post" action={ "/machines/" (machine.id) "/rename" } {
+                    (signature(&signed))
+                    div class="field" {
+                        label class="field__label" for="label" { "Name" }
+                        input class="input" type="text" id="label" name="label"
+                              value=(machine.label) maxlength=(LONGEST_NAME) autofocus required;
+                        span class="field__hint" {
+                            "Only the name changes. Jobs and settings stay with this machine."
+                        }
+                    }
+                    (super::layout::dialog_actions(&back, "Rename", false))
+                }
+            },
+        ),
+    )
+    .into_response())
+}
+
+/// Renames one of the signed-in person's machines.
+pub async fn rename(
+    State(instance): State<Instance>,
+    signed: SignedIn,
+    Path(id): Path<String>,
+    axum::Form(form): axum::Form<RenameForm>,
+) -> Result<Response, WebError> {
+    signed.check_form(&form.form_token)?;
+    let machine = own(&instance, &signed, &id).await?;
+    let label = named(&form.label)?;
+    let (of, owner) = (machine.id, signed.user.id.clone());
+    instance
+        .write(move |connection| machines::rename(connection, &of, &owner, &label))
+        .await?;
+
+    Ok(Redirect::to(&format!("/machines/{}", machine.id)).into_response())
 }
 
 /// The machine behind this credential, if it has registered.
@@ -380,7 +499,7 @@ pub async fn retire_form(
             html! {
                 p class="dialog__text" {
                     (machine.label) " loses access to this instance and gets no new work. "
-                    "Signing it in again makes it a new machine."
+                    "Signing in on it again registers it again."
                 }
                 form method="post" action={ "/machines/" (machine.id) "/retire" } {
                     (signature(&signed))
@@ -469,7 +588,13 @@ fn body(
     html! {
         header class="page-head" {
             div class="page-head__text" {
-                h1 class="page-title" { (machine.label) }
+                div class="page-title-row" {
+                    h1 class="page-title" { (machine.label) }
+                    a class="button button--small" href={ "/machines/" (machine.id) "/rename" }
+                      data-dialog-link {
+                        (super::layout::glyph("edit")) "Rename"
+                    }
+                }
                 div class="page-meta" {
                     span class="identifier" { (machine.id.to_string()) }
                     @match machine.presence {
